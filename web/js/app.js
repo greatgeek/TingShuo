@@ -163,7 +163,7 @@ async function submitWords() {
     $('gen-step').textContent = '大模型写作中（最长约 5 分钟）…';
     const llmResp = await fetch('/api/v1/dev/llm', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
       body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
     });
     const llmBody = await llmResp.json();
@@ -377,7 +377,8 @@ async function genAllAudio() {
       if (item.exists) { s.audios = [{ id: item.audio_id }]; done++; ok++; continue; }
       // 生成（开发经 /dev/tts；生产为浏览器 BYOK 直连 Azure）
       const mp3 = await fetch('/api/v1/dev/tts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
         body: JSON.stringify({ text: s.text, voice, rate: 1.0 }),
       });
       if (!mp3.ok) throw new Error('TTS HTTP ' + mp3.status);

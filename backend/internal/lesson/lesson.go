@@ -3,6 +3,7 @@ package lesson
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/pkg/ulid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -46,64 +48,47 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	paramsJSON, _ := json.Marshal(req.Params)
-	lessonID := ulid.MustNew()
 
-	// 同日幂等：命中 UNIQUE(user_id, lesson_date) 时不建新课
-	var existingID string
+	// 同日幂等：已有课程时——draft 允许重新提交词单（试用反馈 2026-10-26），
+	// 非 draft（ready 等）保持一天一课语义（§6.3）
+	var existingID, existingStatus string
 	err = h.pool.QueryRow(r.Context(), `
-		INSERT INTO daily_lesson (id, user_id, lesson_date, status, word_count, generate_params)
-		VALUES ($1, $2, $3, 'draft', $4, $5)
-		ON CONFLICT (user_id, lesson_date) DO UPDATE SET updated_at = now()
-		RETURNING id`,
-		lessonID, userID, date, len(words), paramsJSON).Scan(&existingID)
-	if err != nil {
-		httpx.Err(w, httpx.Internal("建课失败: "+err.Error()))
+		SELECT id, status FROM daily_lesson WHERE user_id = $1 AND lesson_date = $2`,
+		userID, date).Scan(&existingID, &existingStatus)
+	if err != nil && err != pgx.ErrNoRows {
+		httpx.Err(w, httpx.Internal("查询当日课程失败: "+err.Error()))
 		return
 	}
-	if existingID != lessonID {
-		// 已存在当日课程：返回既有课程（幂等，§6.3）
-		httpx.WriteJSON(w, http.StatusConflict, map[string]any{
-			"lesson_id": existingID,
-			"existing":  true,
-			"error":     map[string]string{"code": "LESSON_EXISTS", "message": "当日课程已存在（一天一课）"},
+
+	if existingID != "" {
+		if existingStatus != "draft" {
+			httpx.WriteJSON(w, http.StatusConflict, map[string]any{
+				"lesson_id": existingID,
+				"existing":  true,
+				"error":     map[string]string{"code": "LESSON_EXISTS", "message": "当日课程已存在（一天一课）"},
+			})
+			return
+		}
+		if err := h.replaceDraftWords(r, existingID, userID, words, paramsJSON); err != nil {
+			httpx.Err(w, httpx.Internal("更新词单失败: "+err.Error()))
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"lesson_id": existingID, "status": "draft", "word_count": len(words), "updated": true,
 		})
 		return
 	}
 
-	// 词入库 + 关联（事务）
-	tx, err := h.pool.Begin(r.Context())
-	if err != nil {
-		httpx.Err(w, httpx.Internal(err.Error()))
+	lessonID := ulid.MustNew()
+	if _, err := h.pool.Exec(r.Context(), `
+		INSERT INTO daily_lesson (id, user_id, lesson_date, status, word_count, generate_params)
+		VALUES ($1, $2, $3, 'draft', $4, $5)`,
+		lessonID, userID, date, len(words), paramsJSON); err != nil {
+		httpx.Err(w, httpx.Internal("建课失败: "+err.Error()))
 		return
 	}
-	defer tx.Rollback(r.Context())
-
-	for _, wi := range words {
-		wordID := ulid.MustNew()
-		var wid string
-		// word 全局词库 upsert：同 (user_id, surface, reading) 更新词性与释义（reading 空串方案）
-		err = tx.QueryRow(r.Context(), `
-			INSERT INTO word (id, user_id, surface, reading, pos, meaning)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			ON CONFLICT (user_id, surface, reading) DO UPDATE
-			  SET pos = EXCLUDED.pos, meaning = EXCLUDED.meaning, updated_at = now()
-			RETURNING id`,
-			wordID, userID, wi.Surface, wi.Reading, wi.Pos, wi.Meaning).Scan(&wid)
-		if err != nil {
-			httpx.Err(w, httpx.Internal("词入库失败: "+err.Error()))
-			return
-		}
-		if _, err = tx.Exec(r.Context(), `
-			INSERT INTO lesson_word (lesson_id, word_id, is_key)
-			VALUES ($1, $2, $3)
-			ON CONFLICT (lesson_id, word_id) DO NOTHING`,
-			lessonID, wid, wi.IsKey); err != nil {
-			httpx.Err(w, httpx.Internal("词单关联失败: "+err.Error()))
-			return
-		}
-	}
-	if err = tx.Commit(r.Context()); err != nil {
-		httpx.Err(w, httpx.Internal(err.Error()))
+	if err := h.replaceDraftWords(r, lessonID, userID, words, paramsJSON); err != nil {
+		httpx.Err(w, httpx.Internal("词单入库失败: "+err.Error()))
 		return
 	}
 
@@ -112,6 +97,49 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		"status":     "draft",
 		"word_count": len(words),
 	})
+}
+
+// replaceDraftWords 词入库 + lesson_word 全量重建（新课后提交；draft 课重新提交词单时复用）。
+func (h *Handler) replaceDraftWords(r *http.Request, lessonID, userID string, words []WordInput, paramsJSON []byte) error {
+	tx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(r.Context())
+	ctx := r.Context()
+
+	// draft 课尚未生成材料（无 sentence 引用），旧词关联可安全清除
+	if _, err := tx.Exec(ctx, `DELETE FROM lesson_word WHERE lesson_id = $1`, lessonID); err != nil {
+		return err
+	}
+	for _, wi := range words {
+		wordID := ulid.MustNew()
+		var wid string
+		// word 全局词库 upsert：同 (user_id, surface, reading) 更新词性与释义（reading 空串方案）
+		err = tx.QueryRow(ctx, `
+			INSERT INTO word (id, user_id, surface, reading, pos, meaning)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (user_id, surface, reading) DO UPDATE
+			  SET pos = EXCLUDED.pos, meaning = EXCLUDED.meaning, updated_at = now()
+			RETURNING id`,
+			wordID, userID, wi.Surface, wi.Reading, wi.Pos, wi.Meaning).Scan(&wid)
+		if err != nil {
+			return fmt.Errorf("词入库失败: %w", err)
+		}
+		if _, err = tx.Exec(ctx, `
+			INSERT INTO lesson_word (lesson_id, word_id, is_key)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (lesson_id, word_id) DO NOTHING`,
+			lessonID, wid, wi.IsKey); err != nil {
+			return fmt.Errorf("词单关联失败: %w", err)
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE daily_lesson SET word_count = $2, generate_params = $3, updated_at = now() WHERE id = $1`,
+		lessonID, len(words), paramsJSON); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ---- GET /lessons?from=&to= ----
