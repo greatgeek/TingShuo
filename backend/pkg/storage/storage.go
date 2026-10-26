@@ -3,6 +3,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -57,6 +58,15 @@ func (c *Client) PresignedPUT(ctx context.Context, cacheKey string, ttl time.Dur
 		return "", err
 	}
 	return u.String(), nil
+}
+
+// PutAudio 服务端直接上传音频字节（开发期浏览器 CORS 绕行用，见开发问题记录 P-026；
+// 生产走 OSS CORS 配置后的预签名直传，实例不碰文件字节的原则仅针对生产形态）。
+func (c *Client) PutAudio(ctx context.Context, cacheKey string, data []byte) error {
+	_, err := c.mc.PutObject(ctx, c.audioBucket, AudioKey(cacheKey),
+		bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: "audio/mpeg"})
+	return err
 }
 
 // PresignedGET 生成下载 URL（/audio/{id}/file 302 目标；10 分钟有效，§8.6）。

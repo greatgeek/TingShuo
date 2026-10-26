@@ -472,8 +472,13 @@ async function ensureAudio(sents, onProgress) {
       });
       if (!mp3.ok) throw new Error('TTS HTTP ' + mp3.status);
       const blob = await mp3.blob();
-      const pr = await api('/audio/presign', { method: 'POST', body: JSON.stringify({ cache_key: item.cache_key }) });
-      const up = await fetch(pr.upload_url, { method: 'PUT', body: blob, headers: { 'Content-Type': 'audio/mpeg' } });
+      // 上传：开发经 /dev/upload 代理（RustFS 未配置 CORS，浏览器直传被拦，P-026）；
+      // 生产为 OSS 预签名直传（presign → PUT）
+      const up = await fetch('/api/v1/dev/upload?cache_key=' + item.cache_key, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + TOKEN },
+        body: blob,
+      });
       if (!up.ok) throw new Error('上传 HTTP ' + up.status);
       const reg = await api('/audio/register', {
         method: 'POST',
@@ -484,7 +489,11 @@ async function ensureAudio(sents, onProgress) {
       });
       s.audios = [{ id: reg.audio_id }];
       ok++;
-    } catch (e) { fail++; console.error(e); }
+    } catch (e) {
+      fail++;
+      console.error(e);
+      if (fail === 1) alert('有句子配音失败：' + e.message + '\n（后续失败仅在控制台记录，可重新点击重试）');
+    }
     done++;
     if (onProgress) onProgress(done, total);
   }

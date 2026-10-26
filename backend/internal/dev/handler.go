@@ -18,11 +18,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
+	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 	"github.com/greatgeek/TingShuo/backend/pkg/ulid"
 )
@@ -47,13 +49,21 @@ func Cors(next http.Handler) http.Handler {
 type Handler struct {
 	azure   *ttsclient.Client
 	llmHTTP *http.Client
+	store   *storage.Client
 }
 
-func NewHandler() *Handler {
+func NewHandler() (*Handler, error) {
+	store, err := storage.New(
+		os.Getenv("S3_ENDPOINT"), os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_KEY"),
+		os.Getenv("S3_BUCKET_AUDIO"), os.Getenv("S3_BUCKET_RECORDING"))
+	if err != nil {
+		return nil, err
+	}
 	return &Handler{
 		azure:   ttsclient.New(os.Getenv("AZURE_SPEECH_KEY"), os.Getenv("AZURE_SPEECH_REGION")),
 		llmHTTP: &http.Client{Timeout: 600 * time.Second}, // 推理模型全量生成可达数分钟
-	}
+		store:   store,
+	}, nil
 }
 
 // Config 返回试用页默认配置（含 .env.dev 的 Key，仅供本地页面预填）。
@@ -199,6 +209,28 @@ func (h *Handler) PollLLM(w http.ResponseWriter, r *http.Request) {
 		"done": done, "err": errMsg, "text": text,
 		"elapsed_ms": elapsed.Milliseconds(), "chars": len([]rune(text)),
 	})
+}
+
+// Upload POST /dev/upload?cache_key=：开发期浏览器上传代理。
+// RustFS 未配置 CORS，浏览器直传预签名 PUT 被拦（P-026）；body 为音频字节。
+// 生产走 OSS（配置 CORS 后浏览器预签名直传），此端点随 DEV_PROXY=false 关闭。
+func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Query().Get("cache_key")
+	ok, _ := regexp.MatchString(`^[0-9a-f]{64}$`, key)
+	if !ok {
+		httpx.Err(w, httpx.BadRequest("CACHE_KEY_INVALID", "cache_key 必须为 64 位十六进制"))
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(r.Body, 10<<20)) // 单句 MP3 上限 10MB
+	if err != nil || len(data) == 0 {
+		httpx.Err(w, httpx.BadRequest("BODY_INVALID", "音频内容为空"))
+		return
+	}
+	if err := h.store.PutAudio(r.Context(), key, data); err != nil {
+		httpx.Err(w, httpx.BadGateway("对象存储上传失败: " + err.Error()))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // TTSProxy body {text, voice, rate} → SSML → Azure → 直接回传 MP3 字节流。

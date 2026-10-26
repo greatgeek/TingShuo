@@ -107,11 +107,15 @@ func run() error {
 
 			// 本地开发试用代理（生产 DEV_PROXY=false 关闭，见 internal/dev 注释）
 			if dev.Enabled() {
-				devH := dev.NewHandler()
-				sec.Get("/dev/config", devH.Config)
-				sec.Post("/dev/llm/start", devH.StartLLM)
-				sec.Get("/dev/llm/poll", devH.PollLLM)
-				sec.Post("/dev/tts", devH.TTSProxy)
+				if devH, derr := dev.NewHandler(); derr == nil {
+					sec.Get("/dev/config", devH.Config)
+					sec.Post("/dev/llm/start", devH.StartLLM)
+					sec.Get("/dev/llm/poll", devH.PollLLM)
+					sec.Post("/dev/tts", devH.TTSProxy)
+					sec.Post("/dev/upload", devH.Upload)
+				} else {
+					fmt.Fprintln(os.Stderr, "dev 代理未启用:", derr)
+				}
 			}
 
 			sec.Post("/lessons", lessonH.Create)
