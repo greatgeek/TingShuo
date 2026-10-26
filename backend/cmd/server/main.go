@@ -125,9 +125,12 @@ func run() error {
 		})
 	})
 
-	// 本地试用页静态托管（backend/web/；生产镜像不打该目录即自然 404）
-	if _, err := os.Stat("web"); err == nil {
-		r.Handle("/*", http.FileServer(http.Dir("web")))
+	// 桌面前端静态托管：优先仓库根的 web/（正式代码库），回退 backend/web/
+	for _, dir := range []string{"../web", "web"} {
+		if _, err := os.Stat(dir); err == nil {
+			r.Handle("/*", http.FileServer(http.Dir(dir)))
+			break
+		}
 	}
 
 	srv := &http.Server{

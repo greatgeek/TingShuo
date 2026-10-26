@@ -1,0 +1,110 @@
+/* ===== 设计 Token（纸白墨黑 · 课本，与视觉原型一致）===== */
+:root {
+  --bg: #FAFAF7; --surface: #FFF; --ink: #1C1C1A; --ink2: #6B6B66; --line: #E6E4DE;
+  --accent: #C8442E; --soft: #C8442E14; --ok: #3E7A4E;
+  --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+  --sans: -apple-system, "Segoe UI", "Noto Sans JP", "PingFang SC", sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans);
+  min-height: 100vh; display: flex; justify-content: center;
+}
+
+.frame {
+  width: 100%; max-width: 520px; min-height: 100vh; display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--bg);
+}
+
+header {
+  padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex;
+  justify-content: space-between; align-items: center;
+}
+header .t { font-size: 15px; font-weight: 700; }
+header .t em { color: var(--accent); font-style: normal; }
+header .s { font-size: 11px; color: var(--ink2); }
+
+.screen { display: none; flex: 1; flex-direction: column; padding: 16px; }
+.screen.on { display: flex; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px; margin-bottom: 12px;
+}
+h2 { font-size: 16px; margin-bottom: 10px; }
+.hint { font-size: 12px; color: var(--ink2); line-height: 1.8; }
+.hint code { background: var(--soft); padding: 1px 6px; border-radius: 6px; font-size: 11px; }
+
+input, textarea, select {
+  width: 100%; font-size: 14px; padding: 10px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); font-family: var(--sans);
+}
+textarea { font-family: var(--serif); font-size: 14px; height: 180px; resize: vertical; }
+
+.btn {
+  display: block; width: 100%; padding: 13px; border: none; border-radius: 12px;
+  background: var(--ink); color: #fff; font-size: 15px; cursor: pointer; margin-top: 12px;
+}
+.btn.accent { background: var(--accent); }
+.btn.ghost { background: none; color: var(--ink2); border: 1px solid var(--line); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.row2 { display: flex; gap: 10px; }
+.row2 > * { flex: 1; }
+.err { color: var(--accent); font-size: 13px; margin-top: 8px; display: none; line-height: 1.6; }
+
+/* ===== 学习屏 ===== */
+.tabs { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.tabs button {
+  font-size: 13px; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink2);
+}
+.tabs button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+.modebar { display: flex; gap: 8px; margin-bottom: 10px; }
+.modebar button {
+  flex: 1; font-size: 12px; padding: 8px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink2);
+}
+.modebar button.on { color: var(--accent); border-color: var(--accent); }
+
+.sents { display: flex; flex-direction: column; gap: 2px; }
+.sent { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer; }
+.sent:hover { background: var(--soft); }
+.sent.now { background: var(--soft); box-shadow: inset 3px 0 0 var(--accent); }
+.sent .spk { width: 34px; font-size: 11px; color: var(--ink2); flex: none; }
+.sent .wrap { flex: 1; }
+.sent .txt { font-family: var(--serif); font-size: 15px; line-height: 2; }
+.sent .zh { display: none; font-size: 12px; color: var(--ink2); margin-top: 4px; width: 100%; }
+.sent.showzh .zh { display: block; }
+.sent .play {
+  width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface); cursor: pointer; flex: none; font-size: 12px;
+}
+.sent .play.has { background: var(--ink); color: #fff; border: none; }
+ruby rt { font-size: 11px; color: var(--ink2); font-family: var(--sans); letter-spacing: 0; }
+body.no-rt rt { display: none; }
+
+.bar { height: 8px; background: var(--line); border-radius: 6px; overflow: hidden; margin: 10px 0; }
+.bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+
+.gen-note { text-align: center; }
+.spinner {
+  width: 36px; height: 36px; border: 3px solid var(--line); border-top-color: var(--accent);
+  border-radius: 50%; margin: 18px auto; animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.bignum { font-size: 28px; font-weight: 700; text-align: center; margin: 8px 0; }
+.status-chip {
+  display: inline-block; font-size: 12px; padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--ink2); margin-bottom: 8px;
+}
+.status-chip.ready { color: var(--ok); border-color: var(--ok); }
+
+.log {
+  font-size: 12px; color: var(--ink2); line-height: 1.9; max-height: 150px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px; display: none; white-space: pre-wrap;
+}

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>听说 TingShuo · 桌面版</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="frame">
+  <header>
+    <span class="t">听说 <em>TingShuo</em></span>
+    <span class="s" id="userchip">桌面前端（开发版）</span>
+  </header>
+
+  <!-- 登录 -->
+  <section class="screen on" id="sc-login">
+    <div class="card">
+      <h2>登录 / 注册</h2>
+      <p class="hint">邮箱 + 密码。新邮箱自动注册，老邮箱直接登录。</p>
+      <div style="margin-top:10px"><input id="login-email" placeholder="邮箱，如 test@dev" autocomplete="off"></div>
+      <div style="margin-top:8px"><input id="login-pass" type="password" placeholder="密码（≥6 位）"></div>
+      <button class="btn accent" onclick="doLogin()">进入</button>
+      <div class="err" id="login-err"></div>
+    </div>
+  </section>
+
+  <!-- 首页/状态 -->
+  <section class="screen" id="sc-home">
+    <div class="card">
+      <h2>今日课程</h2>
+      <span class="status-chip" id="lesson-chip">未创建</span>
+      <div class="bignum" id="lesson-date">—</div>
+      <p class="hint" id="lesson-desc">还没有今天的课程。</p>
+      <button class="btn accent" id="home-main-btn" onclick="go('create')">创建今日课程</button>
+      <div class="err" id="home-err"></div>
+    </div>
+    <div class="card">
+      <h2>使用流程</h2>
+      <p class="hint">① 粘贴今天的词单（5—40 词）→ ② AI 生成材料（约 2—5 分钟）→
+      ③ 一键配音（Azure TTS，逐句生成）→ ④ 点句播放、看振り仮名跟读。</p>
+    </div>
+  </section>
+
+  <!-- 词单 -->
+  <section class="screen" id="sc-create">
+    <div class="card">
+      <h2>今天的词单</h2>
+      <p class="hint">每行一词：<code>单词｜读音｜词性｜中文</code>（读音可空）。重点词标 <code>★</code>（材料中出现 2 次）。</p>
+      <textarea id="words-input" placeholder="精算｜せいさん｜名詞｜一起结账 ★&#10;駅｜えき｜名詞｜车站"></textarea>
+      <div style="margin-top:8px" class="hint" id="words-count">0 词</div>
+      <div class="row2" style="margin-top:10px">
+        <select id="sel-level"><option>N5</option><option selected>N4</option><option>N3</option></select>
+        <select id="sel-voice"><option value="Nanami" selected>Nanami（女声）</option><option value="Keita">Keita（男声）</option></select>
+      </div>
+      <button class="btn accent" onclick="submitWords()">提交并生成材料</button>
+      <button class="btn ghost" onclick="fillSample()">填入示例 20 词</button>
+      <div class="err" id="create-err"></div>
+    </div>
+  </section>
+
+  <!-- 生成中 -->
+  <section class="screen" id="sc-gen">
+    <div class="card gen-note">
+      <h2 id="gen-title">材料生成中</h2>
+      <div class="spinner"></div>
+      <p class="hint" id="gen-note">正在用大模型围绕你的词单写对话和短文，通常需要 2—5 分钟。<br>请不要关闭本页。</p>
+      <p class="hint" id="gen-step"></p>
+      <div class="log" id="gen-log"></div>
+      <div class="err" id="gen-err"></div>
+      <button class="btn ghost" style="display:none" id="gen-retry" onclick="go('create')">返回修改词单</button>
+    </div>
+  </section>
+
+  <!-- 学习 -->
+  <section class="screen" id="sc-learn">
+    <div class="modebar">
+      <button id="md-normal" class="on" onclick="setMode('normal')">跟读</button>
+      <button id="md-blind" onclick="setMode('blind')">盲听</button>
+      <button id="md-zh" onclick="setMode('zh')">译文</button>
+      <button id="md-rt" class="on" onclick="toggleRT()">假名</button>
+    </div>
+    <div class="tabs" id="mat-tabs"></div>
+    <div class="row2" style="margin-bottom:10px">
+      <button class="btn ghost" onclick="playAll()">▶ 整段连播</button>
+      <button class="btn accent" id="tts-btn" onclick="genAllAudio()">为全部句子配音</button>
+    </div>
+    <div class="sents" id="sents"></div>
+    <p class="hint" id="learn-hint" style="margin-top:12px"></p>
+  </section>
+</div>
+<script src="js/app.js"></script>
+</body>
+</html>
