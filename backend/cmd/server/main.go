@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
+	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/internal/lesson"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
@@ -61,6 +62,7 @@ func run() error {
 	userH := user.NewHandler(pool)
 	lessonH := lesson.NewHandler(pool)
 	reviewH := review.NewHandler(pool)
+	genH := generate.NewHandler(pool)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -89,6 +91,7 @@ func run() error {
 			sec.Post("/lessons", lessonH.Create)
 			sec.Get("/lessons", lessonH.List)
 			sec.Get("/lessons/{id}", lessonH.Get)
+			sec.Post("/lessons/{id}/materials", genH.Upload)
 
 			sec.Post("/reviews", reviewH.Add)
 			sec.Get("/reviews/due", reviewH.Due)

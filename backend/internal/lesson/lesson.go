@@ -218,10 +218,12 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		Translation *string
 		ParaNo      int
 		SortOrder   int
+		Ruby        []byte
 	}
 	srows, err := h.pool.Query(r.Context(), `
 		SELECT m.id, m.type, m.scene, m.title, m.role_a, m.role_b, m.sort_order,
-		       s.id, s.speaker, s.text, s.kana, s.translation, s.para_no, s.sort_order
+		       s.id, s.speaker, s.text, s.kana, s.translation, s.para_no, s.sort_order,
+		       s.ruby_tokens
 		FROM material m
 		JOIN sentence s ON s.material_id = m.id
 		WHERE m.lesson_id = $1
@@ -248,7 +250,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		var sr sentenceRow
 		if err := srows.Scan(&sr.MatID, &sr.MatType, &sr.Scene, &sr.Title, &sr.RoleA, &sr.RoleB,
 			&sr.Sort, &sr.SentID, &sr.Speaker, &sr.Text, &sr.Kana, &sr.Translation,
-			&sr.ParaNo, &sr.SortOrder); err != nil {
+			&sr.ParaNo, &sr.SortOrder, &sr.Ruby); err != nil {
 			httpx.Err(w, httpx.Internal(err.Error()))
 			return
 		}
@@ -261,7 +263,8 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 		m.Sentences = append(m.Sentences, map[string]any{
 			"id": sr.SentID, "sort": sr.SortOrder, "speaker": sr.Speaker, "text": sr.Text,
-			"kana": sr.Kana, "translation": sr.Translation, "para_no": sr.ParaNo,
+			"kana": sr.Kana, "ruby_tokens": json.RawMessage(sr.Ruby),
+			"translation": sr.Translation, "para_no": sr.ParaNo,
 			"audios": []any{}, // 音频元数据由 M1-5 的 /audio/{id}/file 关联，此处先置空
 		})
 	}
