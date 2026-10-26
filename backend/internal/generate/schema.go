@@ -60,7 +60,19 @@ type WordOcc struct {
 	SkipReason string
 }
 
-// UnmarshalJSON 兼容两种形态：["s1","s2"] 或 "skipped: 专有名词不适合本场景"。
+// MarshalJSON 与 UnmarshalJSON 对称：skipped → 字符串，否则 → 数组。
+// （没有 Marshal 时 Go 默认输出结构体对象形态，服务端/客户端会互相解析失败。）
+func (o WordOcc) MarshalJSON() ([]byte, error) {
+	if o.Skipped {
+		return json.Marshal("skipped: " + o.SkipReason)
+	}
+	return json.Marshal(o.Sentences)
+}
+
+// UnmarshalJSON 兼容三种输入形态：
+//  1. ["s1","s2"]（标准）
+//  2. "skipped: 原因"（FR-2.8）
+//  3. {"sentences":["s1"],"skipped":false,"reason":"..."}（LLM 偶发对象形态，防御性兼容）
 func (o *WordOcc) UnmarshalJSON(b []byte) error {
 	s := strings.TrimSpace(string(b))
 	if strings.HasPrefix(s, `"skipped:`) || strings.HasPrefix(s, `"skipped：`) {
@@ -72,7 +84,29 @@ func (o *WordOcc) UnmarshalJSON(b []byte) error {
 		o.SkipReason = strings.TrimSpace(strings.TrimPrefix(raw, "skipped:"))
 		return nil
 	}
-	return json.Unmarshal(b, &o.Sentences)
+	if strings.HasPrefix(s, "[") {
+		return json.Unmarshal(b, &o.Sentences)
+	}
+	// 对象形态：取第一个字符串数组字段作为句子列表
+	var obj map[string]any
+	if err := json.Unmarshal(b, &obj); err != nil {
+		return err
+	}
+	for _, v := range obj {
+		if arr, ok := v.([]any); ok {
+			for _, x := range arr {
+				o.Sentences = append(o.Sentences, fmt.Sprint(x))
+			}
+			break
+		}
+	}
+	if sk, ok := obj["skipped"].(bool); ok && sk {
+		o.Skipped = true
+		if r, ok := obj["reason"].(string); ok {
+			o.SkipReason = r
+		}
+	}
+	return nil
 }
 
 // ---- 校验（AC-2.1/2.2/2.3）----
