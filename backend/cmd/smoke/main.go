@@ -266,37 +266,25 @@ func run() error {
 	}
 	done("有音频:", withAudio, "句 / 无音频:", without, "句")
 
-	// ---- 9. 302 预签名下载 ----
-	step("9 预签名下载首个音频")
-	noRedirect := *client
-	noRedirect.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse // 第一次：不跟随，验证 302 本身
-	}
+	// ---- 9. 音频下载（服务端流式代理，2026-10-27 改造）----
+	step("9 下载首个音频（流式代理）")
 	req, _ := http.NewRequest(http.MethodGet, base+"/api/v1/audio/"+firstAudioID+"/file", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := noRedirect.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
-	io.Copy(io.Discard, resp.Body)
-	firstStatus := resp.StatusCode
+	n, _ := io.Copy(io.Discard, resp.Body)
+	ctHeader := resp.Header.Get("Content-Type")
+	status := resp.StatusCode
 	resp.Body.Close()
-	if firstStatus != 302 {
-		return fmt.Errorf("期待 302，得到 %d", firstStatus)
+	if status != 200 || n == 0 {
+		return fmt.Errorf("音频下载异常: HTTP %d, %d bytes", status, n)
 	}
-	// 跟随下载（client 默认跟随重定向）
-	req2, _ := http.NewRequest(http.MethodGet, base+"/api/v1/audio/"+firstAudioID+"/file", nil)
-	req2.Header.Set("Authorization", "Bearer "+token)
-	resp2, err := client.Do(req2)
-	if err != nil {
-		return err
+	if !strings.Contains(ctHeader, "audio") {
+		return fmt.Errorf("Content-Type 异常: %s", ctHeader)
 	}
-	n, _ := io.Copy(io.Discard, resp2.Body)
-	resp2.Body.Close()
-	if resp2.StatusCode != 200 {
-		return fmt.Errorf("跟随 302 后期待 200，得到 %d", resp2.StatusCode)
-	}
-	done(fmt.Sprintf("302 → 200，回传 %d bytes", n))
+	done(fmt.Sprintf("HTTP 200，回传 %d bytes (%s)", n, ctHeader))
 
 	// ---- 10. 假录音上传（预签名 PUT，FR-9.7 同层存储）----
 	step("10 录音预签名上传")

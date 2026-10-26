@@ -5,7 +5,7 @@
 package tts
 
 import (
-	"context"
+	"io"
 	"net/http"
 	"regexp"
 	"time"
@@ -278,7 +278,11 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"audio_id": audioID, "status": "ready"})
 }
 
-// ---- GET /audio/{id}/file：校验归属后 302 预签名 GET（10 分钟，§8.6）----
+// ---- GET /audio/{id}/file：校验归属后流式返回音频 ----
+// 2026-10-27 改为服务端代理流：原「302 → RustFS 预签名 URL」的跨域跳转在
+// 浏览器媒体加载场景不可靠（fetch manual redirect 的 opaqueredirect 不可读、
+// Audio 跨域加载受网络层行为影响，见 P-026 续）；单句 MP3 仅 20—30KB，
+// 代理流成本可忽略。Audio 元素无法携带 Bearer，前端经 fetch(blob) 播放。
 
 func (h *Handler) File(w http.ResponseWriter, r *http.Request) {
 	userID := auth.FromContext(r.Context())
@@ -296,10 +300,13 @@ func (h *Handler) File(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, err := h.store.PresignedGET(context.Background(), objectKey, 10*time.Minute)
+	obj, err := h.store.GetObject(r.Context(), objectKey)
 	if err != nil {
-		httpx.Err(w, httpx.Internal("预签名生成失败: "+err.Error()))
+		httpx.Err(w, httpx.BadGateway("对象存储读取失败: " + err.Error()))
 		return
 	}
-	http.Redirect(w, r, url, http.StatusFound) // 302
+	defer obj.Close()
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	io.Copy(w, obj)
 }

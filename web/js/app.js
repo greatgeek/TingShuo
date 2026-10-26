@@ -381,13 +381,15 @@ function toggleRT() {
   $('md-rt').classList.toggle('on', !off);
 }
 
+// audioURL 取句子音频并返回同源 blob URL（服务端流式代理返回 MP3，
+// 302/跨域/预签名全部绕开；Audio 元素无法带 Bearer，故先 fetch 成 blob）
 async function audioURL(s) {
   const a = (s.audios || [])[0];
   if (!a) return null;
   const r = await fetch('/api/v1/audio/' + a.id + '/file',
-    { redirect: 'manual', headers: { Authorization: 'Bearer ' + TOKEN } });
-  if (r.status !== 302) throw new Error('音频 302 失败 HTTP ' + r.status);
-  return r.headers.get('Location');
+    { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!r.ok) throw new Error('音频获取失败 HTTP ' + r.status);
+  return URL.createObjectURL(await r.blob());
 }
 
 // playOne 播放单句并返回 Promise（连播顺序 await 用）。
@@ -418,6 +420,10 @@ function playOne(s, idx, div) {
       playing.onerror = fin;
       await playing.play();
     } catch (e) {
+      window._lastPlayErr = (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : String(e));
+      if (window._lastPlayErr.indexOf('NotAllowedError') >= 0) {
+        alert('浏览器拦截了自动播放，请再点击一次句子即可播放');
+      }
       if (div) div.classList.remove('now');
       playing = null; resolve();
     }

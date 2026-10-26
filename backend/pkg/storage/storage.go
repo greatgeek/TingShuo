@@ -69,6 +69,11 @@ func (c *Client) PutAudio(ctx context.Context, cacheKey string, data []byte) err
 	return err
 }
 
+// GetObject 按完整对象 key 打开音频对象（file 端点流式代理用；调用方负责 Close）。
+func (c *Client) GetObject(ctx context.Context, objectKey string) (*minio.Object, error) {
+	return c.mc.GetObject(ctx, c.audioBucket, objectKey, minio.GetObjectOptions{})
+}
+
 // PresignedGET 生成下载 URL（/audio/{id}/file 302 目标；10 分钟有效，§8.6）。
 // objectKey 为完整对象 key（即 audio_asset.storage_url 的值，已含 .mp3 后缀）。
 func (c *Client) PresignedGET(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {
