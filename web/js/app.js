@@ -159,7 +159,7 @@ async function submitWords() {
     genLog('课程就绪 ' + lessonID);
 
     // 2. LLM 生成材料（后台任务 + 轮询：刷新页面/网络抖动都不丢进度）
-    const prompt = buildPrompt(words);
+    const prompt = buildPrompt(words, $('sel-level').value);
     genLog('调用大模型生成材料…');
     let llmText = '', fullLen = 0, llmErr = '';
     const t0 = Date.now();
@@ -247,6 +247,16 @@ function sanitizeOutput(out) {
   };
 }
 
+// levelHint 水平的具体化描述（抽象指令 → 可执行标准，降低模型自由发挥）
+function levelHint(level) {
+  switch (level) {
+    case 'N5': return '只用最基础的语法（です/ます/あります/基本动词て形），词汇尽量控制在 N5 表内';
+    case 'N4': return '可用 N4 语法（て形连接、被动、可能形等简单句式），避免长难句';
+    case 'N3': return '可用 N3 语法与相对丰富的表达，仍以口语常用句为主';
+    default: return '只用最基础的语法与词汇';
+  }
+}
+
 function validateLocally(out, words) {
   const problems = [];
   const sids = new Set();
@@ -266,12 +276,12 @@ function validateLocally(out, words) {
   return problems;
 }
 
-function buildPrompt(words) {
+function buildPrompt(words, level) {
   const lines = words.map(w => `${w.surface}｜${w.reading || '—'}｜${w.meaning}${w.is_key ? '｜★重点：出现 2 次' : ''}`);
   return `你是日语听说学习材料的编写专家。请为下面的词汇表生成一份完整的 JSON 材料包。
 
 要求：
-- 难度贴合指定水平，全部句子用です・ます体，自然、贴近日常生活
+- 难度严格贴合 JLPT ${level || 'N5'} 水平：${levelHint(level)}；全部句子用です・ます体，自然、贴近日常生活
 - 每个词都必须自然地出现在至少一个句子里；确实不适合场景时才允许标 "skipped: 原因"
 - 生成恰好 2 段材料：
   1. id=m1，type=dialogue，场景「コンビニ」，8—10 句，speaker 用 A/B 交替，role_a=店員，role_b=客
