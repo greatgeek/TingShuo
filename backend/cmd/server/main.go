@@ -23,6 +23,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
+	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
 	"github.com/greatgeek/TingShuo/backend/pkg/envcfg"
 	"github.com/greatgeek/TingShuo/backend/pkg/jwtw"
@@ -67,13 +68,15 @@ func run() error {
 		return err
 	}
 
+	azureTTS := ttsclient.New(mustEnv("AZURE_SPEECH_KEY"), mustEnv("AZURE_SPEECH_REGION"))
+
 	signer := jwtw.New(jwtSecret)
 	authH := auth.NewHandler(pool, signer)
 	userH := user.NewHandler(pool)
 	lessonH := lesson.NewHandler(pool)
 	reviewH := review.NewHandler(pool)
 	genH := generate.NewHandler(pool)
-	ttsH := tts.NewHandler(pool, store)
+	ttsH := tts.NewHandler(pool, store, azureTTS)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -101,6 +104,7 @@ func run() error {
 			sec.Put("/me", userH.Update)
 
 			sec.Post("/audio/check", ttsH.Check)
+			sec.Post("/audio/synthesize", ttsH.Synthesize)
 			sec.Post("/audio/presign", ttsH.Presign)
 			sec.Post("/audio/register", ttsH.Register)
 			sec.Get("/audio/{id}/file", ttsH.File)

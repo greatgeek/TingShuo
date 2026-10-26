@@ -1,5 +1,7 @@
-// TTS 资产接口（BYOK FR-3.12）：check（全局去重判定）→ presign（上传 URL）→
-// register（登记 audio_asset）→ file（302 预签名下载）。
+// TTS 资产接口。2026-10-27 架构决策（用户）：配音由**服务端**完成——
+// synthesize 一步生成+落盘+登记（前端 CORS/代理/传输全部消失），前端仅缓存播放；
+// 原浏览器 BYOK 直连形态（FR-3.12）调整，缓存去重护栏（AC-3.1）不变。
+// check / presign / register 端点保留（历史数据与兼容），file 不变。
 package tts
 
 import (
@@ -12,6 +14,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
+	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 	"github.com/greatgeek/TingShuo/backend/pkg/ulid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,13 +22,96 @@ import (
 type Handler struct {
 	pool  *pgxpool.Pool
 	store *storage.Client
+	azure *ttsclient.Client
 }
 
-func NewHandler(pool *pgxpool.Pool, store *storage.Client) *Handler {
-	return &Handler{pool: pool, store: store}
+func NewHandler(pool *pgxpool.Pool, store *storage.Client, azure *ttsclient.Client) *Handler {
+	return &Handler{pool: pool, store: store, azure: azure}
 }
 
 var hexKey = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// Synthesize POST /audio/synthesize {sentence_id, voice, rate}：
+// 服务端生成该句 TTS 音频并登记资产，返回 audio_id。
+// 幂等：cache_key 命中直接返回既有资产（AC-3.1：同句同参数零重复计费）。
+func (h *Handler) Synthesize(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	var req struct {
+		SentenceID string  `json:"sentence_id"`
+		Voice      string  `json:"voice"`
+		Rate       float64 `json:"rate"`
+	}
+	if e := httpx.Decode(r, &req); e != nil {
+		httpx.Err(w, e)
+		return
+	}
+	if req.SentenceID == "" {
+		httpx.Err(w, httpx.BadRequest("PARAMS_INVALID", "sentence_id 不能为空"))
+		return
+	}
+	if req.Voice == "" {
+		req.Voice = "Nanami" // FR-3.1 默认音色
+	}
+	if req.Rate == 0 {
+		req.Rate = 1.0
+	}
+
+	// 归属校验 + 取句子文本（服务端为准，不信任前端文本）
+	var text string
+	err := h.pool.QueryRow(r.Context(), `
+		SELECT s.text FROM sentence s
+		JOIN daily_lesson l ON l.id = s.lesson_id
+		WHERE s.id = $1 AND l.user_id = $2`,
+		req.SentenceID, userID).Scan(&text)
+	if err != nil {
+		httpx.Err(w, httpx.NotFound("句子不存在或不属于当前用户"))
+		return
+	}
+
+	// 缓存判定（FR-3.5）
+	ck := CacheKey(text, Params{Voice: req.Voice, Rate: req.Rate, Style: "", EngineVer: "azure-v1"})
+	var existingID string
+	if err := h.pool.QueryRow(r.Context(),
+		`SELECT id FROM audio_asset WHERE cache_key = $1 AND status = 'ready'`, ck).
+		Scan(&existingID); err == nil {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"audio_id": existingID, "cached": true})
+		return
+	}
+
+	start := time.Now()
+	audio, serr := h.azure.Synthesize(r.Context(), text, req.Voice, req.Rate)
+	if serr != nil {
+		httpx.Err(w, httpx.BadGateway("TTS 生成失败: " + serr.Error()))
+		return
+	}
+	if perr := h.store.PutAudio(r.Context(), ck, audio); perr != nil {
+		httpx.Err(w, httpx.BadGateway("对象存储写入失败: " + perr.Error()))
+		return
+	}
+
+	var audioID string
+	err = h.pool.QueryRow(r.Context(), `
+		INSERT INTO audio_asset (id, sentence_id, cache_key, voice, rate, style,
+		                         format, duration_ms, size_bytes, storage_url, status, engine_ver, generated_at)
+		VALUES ($1, $2, $3, $4, $5, '', 'mp3', 0, $6, $7, 'ready', 'azure-v1', now())
+		ON CONFLICT (cache_key) DO UPDATE SET generated_at = now()
+		RETURNING id`,
+		ulid.MustNew(), req.SentenceID, ck, req.Voice, req.Rate, len(audio),
+		storage.AudioKey(ck)).Scan(&audioID)
+	if err != nil {
+		httpx.Err(w, httpx.Internal("资产登记失败: " + err.Error()))
+		return
+	}
+
+	// 成本观测（部署文档 §9.3）
+	_, _ = h.pool.Exec(r.Context(), `
+		INSERT INTO tts_call_log (id, user_id, sentence_id, voice, chars, duration_ms, cache_hit)
+		VALUES ($1, $2, $3, $4, $5, $6, false)`,
+		ulid.MustNew(), userID, req.SentenceID, req.Voice,
+		len([]rune(text)), time.Since(start).Milliseconds())
+
+	httpx.WriteJSON(w, http.StatusCreated, map[string]any{"audio_id": audioID, "cached": false})
+}
 
 // ---- POST /audio/check：批量缓存判定（客户端先查再决定是否调 Azure，AC-3.1）----
 

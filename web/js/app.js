@@ -446,8 +446,9 @@ async function playAll() {
 }
 
 // ============ 批量配音 ============
-// ensureAudio 为传入句子中未配音者生成音频（check → TTS → presign → PUT → register），
-// 返回 {ok, fail}；onProgress(done, total) 供按钮文案更新。
+// ensureAudio 为传入句子中未配音者生成音频。
+// 2026-10-27 架构决策（用户）：配音由服务端一步完成（synthesize），
+// 前端仅缓存 audio_id 并经 302 播放；原 check→TTS→presign→PUT→register 链路废弃。
 async function ensureAudio(sents, onProgress) {
   const voice = $('sel-voice').value;
   let done = 0, ok = 0, fail = 0;
@@ -455,39 +456,12 @@ async function ensureAudio(sents, onProgress) {
   for (const s of sents) {
     if ((s.audios || []).length) { done++; ok++; continue; }
     try {
-      // 缓存判定（服务端全局去重，AC-3.1：同句同参数零重复调用）
-      const ck = await api('/audio/check', {
+      const r = await api('/audio/synthesize', {
         method: 'POST',
-        body: JSON.stringify({
-          items: [{ sentence_id: s.id, text: s.text, voice, rate: 1.0, style: '', engine_ver: 'azure-v1' }],
-        }),
+        body: JSON.stringify({ sentence_id: s.id, voice, rate: 1.0 }),
       });
-      const item = ck.items[0];
-      if (item.exists) { s.audios = [{ id: item.audio_id }]; done++; ok++; continue; }
-      // 生成（开发经 /dev/tts；生产为浏览器 BYOK 直连 Azure）
-      const mp3 = await fetch('/api/v1/dev/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
-        body: JSON.stringify({ text: s.text, voice, rate: 1.0 }),
-      });
-      if (!mp3.ok) throw new Error('TTS HTTP ' + mp3.status);
-      const blob = await mp3.blob();
-      // 上传：开发经 /dev/upload 代理（RustFS 未配置 CORS，浏览器直传被拦，P-026）；
-      // 生产为 OSS 预签名直传（presign → PUT）
-      const up = await fetch('/api/v1/dev/upload?cache_key=' + item.cache_key, {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + TOKEN },
-        body: blob,
-      });
-      if (!up.ok) throw new Error('上传 HTTP ' + up.status);
-      const reg = await api('/audio/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          sentence_id: s.id, cache_key: item.cache_key, voice, rate: 1.0, style: '',
-          engine_ver: 'azure-v1', duration_ms: 0, size_bytes: blob.size,
-        }),
-      });
-      s.audios = [{ id: reg.audio_id }];
+      s.audios = [{ id: r.audio_id }];
+      s._url = null; // 新资产，预签名缓存失效
       ok++;
     } catch (e) {
       fail++;
