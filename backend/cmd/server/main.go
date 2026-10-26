@@ -19,7 +19,9 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/internal/lesson"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
+	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
+	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
 	"github.com/greatgeek/TingShuo/backend/pkg/envcfg"
 	"github.com/greatgeek/TingShuo/backend/pkg/jwtw"
@@ -57,12 +59,20 @@ func run() error {
 	}
 	defer pool.Close()
 
+	store, err := storage.New(
+		mustEnv("S3_ENDPOINT"), mustEnv("S3_ACCESS_KEY"), mustEnv("S3_SECRET_KEY"),
+		mustEnv("S3_BUCKET_AUDIO"), mustEnv("S3_BUCKET_RECORDING"))
+	if err != nil {
+		return err
+	}
+
 	signer := jwtw.New(jwtSecret)
 	authH := auth.NewHandler(pool, signer)
 	userH := user.NewHandler(pool)
 	lessonH := lesson.NewHandler(pool)
 	reviewH := review.NewHandler(pool)
 	genH := generate.NewHandler(pool)
+	ttsH := tts.NewHandler(pool, store)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -87,6 +97,11 @@ func run() error {
 			sec.Use(authH.Middleware)
 			sec.Get("/me", userH.Me)
 			sec.Put("/me", userH.Update)
+
+			sec.Post("/audio/check", ttsH.Check)
+			sec.Post("/audio/presign", ttsH.Presign)
+			sec.Post("/audio/register", ttsH.Register)
+			sec.Get("/audio/{id}/file", ttsH.File)
 
 			sec.Post("/lessons", lessonH.Create)
 			sec.Get("/lessons", lessonH.List)
@@ -116,4 +131,14 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// mustEnv 取必填环境变量，缺失即退出（部署文档 §5：缺 Key 启动即报错）。
+func mustEnv(key string) string {
+	v, err := envcfg.MustGet(key)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "server:", err)
+		os.Exit(1)
+	}
+	return v
 }

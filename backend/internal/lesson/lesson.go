@@ -246,6 +246,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	mats := []*materialOut{}
 	matIndex := map[string]*materialOut{}
+	sentIDs := make([]string, 0, 32)
 	for srows.Next() {
 		var sr sentenceRow
 		if err := srows.Scan(&sr.MatID, &sr.MatType, &sr.Scene, &sr.Title, &sr.RoleA, &sr.RoleB,
@@ -261,12 +262,48 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 			matIndex[sr.MatID] = m
 			mats = append(mats, m)
 		}
+		sentIDs = append(sentIDs, sr.SentID)
 		m.Sentences = append(m.Sentences, map[string]any{
 			"id": sr.SentID, "sort": sr.SortOrder, "speaker": sr.Speaker, "text": sr.Text,
 			"kana": sr.Kana, "ruby_tokens": json.RawMessage(sr.Ruby),
 			"translation": sr.Translation, "para_no": sr.ParaNo,
 			"audios": []any{}, // 音频元数据由 M1-5 的 /audio/{id}/file 关联，此处先置空
 		})
+	}
+
+	// 音频元数据按句子分组填充（§6.2：audios[].url 为 /audio/{id}/file）
+	if len(sentIDs) > 0 {
+		audioRows, aerr := h.pool.Query(r.Context(), `
+			SELECT id, sentence_id, voice, rate, style, duration_ms, size_bytes
+			FROM audio_asset WHERE sentence_id = ANY($1) AND status = 'ready'`, sentIDs)
+		if aerr != nil {
+			httpx.Err(w, httpx.Internal(aerr.Error()))
+			return
+		}
+		audiosBySent := map[string][]map[string]any{}
+		for audioRows.Next() {
+			var aid, sid, voice string
+			var rate float64
+			var style *string
+			var dur, size *int
+			if err := audioRows.Scan(&aid, &sid, &voice, &rate, &style, &dur, &size); err != nil {
+				httpx.Err(w, httpx.Internal(err.Error()))
+				return
+			}
+			audiosBySent[sid] = append(audiosBySent[sid], map[string]any{
+				"id": aid, "voice": voice, "rate": rate, "style": style,
+				"duration_ms": dur, "size_bytes": size,
+				"url": "/api/v1/audio/" + aid + "/file",
+			})
+		}
+		audioRows.Close()
+		for _, m := range mats {
+			for _, s := range m.Sentences {
+				if a, ok := audiosBySent[s["id"].(string)]; ok {
+					s["audios"] = a
+				}
+			}
+		}
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
