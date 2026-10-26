@@ -83,6 +83,11 @@ textarea { font-family: var(--serif); font-size: 14px; height: 180px; resize: ve
   background: var(--surface); cursor: pointer; flex: none; font-size: 12px;
 }
 .sent .play.has { background: var(--ink); color: #fff; border: none; }
+.sent .play.busy {
+  background: var(--soft); color: var(--accent); border-color: var(--accent);
+  animation: pulse 0.8s ease-in-out infinite;
+}
+@keyframes pulse { 50% { opacity: .45; } }
 ruby rt { font-size: 11px; color: var(--ink2); font-family: var(--sans); letter-spacing: 0; }
 body.no-rt rt { display: none; }
 

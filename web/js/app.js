@@ -360,7 +360,7 @@ function renderLearn() {
   });
   const total = mats.reduce((n, x) => n + x.sentences.length, 0);
   const withAudio = mats.reduce((n, x) => n + x.sentences.filter(s => (s.audios || []).length).length, 0);
-  $('learn-hint').textContent = `共 ${total} 句 / 已配音 ${withAudio} 句 · 点句子播放 · 顶部切换模式`;
+  $('learn-hint').textContent = `共 ${total} 句 / 已配音 ${withAudio} 句 · 点句子即听（首次自动配音） · 顶部切换模式`;
   $('tts-btn').style.display = 'none';
   if (withAudio < total) {
     $('tts-btn').style.display = 'block';
@@ -390,13 +390,25 @@ async function audioURL(s) {
   return r.headers.get('Location');
 }
 
-// playOne 播放单句并返回 Promise（连播顺序 await 用）
+// playOne 播放单句并返回 Promise（连播顺序 await 用）。
+// 未配音的句子点击时自动现场配音（单句 TTS 约 1—2 秒，即点即听）。
 function playOne(s, idx, div) {
   return new Promise(async resolve => {
+    const btn = div ? div.querySelector('.play') : null;
     try {
       stopPlay();
       document.querySelectorAll('.sent').forEach(x => x.classList.remove('now'));
       if (div) div.classList.add('now');
+      if (!(s.audios || []).length) {
+        if (btn) { btn.textContent = '⏳'; btn.classList.add('busy'); }
+        await ensureAudio([s]);
+        if (!(s.audios || []).length) { // 配音失败
+          if (btn) { btn.textContent = '…'; btn.classList.remove('busy'); }
+          if (div) div.classList.remove('now');
+          return resolve();
+        }
+        renderLearn();
+      }
       const url = s._url || await audioURL(s);
       if (!url) { if (div) div.classList.remove('now'); return resolve(); }
       s._url = url; // 预签名 URL（10 分钟内有效，页面级缓存复用）
@@ -405,7 +417,10 @@ function playOne(s, idx, div) {
       playing.onended = fin;
       playing.onerror = fin;
       await playing.play();
-    } catch (e) { if (div) div.classList.remove('now'); playing = null; resolve(); }
+    } catch (e) {
+      if (div) div.classList.remove('now');
+      playing = null; resolve();
+    }
   });
 }
 function stopPlay() { if (playing) { playing.pause(); playing = null; } }
