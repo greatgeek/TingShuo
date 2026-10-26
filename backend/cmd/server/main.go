@@ -109,7 +109,8 @@ func run() error {
 			if dev.Enabled() {
 				devH := dev.NewHandler()
 				sec.Get("/dev/config", devH.Config)
-				sec.Post("/dev/llm", devH.LLMProxy)
+				sec.Post("/dev/llm/start", devH.StartLLM)
+				sec.Get("/dev/llm/poll", devH.PollLLM)
 				sec.Post("/dev/tts", devH.TTSProxy)
 			}
 
@@ -126,9 +127,10 @@ func run() error {
 	})
 
 	// 桌面前端静态托管：优先仓库根的 web/（正式代码库），回退 backend/web/
+	// no-cache：前端迭代期保证浏览器拿到最新 JS/CSS
 	for _, dir := range []string{"../web", "web"} {
 		if _, err := os.Stat(dir); err == nil {
-			r.Handle("/*", http.FileServer(http.Dir(dir)))
+			r.Handle("/*", noCache(http.FileServer(http.Dir(dir))))
 			break
 		}
 	}
@@ -159,4 +161,12 @@ func mustEnv(key string) string {
 		os.Exit(1)
 	}
 	return v
+}
+
+// noCache 静态资源禁缓存中间件（前端迭代期）。
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }

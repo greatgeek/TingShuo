@@ -157,20 +157,45 @@ async function submitWords() {
     }
     genLog('课程就绪 ' + lessonID);
 
-    // 2. LLM 生成材料（经本地开发代理；生产为浏览器 BYOK 直连）
+    // 2. LLM 生成材料（后台任务 + 轮询：刷新页面/网络抖动都不丢进度）
     const prompt = buildPrompt(words);
     genLog('调用大模型生成材料…');
-    $('gen-step').textContent = '大模型写作中（最长约 5 分钟）…';
-    const llmResp = await fetch('/api/v1/dev/llm', {
+    let llmText = '', fullLen = 0, llmErr = '';
+    const t0 = Date.now();
+    $('gen-preview').style.display = 'block';
+    const started = await api('/dev/llm/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
       body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
     });
-    const llmBody = await llmResp.json();
-    if (!llmResp.ok) throw new Error('LLM 生成失败：' + (llmBody?.error?.message || llmResp.status));
-    const content = llmBody.choices?.[0]?.message?.content || '';
-    const out = JSON.parse(largestJSON(content));
-    genLog('材料生成完毕（' + (out.materials || []).length + ' 段）');
+    const taskID = started.task_id;
+    genLog('生成任务已启动（服务端后台执行，刷新页面也不会中断）');
+    // 轮询循环
+    while (true) {
+      await new Promise(r => setTimeout(r, 1000));
+      let st;
+      try {
+        st = await api('/dev/llm/poll?id=' + taskID);
+      } catch (e) {
+        continue; // 网络抖动容忍：继续轮询，服务端任务不受影响
+      }
+      llmText = st.text || ''; fullLen = st.chars || 0;
+      const sec = Math.floor(st.elapsed_ms / 1000);
+      if (fullLen > 0) {
+        $('gen-preview').textContent = '…' + llmText.slice(-150).replace(/\s+/g, ' ');
+      }
+      $('gen-step').textContent =
+        `已等待 ${Math.floor(sec / 60)} 分 ${sec % 60} 秒 · 模型已输出 ${fullLen} 字符`;
+      if (st.err) { llmErr = st.err; break; }
+      if (st.done) break;
+    }
+    if (llmErr) throw new Error('LLM 生成失败：' + llmErr);
+    if (!llmText.trim()) throw new Error('LLM 返回为空，请重试');
+    const genSec = Math.floor((Date.now() - t0) / 1000);
+    genLog(`生成完毕（${fullLen} 字符，耗时 ${genSec} 秒）`);
+    $('gen-step').textContent = `生成完成（${fullLen} 字符 / ${genSec} 秒），正在校验落库…`;
+    $('gen-preview').textContent = '';
+    const out = JSON.parse(largestJSON(llmText));
+    genLog('材料解析成功（' + (out.materials || []).length + ' 段）');
 
     // 3. 校验 + surface → word_id 重映射
     const full = await api('/lessons/' + lessonID);

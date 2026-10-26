@@ -108,3 +108,9 @@ body.no-rt rt { display: none; }
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
   padding: 10px; display: none; white-space: pre-wrap;
 }
+.preview {
+  display: none; text-align: left; font-family: var(--serif); font-size: 12px;
+  color: var(--ink2); line-height: 1.8; max-height: 96px; overflow: hidden;
+  background: var(--surface); border: 1px dashed var(--line); border-radius: 10px;
+  padding: 8px 12px; margin-top: 10px; word-break: break-all;
+}
