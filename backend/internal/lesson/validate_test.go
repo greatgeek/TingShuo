@@ -1,6 +1,7 @@
 package lesson
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -8,30 +9,35 @@ import (
 func mk(surface string) WordInput { return WordInput{Surface: surface} }
 
 func TestValidateWordsCount(t *testing.T) {
-	// 少于 5 个
-	if _, e := ValidateWords([]WordInput{mk("精算"), mk("満員"), mk("預ける")}); e == nil {
-		t.Fatal("3 个词应报 WORD_COUNT_INVALID")
+	// 空词单（全部空 surface）应报错
+	if _, e := ValidateWords([]WordInput{{}, {}}); e == nil {
+		t.Fatal("空词单应报 WORD_COUNT_INVALID")
 	} else if !strings.Contains(e.Code, "WORD_COUNT_INVALID") {
 		t.Fatalf("错误码应为 WORD_COUNT_INVALID，得到 %s", e.Code)
 	}
 
-	// 恰好 5 个（含空行跳过后仍够）
-	words := []WordInput{mk("精算"), mk("満員"), mk("預ける"), {}, mk("精算x"), mk("駅")}
+	// 2026-10-26 需求变更：1 个词也应通过（原下限 5 已取消）
+	if got, e := ValidateWords([]WordInput{mk("精算")}); e != nil || len(got) != 1 {
+		t.Fatalf("1 个词应通过（需求变更：不设学习性下限），得到 %d 个, err=%v", len(got), e)
+	}
+
+	// 含空行跳过后仍计有效词
+	words := []WordInput{mk("精算"), {}, mk("駅")}
 	got, e := ValidateWords(words)
 	if e != nil {
-		t.Fatalf("5 个有效词应通过: %v", e)
+		t.Fatalf("应通过: %v", e)
 	}
-	if len(got) != 5 {
+	if len(got) != 2 {
 		t.Fatalf("空行应被跳过，得到 %d 个", len(got))
 	}
 
-	// 超过 40 个
-	tooMany := make([]WordInput, 41)
+	// 超过防滥用上限（MaxWords=200）
+	tooMany := make([]WordInput, MaxWords+1)
 	for i := range tooMany {
-		tooMany[i] = mk(string(rune('あ' + i)))
+		tooMany[i] = mk(fmt.Sprint(i))
 	}
 	if _, e := ValidateWords(tooMany); e == nil {
-		t.Fatal("41 个词应报错")
+		t.Fatal("超过防滥用上限应报错")
 	}
 }
 

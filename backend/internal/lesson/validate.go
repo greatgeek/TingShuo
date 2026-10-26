@@ -1,4 +1,7 @@
-// 词单校验与规范化（FR-1.5 预检：词数 5—40、重复去重；Q-002：reading 空串方案）。
+// 词单校验与规范化（FR-1.5 预检：去重；Q-002：reading 空串方案）。
+//
+// 2026-10-26 需求变更（用户决策）：词数不再设学习性下限——1 个词也可以提交生成；
+// 仅保留防滥用上限 MaxWords。原「不足 5 词报错」改为软性建议（前端文案）。
 package lesson
 
 import (
@@ -8,10 +11,10 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 )
 
-// MinWords / MaxWords 是服务端词数硬边界。
+// MinWords / MaxWords：至少 1 词；MaxWords 仅为防滥用上限（超大粘贴）。
 const (
-	MinWords = 5
-	MaxWords = 40
+	MinWords = 1
+	MaxWords = 200
 )
 
 // WordInput 是 POST /lessons 的单词输入。

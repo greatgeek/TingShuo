@@ -75,7 +75,12 @@ async function loadHome() {
 $('words-input').addEventListener('input', countWords);
 function countWords() {
   const n = parseWords($('words-input').value).length;
-  $('words-count').textContent = n + ' 词' + (n < 5 || n > 40 ? '（需 5—40）' : '');
+  let tip = '';
+  if (n === 0) tip = '（还没输入）';
+  else if (n === 1) tip = '（一个词也可以生成）';
+  else if (n < 5) tip = '（词少也可以生成）';
+  else if (n > 40) tip = '（词较多，生成与学习时间会变长）';
+  $('words-count').textContent = n + ' 词' + tip;
 }
 function parseWords(text) {
   const out = [];
@@ -125,7 +130,8 @@ function genLog(msg) {
 async function submitWords() {
   hideErr('create-err'); hideErr('gen-err');
   const words = parseWords($('words-input').value);
-  if (words.length < 5 || words.length > 40) return showErr('create-err', '词数需 5—40 个');
+  if (words.length === 0) return showErr('create-err', '请至少输入 1 个词');
+  if (words.length > 200) return showErr('create-err', '词数过多（上限 200，防误粘贴超大文本）');
   $('gen-retry').style.display = 'none'; $('gen-log').style.display = 'none'; $('gen-log').textContent = '';
   $('gen-title').textContent = '材料生成中';
   $('gen-note').innerHTML = '正在用大模型围绕你的词单写对话和短文，通常需要 2—5 分钟。<br>请不要关闭本页。';
