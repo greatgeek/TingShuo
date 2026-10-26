@@ -390,44 +390,57 @@ async function audioURL(s) {
   return r.headers.get('Location');
 }
 
-async function playSentence(s, idx, div) {
-  try {
-    stopPlay();
-    document.querySelectorAll('.sent').forEach(x => x.classList.remove('now'));
-    div.classList.add('now');
-    let url = s._url || await audioURL(s);
-    if (!url) return;
-    s._url = url; // 预签名 URL（10 分钟内有效，页面级缓存复用）
-    playing = new Audio(url);
-    playing.onended = () => { div.classList.remove('now'); playing = null; };
-    playing.play();
-  } catch (e) { alert(e.message); }
+// playOne 播放单句并返回 Promise（连播顺序 await 用）
+function playOne(s, idx, div) {
+  return new Promise(async resolve => {
+    try {
+      stopPlay();
+      document.querySelectorAll('.sent').forEach(x => x.classList.remove('now'));
+      if (div) div.classList.add('now');
+      const url = s._url || await audioURL(s);
+      if (!url) { if (div) div.classList.remove('now'); return resolve(); }
+      s._url = url; // 预签名 URL（10 分钟内有效，页面级缓存复用）
+      playing = new Audio(url);
+      const fin = () => { if (div) div.classList.remove('now'); playing = null; resolve(); };
+      playing.onended = fin;
+      playing.onerror = fin;
+      await playing.play();
+    } catch (e) { if (div) div.classList.remove('now'); playing = null; resolve(); }
+  });
 }
 function stopPlay() { if (playing) { playing.pause(); playing = null; } }
 
+async function playSentence(s, idx, div) { await playOne(s, idx, div); }
+
 async function playAll() {
+  const btn = document.querySelector('#sc-learn .row2 .btn.ghost');
   const sents = (LESSON.materials[CUR_MAT] || {}).sentences || [];
+  const need = sents.filter(s => !(s.audios || []).length).length;
+  // 连播前自动补齐配音（不再无声跳过）
+  if (need > 0) {
+    const old = btn.textContent;
+    btn.disabled = true;
+    await ensureAudio(sents, (d, n) => (btn.textContent = `配音中 ${d}/${n}…`));
+    btn.disabled = false; btn.textContent = old;
+  }
+  if (playing) stopPlay();
   for (let i = 0; i < sents.length; i++) {
-    const s = sents[i];
-    if (!(s.audios || []).length) continue;
     const div = document.querySelector(`.sent[data-idx="${i}"]`);
-    await new Promise(res => {
-      playSentence(s, i, div);
-      const wait = setInterval(() => { if (!playing) { clearInterval(wait); res(); } }, 300);
-    });
+    await playOne(sents[i], i, div);
   }
 }
 
 // ============ 批量配音 ============
-async function genAllAudio() {
-  const btn = $('tts-btn'); btn.disabled = true;
+// ensureAudio 为传入句子中未配音者生成音频（check → TTS → presign → PUT → register），
+// 返回 {ok, fail}；onProgress(done, total) 供按钮文案更新。
+async function ensureAudio(sents, onProgress) {
   const voice = $('sel-voice').value;
-  const all = (LESSON.materials || []).flatMap(m => m.sentences);
   let done = 0, ok = 0, fail = 0;
-  btn.textContent = `配音中 0/${all.length}…`;
-  for (const s of all) {
+  const total = sents.length;
+  for (const s of sents) {
     if ((s.audios || []).length) { done++; ok++; continue; }
     try {
+      // 缓存判定（服务端全局去重，AC-3.1：同句同参数零重复调用）
       const ck = await api('/audio/check', {
         method: 'POST',
         body: JSON.stringify({
@@ -458,12 +471,19 @@ async function genAllAudio() {
       ok++;
     } catch (e) { fail++; console.error(e); }
     done++;
-    btn.textContent = `配音中 ${done}/${all.length}…`;
+    if (onProgress) onProgress(done, total);
   }
+  return { ok, fail };
+}
+
+async function genAllAudio() {
+  const btn = $('tts-btn'); btn.disabled = true;
+  const all = (LESSON.materials || []).flatMap(m => m.sentences);
+  const r = await ensureAudio(all, (d, n) => (btn.textContent = `配音中 ${d}/${n}…`));
   btn.disabled = false;
   LESSON = await api('/lessons/' + LESSON.lesson.id);
   renderLearn();
-  alert(`配音完成：成功 ${ok} / 失败 ${fail}（失败句可重新点击「为全部句子配音」补齐）`);
+  alert(`配音完成：成功 ${r.ok} / 失败 ${r.fail}（失败句可重新点击补齐）`);
 }
 
 // ============ 启动 ============
