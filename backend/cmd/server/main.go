@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
+	"github.com/greatgeek/TingShuo/backend/internal/dev"
 	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/internal/lesson"
@@ -77,6 +78,7 @@ func run() error {
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
+	r.Use(dev.Cors) // 本地开发 CORS（试用页同源时无感，保留给分离开发场景）
 
 	r.Get("/healthz", func(w http.ResponseWriter, req *http.Request) {
 		if err := pool.Ping(req.Context()); err != nil {
@@ -103,6 +105,14 @@ func run() error {
 			sec.Post("/audio/register", ttsH.Register)
 			sec.Get("/audio/{id}/file", ttsH.File)
 
+			// 本地开发试用代理（生产 DEV_PROXY=false 关闭，见 internal/dev 注释）
+			if dev.Enabled() {
+				devH := dev.NewHandler()
+				sec.Get("/dev/config", devH.Config)
+				sec.Post("/dev/llm", devH.LLMProxy)
+				sec.Post("/dev/tts", devH.TTSProxy)
+			}
+
 			sec.Post("/lessons", lessonH.Create)
 			sec.Get("/lessons", lessonH.List)
 			sec.Get("/lessons/{id}", lessonH.Get)
@@ -114,6 +124,11 @@ func run() error {
 			sec.Post("/reviews/{id}/master", reviewH.Master)
 		})
 	})
+
+	// 本地试用页静态托管（backend/web/；生产镜像不打该目录即自然 404）
+	if _, err := os.Stat("web"); err == nil {
+		r.Handle("/*", http.FileServer(http.Dir("web")))
+	}
 
 	srv := &http.Server{
 		Addr:              listen,

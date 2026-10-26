@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>听说 TingShuo · 试用版</title>
+<style>
+  :root { --bg:#FAFAF7; --surface:#FFF; --ink:#1C1C1A; --ink2:#6B6B66; --line:#E6E4DE;
+          --accent:#C8442E; --soft:#C8442E14; --ok:#3E7A4E;
+          --serif:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+          --sans:-apple-system,"Segoe UI","Noto Sans JP","PingFang SC",sans-serif; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--ink); font-family:var(--sans);
+         min-height:100vh; display:flex; justify-content:center; }
+  .frame { width:100%; max-width:520px; min-height:100vh; display:flex; flex-direction:column;
+           border-left:1px solid var(--line); border-right:1px solid var(--line); background:var(--bg); }
+  header { padding:14px 18px; border-bottom:1px solid var(--line); display:flex;
+           justify-content:space-between; align-items:center; }
+  header .t { font-size:15px; font-weight:700; }
+  header .t em { color:var(--accent); font-style:normal; }
+  header .s { font-size:11px; color:var(--ink2); }
+  .screen { display:none; flex:1; flex-direction:column; padding:16px; }
+  .screen.on { display:flex; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:14px;
+          padding:16px; margin-bottom:12px; }
+  h2 { font-size:16px; margin-bottom:10px; }
+  .hint { font-size:12px; color:var(--ink2); line-height:1.8; }
+  input, textarea, select { width:100%; font-size:14px; padding:10px; border:1px solid var(--line);
+          border-radius:10px; background:var(--surface); font-family:var(--sans); }
+  textarea { font-family:var(--serif); font-size:14px; height:180px; resize:vertical; }
+  .btn { display:block; width:100%; padding:13px; border:none; border-radius:12px;
+         background:var(--ink); color:#fff; font-size:15px; cursor:pointer; margin-top:12px; }
+  .btn.accent { background:var(--accent); }
+  .btn.ghost { background:none; color:var(--ink2); border:1px solid var(--line); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .row2 { display:flex; gap:10px; }
+  .err { color:var(--accent); font-size:13px; margin-top:8px; display:none; line-height:1.6; }
+
+  /* 学习屏 */
+  .tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .tabs button { font-size:13px; padding:7px 14px; border-radius:999px; cursor:pointer;
+                 border:1px solid var(--line); background:var(--surface); color:var(--ink2); }
+  .tabs button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  .modebar { display:flex; gap:8px; margin-bottom:10px; }
+  .modebar button { flex:1; font-size:12px; padding:8px; border-radius:10px; cursor:pointer;
+                    border:1px solid var(--line); background:var(--surface); color:var(--ink2); }
+  .modebar button.on { color:var(--accent); border-color:var(--accent); }
+  .sents { display:flex; flex-direction:column; gap:2px; }
+  .sent { display:flex; align-items:center; gap:10px; padding:10px; border-radius:10px; cursor:pointer; }
+  .sent:hover { background:var(--soft); }
+  .sent.now { background:var(--soft); box-shadow:inset 3px 0 0 var(--accent); }
+  .sent .spk { width:34px; font-size:11px; color:var(--ink2); flex:none; }
+  .sent .txt { font-family:var(--serif); font-size:15px; line-height:2; flex:1; }
+  .sent .zh { display:none; font-size:12px; color:var(--ink2); margin-top:4px; width:100%; }
+  .sent.showzh .zh { display:block; }
+  .sent .wrap { flex:1; }
+  .sent .play { width:34px; height:34px; border-radius:50%; border:1px solid var(--line);
+                background:var(--surface); cursor:pointer; flex:none; font-size:12px; }
+  .sent .play.has { background:var(--ink); color:#fff; border:none; }
+  .sent .play.busy { background:var(--soft); color:var(--accent); border:1px solid var(--accent); }
+  ruby rt { font-size:11px; color:var(--ink2); font-family:var(--sans); letter-spacing:0; }
+  .no-rt rt { display:none; }
+  .bar { height:8px; background:var(--line); border-radius:6px; overflow:hidden; margin:10px 0; }
+  .bar i { display:block; height:100%; background:var(--accent); width:0; transition:width .3s; }
+  .gen-note { text-align:center; }
+  .spinner { width:36px; height:36px; border:3px solid var(--line); border-top-color:var(--accent);
+             border-radius:50%; margin:18px auto; animation:spin 1s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .bignum { font-size:28px; font-weight:700; text-align:center; margin:8px 0; }
+  .status-chip { display:inline-block; font-size:12px; padding:4px 12px; border-radius:999px;
+                 border:1px solid var(--line); color:var(--ink2); margin-bottom:8px; }
+  .status-chip.ready { color:var(--ok); border-color:var(--ok); }
+  .log { font-size:12px; color:var(--ink2); line-height:1.9; max-height:150px; overflow:auto;
+         background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:10px; display:none; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <header>
+    <span class="t">听说 <em>TingShuo</em></span>
+    <span class="s" id="userchip">试用版（本地开发）</span>
+  </header>
+
+  <!-- 登录 -->
+  <section class="screen on" id="sc-login">
+    <div class="card">
+      <h2>登录 / 注册</h2>
+      <p class="hint">邮箱 + 密码。新邮箱自动注册，老邮箱直接登录。</p>
+      <div style="margin-top:10px"><input id="login-email" placeholder="邮箱，如 test@dev" autocomplete="off"></div>
+      <div style="margin-top:8px"><input id="login-pass" type="password" placeholder="密码（≥6 位）"></div>
+      <button class="btn accent" onclick="doLogin()">进入</button>
+      <div class="err" id="login-err"></div>
+    </div>
+  </section>
+
+  <!-- 首页/状态 -->
+  <section class="screen" id="sc-home">
+    <div class="card">
+      <h2>今日课程</h2>
+      <span class="status-chip" id="lesson-chip">未创建</span>
+      <div class="bignum" id="lesson-date">—</div>
+      <p class="hint" id="lesson-desc">还没有今天的课程。</p>
+      <button class="btn accent" id="home-main-btn" onclick="go('create')">创建今日课程</button>
+    </div>
+    <div class="card">
+      <h2>试用流程</h2>
+      <p class="hint">① 粘贴今天的词单（5—40 词）→ ② AI 生成材料（约 2—5 分钟）→
+      ③ 一键配音（Azure TTS，逐句生成）→ ④ 点句播放、看振り仮名跟读。</p>
+    </div>
+  </section>
+
+  <!-- 词单 -->
+  <section class="screen" id="sc-create">
+    <div class="card">
+      <h2>今天的词单</h2>
+      <p class="hint">每行一词：<code>单词｜读音｜词性｜中文</code>（读音可空）。重点词标 <code>★</code>（材料中出现 2 次）。</p>
+      <textarea id="words-input" placeholder="精算｜せいさん｜名詞｜一起结账 ★&#10;駅｜えき｜名詞｜车站"></textarea>
+      <div style="margin-top:8px" class="hint" id="words-count">0 词</div>
+      <div class="row2" style="margin-top:10px">
+        <select id="sel-level"><option>N5</option><option selected>N4</option><option>N3</option></select>
+        <select id="sel-voice"><option value="Nanami" selected>Nanami（女声）</option><option value="Keita">Keita（男声）</option></select>
+      </div>
+      <button class="btn accent" onclick="submitWords()">提交并生成材料</button>
+      <button class="btn ghost" onclick="fillSample()">填入示例 20 词</button>
+      <div class="err" id="create-err"></div>
+    </div>
+  </section>
+
+  <!-- 生成中 -->
+  <section class="screen" id="sc-gen">
+    <div class="card gen-note">
+      <h2 id="gen-title">材料生成中</h2>
+      <div class="spinner"></div>
+      <p class="hint" id="gen-note">正在用大模型围绕你的词单写对话和短文，通常需要 2—5 分钟。<br>请不要关闭本页。</p>
+      <div class="bar" id="gen-bar" style="display:none"><i></i></div>
+      <p class="hint" id="gen-step"></p>
+      <div class="log" id="gen-log"></div>
+      <div class="err" id="gen-err"></div>
+      <button class="btn ghost" style="display:none" id="gen-retry" onclick="go('create')">返回修改词单</button>
+    </div>
+  </section>
+
+  <!-- 学习 -->
+  <section class="screen" id="sc-learn">
+    <div class="modebar">
+      <button id="md-normal" class="on" onclick="setMode('normal')">跟读</button>
+      <button id="md-blind" onclick="setMode('blind')">盲听</button>
+      <button id="md-zh" onclick="setMode('zh')">译文</button>
+      <button id="md-rt" class="on" onclick="toggleRT()">假名</button>
+    </div>
+    <div class="tabs" id="mat-tabs"></div>
+    <div class="row2" style="margin-bottom:10px">
+      <button class="btn ghost" style="margin-top:0" onclick="playAll()">▶ 整段连播</button>
+      <button class="btn accent" style="margin-top:0" id="tts-btn" onclick="genAllAudio()">为全部句子配音</button>
+    </div>
+    <div class="sents" id="sents"></div>
+    <p class="hint" id="learn-hint" style="margin-top:12px"></p>
+  </section>
+</div>
+
+<script>
+'use strict';
+// ============ 基础 ============
+const $ = id => document.getElementById(id);
+const tokenKey = 'ts_token';
+let TOKEN = localStorage.getItem(tokenKey) || '';
+let CFG = {};        // /dev/config 结果
+let LESSON = null;   // 当前课程全量
+let CUR_MAT = 0;     // 当前材料 tab
+let playing = null;  // 当前 audio
+
+function go(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
+  $('sc-' + name).classList.add('on');
+}
+function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.display = 'block'; }
+function hideErr(id) { $(id).style.display = 'none'; }
+
+async function api(path, opts = {}) {
+  const r = await fetch('/api/v1' + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(TOKEN ? {Authorization: 'Bearer ' + TOKEN} : {}), ...(opts.headers || {}) },
+  });
+  const body = await r.json().catch(() => ({}));
+  if (r.status >= 300) throw new Error(body?.error?.message || ('HTTP ' + r.status));
+  return body;
+}
+
+// ============ 登录 ============
+async function doLogin() {
+  hideErr('login-err');
+  const email = $('login-email').value.trim(), pass = $('login-pass').value;
+  if (!email || pass.length < 6) return showErr('login-err', '请输入邮箱与至少 6 位密码');
+  for (const path of ['/auth/register', '/auth/login']) {
+    try {
+      const r = await api(path, {method: 'POST', body: JSON.stringify({email, password: pass, nickname: '试用'})});
+      TOKEN = r.access_token; localStorage.setItem(tokenKey, TOKEN);
+      return afterLogin();
+    } catch (e) {
+      if (path === '/auth/login') return showErr('login-err', e.message);
+    }
+  }
+}
+async function afterLogin() {
+  $('userchip').textContent = $('login-email').value.trim();
+  CFG = await api('/dev/config').catch(() => ({}));
+  await loadHome();
+}
+async function loadHome() {
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const list = await api(`/lessons?from=${today}&to=${today}`);
+    const it = (list.lessons || [])[0];
+    if (it && it.status === 'ready') { LESSON = await api('/lessons/' + it.lesson_id); go('learn'); renderLearn(); }
+    else if (it) { window._draftLesson = it.lesson_id; go('create'); }
+    else go('create');
+  } catch (e) { showErr('home-err', e.message); go('create'); }
+}
+
+// ============ 词单 ============
+$('words-input').addEventListener('input', countWords);
+function countWords() {
+  const n = parseWords($('words-input').value).length;
+  $('words-count').textContent = n + ' 词' + (n < 5 || n > 40 ? '（需 5—40）' : '');
+}
+function parseWords(text) {
+  const out = [];
+  for (const line of text.split('\n')) {
+    const s = line.trim();
+    if (!s) continue;
+    const isKey = s.includes('★');
+    const parts = s.replace('★', '').split(/[｜|\t]/).map(x => x.trim());
+    if (!parts[0]) continue;
+    out.push({surface: parts[0], reading: parts[1] || '', pos: parts[2] || '',
+              meaning: parts[3] || '', is_key: isKey});
+  }
+  return out;
+}
+function fillSample() {
+  $('words-input').value =
+`精算｜せいさん｜名詞｜一起结账 ★
+預ける｜あずける｜動詞｜寄存；存放 ★
+満員｜まんいん｜名詞｜满座
+駅｜えき｜名詞｜车站
+切符｜きっぷ｜名詞｜票
+掃除｜そうじ｜名詞｜清扫
+洗濯｜せんたく｜名詞｜洗衣服
+予約｜よやく｜名詞｜预约
+用意｜ようい｜名詞｜准备
+届く｜とどく｜動詞｜送达
+選ぶ｜えらぶ｜動詞｜选择
+疲れる｜つかれる｜動詞｜疲惫
+寄る｜よる｜動詞｜顺路去
+揃う｜そろう｜動詞｜齐全
+貯金｜ちょきん｜名詞｜存钱
+趣味｜しゅみ｜名詞｜爱好
+頑張る｜がんばる｜動詞｜坚持、加油
+家賃｜やちん｜名詞｜房租
+説明｜せつめい｜名詞｜说明
+替わる｜かわる｜動詞｜更换`;
+  countWords();
+}
+
+// ============ 提交 + 生成 ============
+function genLog(msg) {
+  const el = $('gen-log'); el.style.display = 'block';
+  el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + msg + '\n' + el.textContent;
+}
+async function submitWords() {
+  hideErr('create-err'); hideErr('gen-err');
+  const words = parseWords($('words-input').value);
+  if (words.length < 5 || words.length > 40) return showErr('create-err', '词数需 5—40 个');
+  $('gen-retry').style.display = 'none'; $('gen-log').style.display = 'none'; $('gen-log').textContent = '';
+  $('gen-title').textContent = '材料生成中'; $('gen-note').innerHTML = '正在用大模型围绕你的词单写对话和短文，通常需要 2—5 分钟。<br>请不要关闭本页。';
+  go('gen');
+  try {
+    // 1. 建课（同日复用 draft）
+    const today = new Date().toISOString().slice(0, 10);
+    let lessonID;
+    try {
+      const r = await api('/lessons', {method: 'POST', body: JSON.stringify({
+        lesson_date: today, words,
+        params: {scenes: ['便利店', '车站', '家'], level: $('sel-level').value}})});
+      lessonID = r.lesson_id;
+    } catch (e) {
+      if (String(e.message).includes('已存在')) {
+        const list = await api(`/lessons?from=${today}&to=${today}`);
+        lessonID = list.lessons[0].lesson_id;
+      } else throw e;
+    }
+    genLog('课程就绪 ' + lessonID);
+
+    // 2. LLM 生成材料（经本地开发代理；生产为浏览器 BYOK 直连）
+    const prompt = buildPrompt(words);
+    genLog('调用大模型生成材料…');
+    $('gen-step').textContent = '大模型写作中（最长约 5 分钟）…';
+    const llmResp = await fetch('/api/v1/dev/llm', {method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({model: CFG.llm_model, messages: [{role: 'user', content: prompt}]})});
+    const llmBody = await llmResp.json();
+    if (!llmResp.ok) throw new Error('LLM 生成失败：' + (llmBody?.error?.message || llmResp.status));
+    const content = llmBody.choices?.[0]?.message?.content || '';
+    const out = JSON.parse(largestJSON(content));
+    genLog('材料生成完毕（' + (out.materials || []).length + ' 段）');
+
+    // 3. 校验 + surface → word_id 重映射
+    const full = await api('/lessons/' + lessonID);
+    const idBySurface = {};
+    for (const w of full.words) idBySurface[w.surface] = w.id;
+    const occ = {};
+    for (const [k, v] of Object.entries(out.word_occurrence || {}))
+      occ[idBySurface[k] || k] = v;
+    out.word_occurrence = occ;
+    // 本地预检（与服务端一致）
+    const problems = validateLocally(out, full.words);
+    if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
+    genLog('校验通过，上传落库…');
+
+    // 4. 上传
+    const up = await api(`/lessons/${lessonID}/materials`, {method: 'POST', body: JSON.stringify(out)});
+    genLog('落库成功 status=' + up.status + (up.warnings?.length ? '（注音警告 ' + up.warnings.length + ' 句）' : ''));
+
+    LESSON = await api('/lessons/' + lessonID);
+    go('learn'); renderLearn();
+  } catch (e) {
+    showErr('gen-err', e.message);
+    $('gen-retry').style.display = 'block';
+    $('gen-title').textContent = '生成失败';
+  }
+}
+
+function validateLocally(out, words) {
+  const problems = [];
+  const sids = new Set();
+  for (const m of out.materials || []) {
+    for (const s of m.sentences || []) sids.add(s.id);
+    const n = (m.sentences || []).length;
+    if (n < 8 || n > 12) problems.push(`材料 ${m.id} 句数 ${n} 超出 8—12`);
+  }
+  for (const w of words) {
+    const occ = (out.word_occurrence || {})[w.id];
+    if (!occ) { problems.push(`词 ${w.surface} 未在复现表交代`); continue; }
+    const list = Array.isArray(occ) ? occ : (occ.sentences || []);
+    const skipped = typeof occ === 'string' && occ.startsWith('skipped');
+    if (!skipped && list.length === 0) problems.push(`词 ${w.surface} 复现列表为空`);
+    if (!skipped && w.is_key && list.length < 2) problems.push(`重点词 ${w.surface} 仅出现 1 次（需 2 次）`);
+  }
+  return problems;
+}
+
+function buildPrompt(words) {
+  const lines = words.map(w => `${w.surface}｜${w.reading || '—'}｜${w.meaning}${w.is_key ? '｜★重点：出现 2 次' : ''}`);
+  return `你是日语听说学习材料的编写专家。请为下面的词汇表生成一份完整的 JSON 材料包。
+
+要求：
+- 难度贴合指定水平，全部句子用です・ます体，自然、贴近日常生活
+- 每个词都必须自然地出现在至少一个句子里；确实不适合场景时才允许标 "skipped: 原因"
+- 生成恰好 2 段材料：
+  1. id=m1，type=dialogue，场景「コンビニ」，8—10 句，speaker 用 A/B 交替，role_a=店員，role_b=客
+  2. id=m2，type=passage，主题「休日の家事」，8—10 句独白，speaker=独白
+- 句子 id 用 s1、s2、s3…（跨材料顺序编号）；sort_order 从 1 开始
+- 每句包含 text（日语）、kana（整句假名读音）、translation（中文翻译）
+- qa_items 恰好 5 个（prompt、answer、prompt_translation）
+- substitution_items 恰好 5 个（word_id 用词的 surface、prompt_zh、answer）
+- word_occurrence：key 是词的 surface，value 是句子 id 数组（如 ["s1","s3"]）或 "skipped: 原因"
+
+词汇表（surface｜读音｜中文｜标记）：
+${lines.join('\n')}
+
+严格按如下 JSON 结构输出（不要 markdown 围栏、不要解释）：
+{"materials":[{"id":"m1","type":"dialogue","scene":"...","title":"...","role_a":"店員","role_b":"客","sort_order":1,"sentences":[{"id":"s1","sort_order":1,"speaker":"A","text":"...","kana":"...","translation":"...","para_no":0}]}],"qa_items":[{"prompt":"...","answer":"...","prompt_translation":"..."}],"substitution_items":[{"word_id":"精算","prompt_zh":"...","answer":"..."}],"word_occurrence":{"精算":["s1","s3"]}}`;
+}
+
+// 最大平衡 JSON 块提取（推理模型可能混入思考文本）
+function largestJSON(s) {
+  let best = '';
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== '{') continue;
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < s.length; j++) {
+      const c = s[j];
+      if (esc) { esc = false; continue; }
+      if (inStr) { if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) {
+        const cand = s.slice(i, j + 1);
+        if (cand.length > best.length) { try { JSON.parse(cand); best = cand; } catch {} }
+        break; } }
+    }
+  }
+  if (best) return best;
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  return s.slice(a, b + 1);
+}
+
+// ============ 学习屏 ============
+function rubyHTML(tokens) {
+  if (!Array.isArray(tokens) || !tokens.length) return '';
+  return tokens.map(([w, r]) => (r && /[一-龯]/.test(w)) ? `<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>` : esc(w)).join('');
+}
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderLearn() {
+  const mats = LESSON.materials || [];
+  const tabs = $('mat-tabs'); tabs.innerHTML = '';
+  mats.forEach((m, i) => {
+    const b = document.createElement('button');
+    b.textContent = (m.title || m.scene || ('材料 ' + (i + 1)));
+    b.className = i === CUR_MAT ? 'on' : '';
+    b.onclick = () => { CUR_MAT = i; renderLearn(); };
+    tabs.appendChild(b);
+  });
+  const m = mats[CUR_MAT] || {sentences: []};
+  const box = $('sents'); box.innerHTML = '';
+  m.sentences.forEach((s, idx) => {
+    const has = (s.audios || []).length > 0;
+    const div = document.createElement('div');
+    div.className = 'sent'; div.dataset.idx = idx;
+    div.innerHTML = `
+      <span class="spk">${esc(s.speaker || '')}</span>
+      <div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
+      <div class="zh">${esc(s.translation || '')}</div></div>
+      <button class="play ${has ? 'has' : ''}" title="${has ? '播放' : '未配音'}">${has ? '▶' : '…'}</button>`;
+    div.onclick = () => playSentence(s, idx, div);
+    box.appendChild(div);
+  });
+  const total = mats.reduce((n, x) => n + x.sentences.length, 0);
+  const withAudio = mats.reduce((n, x) => n + x.sentences.filter(s => (s.audios || []).length).length, 0);
+  $('learn-hint').textContent = `共 ${total} 句 / 已配音 ${withAudio} 句 · 点句子播放 · 顶部切换模式`;
+  $('tts-btn').style.display = withAudio >= total ? 'none' : 'block';
+  if (withAudio >= total) $('tts-btn').textContent = '配音完成';
+  // 「今日已完成」提示
+  const wc = LESSON.words || [];
+  if (wc.length) $('lesson-desc') && ($('lesson-desc').textContent = `${wc.length} 词`);
+}
+
+function setMode(mode) {
+  const box = $('sents');
+  const blind = mode === 'blind', zh = mode === 'zh';
+  box.classList.toggle('no-rt', blind);
+  document.querySelectorAll('#sents .txt').forEach(el => el.style.filter = blind ? 'blur(6px)' : 'none');
+  document.querySelectorAll('#sents .sent').forEach(el => el.classList.toggle('showzh', zh));
+  $('md-normal').classList.toggle('on', !blind && !zh);
+  $('md-blind').classList.toggle('on', blind);
+  $('md-zh').classList.toggle('on', zh);
+  $('md-rt').classList.toggle('on', !blind);
+}
+function toggleRT() {
+  const off = document.body.classList.toggle('no-rt');
+  $('md-rt').classList.toggle('on', !off);
+}
+
+async function audioURL(s) {
+  const a = (s.audios || [])[0];
+  if (!a) return null;
+  const r = await fetch('/api/v1/audio/' + a.id + '/file', {redirect: 'manual', headers: {Authorization: 'Bearer ' + TOKEN}});
+  if (r.status !== 302) {
+    const loc = r.headers.get('Location');
+    if (loc) return loc;
+    throw new Error('音频 302 失败 HTTP ' + r.status);
+  }
+  return r.headers.get('Location');
+}
+async function playSentence(s, idx, div) {
+  try {
+    stopPlay();
+    document.querySelectorAll('.sent').forEach(x => x.classList.remove('now'));
+    div.classList.add('now');
+    let url = s._url || await audioURL(s);
+    if (!url) return;
+    s._url = url;
+    playing = new Audio(url);
+    playing.onended = () => { div.classList.remove('now'); playing = null; };
+    playing.play();
+  } catch (e) { alert(e.message); }
+}
+function stopPlay() { if (playing) { playing.pause(); playing = null; } }
+
+async function playAll() {
+  const sents = (LESSON.materials[CUR_MAT] || {}).sentences || [];
+  for (let i = 0; i < sents.length; i++) {
+    const div = document.querySelector(`.sent[data-idx="${i}"]`);
+    if (!(sents[i].audios || []).length) continue;
+    await new Promise(res => playSentence(sents[i], i, div).then(() => {
+      playing.addEventListener('ended', res);
+      playing.addEventListener('pause', res);
+    }).catch(res));
+  }
+}
+
+// ============ 批量配音 ============
+async function genAllAudio() {
+  const btn = $('tts-btn'); btn.disabled = true;
+  const voice = $('sel-voice').value;
+  const all = (LESSON.materials || []).flatMap(m => m.sentences);
+  $('gen-step') && ($('gen-step').textContent = '');
+  let done = 0, ok = 0, fail = 0;
+  btn.textContent = `配音中 0/${all.length}…`;
+  for (const s of all) {
+    if ((s.audios || []).length) { done++; ok++; continue; }
+    try {
+      // 缓存判定（服务端全局去重）
+      const ck = await api('/audio/check', {method: 'POST', body: JSON.stringify({
+        items: [{sentence_id: s.id, text: s.text, voice, rate: 1.0, style: '', engine_ver: 'azure-v1'}]})});
+      let item = ck.items[0];
+      if (item.exists) { s.audios = [{id: item.audio_id}]; done++; ok++; btn.textContent = `配音中 ${done}/${all.length}（缓存命中）`; continue; }
+      // 生成（本地开发经 /dev/tts；生产为浏览器 BYOK 直连 Azure）
+      const mp3 = await fetch('/api/v1/dev/tts', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: s.text, voice, rate: 1.0})});
+      if (!mp3.ok) throw new Error('TTS HTTP ' + mp3.status);
+      const blob = await mp3.blob();
+      // 预签名直传
+      const pr = await api('/audio/presign', {method: 'POST', body: JSON.stringify({cache_key: item.cache_key})});
+      const up = await fetch(pr.upload_url, {method: 'PUT', body: blob, headers: {'Content-Type': 'audio/mpeg'}});
+      if (!up.ok) throw new Error('上传 HTTP ' + up.status);
+      const reg = await api('/audio/register', {method: 'POST', body: JSON.stringify({
+        sentence_id: s.id, cache_key: item.cache_key, voice, rate: 1.0, style: '',
+        engine_ver: 'azure-v1', duration_ms: 0, size_bytes: blob.size})});
+      s.audios = [{id: reg.audio_id}];
+      ok++;
+    } catch (e) { fail++; console.error(e); }
+    done++;
+    btn.textContent = `配音中 ${done}/${all.length}…`;
+  }
+  btn.disabled = false;
+  LESSON = await api('/lessons/' + LESSON.lesson.id);
+  renderLearn();
+  alert(`配音完成：成功 ${ok} / 失败 ${fail}（失败句可重新点击「为全部句子配音」补齐）`);
+}
+
+// ============ 启动 ============
+if (TOKEN) afterLogin(); else go('login');
+</script>
+</body>
+</html>

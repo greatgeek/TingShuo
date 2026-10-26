@@ -26,6 +26,7 @@ func Forbidden(msg string) *APIError        { return NewError(403, "FORBIDDEN", 
 func NotFound(msg string) *APIError         { return NewError(404, "NOT_FOUND", msg) }
 func Conflict(code, msg string) *APIError   { return NewError(409, code, msg) }
 func Internal(msg string) *APIError         { return NewError(500, "INTERNAL", msg) }
+func BadGateway(msg string) *APIError       { return NewError(502, "BAD_GATEWAY", msg) }
 
 // WriteJSON 输出 JSON 响应。
 func WriteJSON(w http.ResponseWriter, status int, v any) {
