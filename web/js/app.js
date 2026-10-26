@@ -10,6 +10,7 @@ let TOKEN = localStorage.getItem(tokenKey) || '';
 let CFG = {};        // /dev/config 结果
 let LESSON = null;   // 当前课程全量
 let CUR_MAT = 0;     // 当前材料 tab
+let CUR_MODE = 'normal'; // 跟读/盲听/译文（重渲染后需恢复）
 let playing = null;  // 当前 audio
 
 function go(name) {
@@ -41,7 +42,11 @@ async function doLogin() {
   if (!email || pass.length < 6) return showErr('login-err', '请输入邮箱与至少 6 位密码');
   for (const path of ['/auth/register', '/auth/login']) {
     try {
-      const r = await api(path, { method: 'POST', body: JSON.stringify({ email, password: pass, nickname: '试用' }) });
+      // 登录 body 不能带 nickname（注册专属字段，服务端严格解析会 400）
+      const payload = path === '/auth/login'
+        ? { email, password: pass }
+        : { email, password: pass, nickname: '试用' };
+      const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
       TOKEN = r.access_token; localStorage.setItem(tokenKey, TOKEN);
       return afterLogin();
     } catch (e) {
@@ -358,23 +363,49 @@ function renderLearn() {
     div.onclick = () => playSentence(s, idx, div);
     box.appendChild(div);
   });
+  applyMode();
+  updateLearnHint();
+}
+
+// updateLearnHint 只刷新底部统计与配音按钮显隐（不碰句子 DOM，模式状态安全）
+function updateLearnHint() {
+  const mats = LESSON.materials || [];
   const total = mats.reduce((n, x) => n + x.sentences.length, 0);
   const withAudio = mats.reduce((n, x) => n + x.sentences.filter(s => (s.audios || []).length).length, 0);
   $('learn-hint').textContent = `共 ${total} 句 / 已配音 ${withAudio} 句 · 点句子即听（首次自动配音） · 顶部切换模式`;
-  $('tts-btn').style.display = 'none';
-  if (withAudio < total) {
-    $('tts-btn').style.display = 'block';
-    $('tts-btn').textContent = '为全部句子配音';
-  }
+  const btn = $('tts-btn');
+  btn.style.display = withAudio < total ? 'block' : 'none';
+  if (btn.style.display === 'block') btn.textContent = '为全部句子配音';
+}
+
+// refreshSentenceButtons 局部同步播放按钮三态（不重建列表，模式/译文/高亮不丢）
+function refreshSentenceButtons() {
+  const sents = (LESSON.materials[CUR_MAT] || {}).sentences || [];
+  sents.forEach((s, i) => {
+    const div = document.querySelector(`.sent[data-idx="${i}"]`);
+    if (!div) return;
+    const btn = div.querySelector('.play');
+    const has = (s.audios || []).length > 0;
+    btn.textContent = has ? '▶' : '…';
+    btn.classList.toggle('has', has);
+    btn.classList.remove('busy');
+  });
+  updateLearnHint();
+}
+
+// applyMode 把当前模式（盲听模糊/译文展开）幂等地应用到 DOM（重渲染后恢复用）
+function applyMode() {
+  const blind = CUR_MODE === 'blind', zh = CUR_MODE === 'zh';
+  document.querySelectorAll('#sents .txt').forEach(el => (el.style.filter = blind ? 'blur(6px)' : 'none'));
+  document.querySelectorAll('#sents .sent').forEach(el => el.classList.toggle('showzh', zh));
 }
 
 function setMode(mode) {
-  const blind = mode === 'blind', zh = mode === 'zh';
-  document.querySelectorAll('#sents .txt').forEach(el => (el.style.filter = blind ? 'blur(6px)' : 'none'));
-  document.querySelectorAll('#sents .sent').forEach(el => el.classList.toggle('showzh', zh));
-  $('md-normal').classList.toggle('on', !blind && !zh);
-  $('md-blind').classList.toggle('on', blind);
-  $('md-zh').classList.toggle('on', zh);
+  CUR_MODE = mode;
+  applyMode();
+  $('md-normal').classList.toggle('on', mode === 'normal');
+  $('md-blind').classList.toggle('on', mode === 'blind');
+  $('md-zh').classList.toggle('on', mode === 'zh');
 }
 function toggleRT() {
   const off = document.body.classList.toggle('no-rt');
@@ -409,7 +440,9 @@ function playOne(s, idx, div) {
           if (div) div.classList.remove('now');
           return resolve();
         }
-        renderLearn();
+        // 局部更新按钮三态（不重建列表——译文/盲听/高亮等状态保持，修复重置 bug）
+        if (btn) { btn.textContent = '▶'; btn.classList.add('has'); btn.classList.remove('busy'); }
+        updateLearnHint();
       }
       const url = s._url || await audioURL(s);
       if (!url) { if (div) div.classList.remove('now'); return resolve(); }
@@ -422,7 +455,8 @@ function playOne(s, idx, div) {
     } catch (e) {
       window._lastPlayErr = (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : String(e));
       if (window._lastPlayErr.indexOf('NotAllowedError') >= 0) {
-        alert('浏览器拦截了自动播放，请再点击一次句子即可播放');
+        // 非阻塞提示（alert 会挂起自动化测试/打断体验）：再点一次即可播放
+        $('learn-hint').textContent = '⚠ 浏览器拦截了自动播放——请再点击一次句子即可播放';
       }
       if (div) div.classList.remove('now');
       playing = null; resolve();
@@ -443,6 +477,7 @@ async function playAll() {
     btn.disabled = true;
     await ensureAudio(sents, (d, n) => (btn.textContent = `配音中 ${d}/${n}…`));
     btn.disabled = false; btn.textContent = old;
+    refreshSentenceButtons();
   }
   if (playing) stopPlay();
   for (let i = 0; i < sents.length; i++) {
@@ -485,8 +520,7 @@ async function genAllAudio() {
   const all = (LESSON.materials || []).flatMap(m => m.sentences);
   const r = await ensureAudio(all, (d, n) => (btn.textContent = `配音中 ${d}/${n}…`));
   btn.disabled = false;
-  LESSON = await api('/lessons/' + LESSON.lesson.id);
-  renderLearn();
+  refreshSentenceButtons(); // 局部同步按钮与统计（不重置模式状态）
   alert(`配音完成：成功 ${r.ok} / 失败 ${r.fail}（失败句可重新点击补齐）`);
 }
 
