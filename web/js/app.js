@@ -209,8 +209,8 @@ async function submitWords() {
     if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
     genLog('校验通过，上传落库…');
 
-    // 4. 上传
-    const up = await api(`/lessons/${lessonID}/materials`, { method: 'POST', body: JSON.stringify(out) });
+    // 4. 上传（白名单净化后的干净结构）
+    const up = await api(`/lessons/${lessonID}/materials`, { method: 'POST', body: JSON.stringify(sanitizeOutput(out)) });
     genLog('落库成功 status=' + up.status + (up.warnings?.length ? '（注音警告 ' + up.warnings.length + ' 句）' : ''));
 
     LESSON = await api('/lessons/' + lessonID);
@@ -221,6 +221,30 @@ async function submitWords() {
     $('gen-back').style.display = 'block';
     $('gen-title').textContent = '生成失败';
   }
+}
+
+// 白名单净化：只保留 schema 字段上传（LLM 会附加 "topic" 等多余字段，
+// 且杜绝对未知字段的敏感——防御深度）
+function sanitizeOutput(out) {
+  return {
+    materials: (out.materials || []).map(m => ({
+      id: m.id, type: m.type, scene: m.scene || '', title: m.title || '',
+      role_a: m.role_a ?? null, role_b: m.role_b ?? null,
+      sort_order: m.sort_order || 0,
+      sentences: (m.sentences || []).map(s => ({
+        id: s.id, sort_order: s.sort_order || 0, speaker: s.speaker || null,
+        text: s.text || '', kana: s.kana || '', translation: s.translation || '',
+        para_no: s.para_no || 0,
+      })),
+    })),
+    qa_items: (out.qa_items || []).map(q => ({
+      prompt: q.prompt || '', answer: q.answer || '', prompt_translation: q.prompt_translation || '',
+    })),
+    substitution_items: (out.substitution_items || []).map(s => ({
+      word_id: s.word_id || '', prompt_zh: s.prompt_zh || '', answer: s.answer || '',
+    })),
+    word_occurrence: out.word_occurrence || {},
+  };
 }
 
 function validateLocally(out, words) {

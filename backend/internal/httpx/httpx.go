@@ -51,3 +51,12 @@ func Decode(r *http.Request, v any) *APIError {
 	}
 	return nil
 }
+
+// DecodeLoose 宽松解析（忽略未知字段）——用于接收 LLM 原始输出的端点：
+// 模型会自作主张附加 schema 外字段（如 "topic"），显式校验由各 handler 自行完成。
+func DecodeLoose(r *http.Request, v any) *APIError {
+	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		return BadRequest("BAD_REQUEST", "请求体解析失败: "+err.Error())
+	}
+	return nil
+}

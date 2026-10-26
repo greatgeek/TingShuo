@@ -55,7 +55,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	wrows.Close()
 
 	var out GenerationOutput
-	if e := httpx.Decode(r, &out); e != nil {
+	if e := httpx.DecodeLoose(r, &out); e != nil {
 		httpx.Err(w, e)
 		return
 	}
