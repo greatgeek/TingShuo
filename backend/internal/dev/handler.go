@@ -167,6 +167,8 @@ func (h *Handler) StartLLM(w http.ResponseWriter, r *http.Request) {
 }
 
 // PollLLM GET /dev/llm/poll?id=：返回累计文本与状态（前端 1s 轮询）。
+// 附带退化输出检测：模型偶发陷入重复 token 循环（如整片 "UxUxUx"），
+// 轮询时发现尾部字符多样性过低即提前标记失败，让用户立刻重试而非空等。
 func (h *Handler) PollLLM(w http.ResponseWriter, r *http.Request) {
 	v, ok := tasks.Load(r.URL.Query().Get("id"))
 	if !ok {
@@ -175,6 +177,21 @@ func (h *Handler) PollLLM(w http.ResponseWriter, r *http.Request) {
 	}
 	t := v.(*llmTask)
 	text, done, errMsg, elapsed := t.snapshot()
+
+	// 退化检测：未完成 + 已输出 >1000 字符 + 尾部 200 字符唯一字符数 ≤4 → 判定循环
+	runes := []rune(text)
+	if !done && errMsg == "" && len(runes) > 1000 {
+		tail := runes[len(runes)-200:]
+		uniq := map[rune]bool{}
+		for _, c := range tail {
+			uniq[c] = true
+		}
+		if len(uniq) <= 4 {
+			t.setErr("模型输出退化（重复字符循环），请点「重新生成」重试一次")
+			text, done, errMsg, elapsed = t.snapshot()
+		}
+	}
+
 	if done && errMsg == "" && strings.TrimSpace(text) == "" {
 		errMsg = "上游返回为空"
 	}
