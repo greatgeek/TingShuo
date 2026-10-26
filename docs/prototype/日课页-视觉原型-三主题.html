@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>听说 TingShuo · 日课页原型 · 三主题</title>
+<style>
+  /* ===== Design Tokens ===== */
+  :root, [data-theme="paper"] {
+    --bg: #FAFAF7; --surface: #FFFFFF; --ink: #1C1C1A; --ink-2: #6B6B66;
+    --line: #E6E4DE; --accent: #C8442E; --accent-soft: #C8442E14;
+    --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif;
+    --sans: -apple-system, "Segoe UI", "Noto Sans JP", "PingFang SC", sans-serif;
+  }
+  [data-theme="library"] {
+    --bg: #F3EDE0; --surface: #FBF7EC; --ink: #39322A; --ink-2: #7A7266;
+    --line: #DCD2BC; --accent: #3E5C76; --accent-soft: #3E5C7614;
+  }
+  [data-theme="night"] {
+    --bg: #131519; --surface: #1B1E24; --ink: #E8E6E1; --ink-2: #9A9A93;
+    --line: #2A2E36; --accent: #E8734A; --accent-soft: #E8734A1E;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans);
+         min-height: 100vh; display: flex; justify-content: center; transition: background .3s; }
+  .frame { width: 100%; max-width: 480px; min-height: 100vh; display: flex; flex-direction: column;
+           border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+
+  /* ===== 主题切换条 ===== */
+  .themes { display: flex; gap: 8px; padding: 12px; justify-content: center;
+            border-bottom: 1px solid var(--line); background: var(--surface); }
+  .themes button { font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
+                   border: 1px solid var(--line); background: transparent; color: var(--ink-2); }
+  .themes button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  /* ===== 步骤条 ===== */
+  .stepper { display: flex; align-items: center; gap: 4px; padding: 14px 16px 10px; }
+  .step-dot { flex: 1; display: flex; align-items: center; gap: 4px; }
+  .step-dot i { flex: 1; height: 3px; border-radius: 2px; background: var(--line); font-style: normal; }
+  .step-dot.done i { background: var(--ink-2); }
+  .step-dot.now i { background: var(--accent); }
+  .step-label { font-size: 12px; color: var(--ink-2); margin-bottom: 8px; padding: 0 16px; }
+  .step-label b { color: var(--ink); font-weight: 600; }
+
+  /* ===== 材料标题 ===== */
+  .material-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0 16px 8px; }
+  .material-head .title { font-size: 15px; font-weight: 600; }
+  .material-head .scene { font-size: 12px; color: var(--ink-2); }
+
+  /* ===== 句子列表 ===== */
+  .sents { padding: 0 16px; display: flex; flex-direction: column; gap: 2px; }
+  .sent { display: flex; align-items: center; gap: 12px; padding: 10px 10px;
+          border-radius: 10px; cursor: pointer; }
+  .sent:hover { background: var(--accent-soft); }
+  .sent .spk { width: 22px; font-size: 11px; color: var(--ink-2); text-align: center; flex: none; }
+  .sent .txt { font-size: 15px; line-height: 1.9; font-family: var(--serif); flex: 1;
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sent .mark { font-size: 11px; color: var(--accent); flex: none; }
+  .sent.now { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+
+  /* ===== 当前句大字卡（核心） ===== */
+  .focus { margin: 18px 16px 0; padding: 26px 18px 22px; background: var(--surface);
+           border: 1px solid var(--line); border-radius: 16px; text-align: center; }
+  .speaker { font-size: 12px; color: var(--ink-2); margin-bottom: 14px; }
+  .big { font-family: var(--serif); font-size: 30px; line-height: 2.35; letter-spacing: .02em; }
+  ruby { ruby-position: over; }
+  ruby rt { font-size: 11px; color: var(--ink-2); font-family: var(--sans); letter-spacing: 0; }
+  .zh { font-size: 13px; color: var(--ink-2); margin-top: 16px; display: none; }
+  .trans-btn { font-size: 12px; color: var(--ink-2); background: none; border: 1px solid var(--line);
+               border-radius: 999px; padding: 5px 16px; cursor: pointer; margin-top: 14px; }
+  .trans-btn.on { color: var(--accent); border-color: var(--accent); }
+
+  /* ===== 播放控制 ===== */
+  .controls { display: flex; align-items: center; justify-content: center; gap: 26px; margin: 22px 0 8px; }
+  .ctl { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line);
+         background: var(--surface); color: var(--ink); font-size: 17px; cursor: pointer; }
+  .ctl.main { width: 62px; height: 62px; font-size: 24px; background: var(--ink); color: var(--bg);
+              border: none; }
+  .wave { display: flex; align-items: center; justify-content: center; gap: 3px; height: 24px; margin-top: 14px; }
+  .wave i { width: 3px; border-radius: 2px; background: var(--accent); animation: w 1s infinite ease-in-out; }
+  .wave i:nth-child(odd) { height: 8px; animation-delay: .2s; }
+  .wave i:nth-child(even) { height: 18px; }
+  @keyframes w { 50% { transform: scaleY(.4); } }
+
+  /* ===== 底部操作行 ===== */
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; }
+  .chip { font-size: 12px; color: var(--ink-2); border: 1px solid var(--line);
+          padding: 5px 12px; border-radius: 999px; background: var(--surface); cursor: pointer; }
+  .chip.on { color: var(--accent); border-color: var(--accent); }
+  .ghost { margin-top: auto; padding: 14px 16px 22px; display: flex; justify-content: space-between;
+           font-size: 13px; color: var(--ink-2); border-top: 1px solid var(--line); }
+  .ghost u { text-decoration: none; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="frame" id="app" data-theme="paper">
+
+  <div class="themes">
+    <button class="on" data-t="paper">纸白墨黑 · 课本</button>
+    <button data-t="library">暖米 · 文库本</button>
+    <button data-t="night">墨黑 · 通勤</button>
+  </div>
+
+  <div class="stepper" title="9 步日课">
+    <div class="step-dot done"><i></i></div><div class="step-dot done"><i></i></div>
+    <div class="step-dot now"><i></i></div><div class="step-dot"><i></i></div>
+    <div class="step-dot"><i></i></div><div class="step-dot"><i></i></div>
+    <div class="step-dot"><i></i></div><div class="step-dot"><i></i></div>
+    <div class="step-dot"><i></i></div>
+  </div>
+  <div class="step-label"><b>第 2 步 · 看文本跟读</b>　逐句播放，跟读 2—3 遍，卡壳的句子标记难点</div>
+
+  <div class="material-head">
+    <span class="title">① コンビニでのお会計</span>
+    <span class="scene">便利店 · N4</span>
+  </div>
+
+  <div class="sents">
+    <div class="sent"><span class="spk">店員</span><span class="txt">いらっしゃいませ。</span><span></span></div>
+    <div class="sent"><span class="spk">客</span><span class="txt">これ、お願いします。</span><span></span></div>
+    <div class="sent now"><span class="spk">店員</span>
+      <span class="txt"><ruby>全部<rt>ぜんぶ</rt></ruby>で<ruby>480円<rt>よんひゃくはちじゅうえん</rt></ruby>になります。</span>
+      <span class="mark">难点</span></div>
+    <div class="sent"><span class="spk">客</span><span class="txt">じゃあ、一緒に精算してもいいですか。</span><span></span></div>
+    <div class="sent"><span class="spk">店員</span><span class="txt">かしこまりました。</span><span></span></div>
+  </div>
+
+  <div class="focus">
+    <div class="speaker">店員</div>
+    <div class="big">
+      <ruby>全部<rt>ぜんぶ</rt></ruby>で<ruby>480円<rt>よんひゃくはちじゅうえん</rt></ruby>になります。
+    </div>
+    <button class="trans-btn" id="trans-toggle">中译 ▾</button>
+    <div class="zh" id="zh-line">一共是 480 日元。</div>
+
+    <div class="controls">
+      <button class="ctl">↺</button>
+      <button class="ctl">−15%</button>
+      <button class="ctl main">▶</button>
+      <button class="ctl">+15%</button>
+      <button class="ctl">♥</button>
+    </div>
+    <div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="row">
+    <span class="chip on" id="ruby-toggle">振り仮名 · 开</span>
+    <span class="chip">Nanami 朗读</span>
+    <span class="chip" style="color:var(--accent)">● 标记难点</span>
+  </div>
+
+  <div class="ghost">
+    <u>← 返回材料</u><u>跳过此步 →</u>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.themes button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.themes button').forEach(x => x.classList.remove('on'));
+    b.classList.add('on');
+    document.getElementById('app').dataset.theme = b.dataset.t;
+  });
+  const rt = document.getElementById('ruby-toggle');
+  rt.onclick = () => {
+    const hidden = document.body.classList.toggle('no-ruby');
+    rt.textContent = '振り仮名 · ' + (hidden ? '关' : '开');
+    rt.classList.toggle('on', !hidden);
+  };
+  const tb = document.getElementById('trans-toggle');
+  tb.onclick = () => {
+    const zh = document.getElementById('zh-line');
+    const shown = zh.style.display === 'block';
+    zh.style.display = shown ? 'none' : 'block';
+    tb.classList.toggle('on', !shown);
+    tb.textContent = shown ? '中译 ▾' : '中译 ▴';
+  };
+</script>
+<style>.no-ruby rt { display: none; }</style>
+</body>
+</html>

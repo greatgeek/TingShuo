@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>听说 TingShuo · 手册驱动全流程原型</title>
+<style>
+  /* ===== Tokens（纸白墨黑 · 课本）===== */
+  :root { --bg:#FAFAF7; --surface:#FFF; --ink:#1C1C1A; --ink2:#6B6B66; --line:#E6E4DE;
+          --accent:#C8442E; --soft:#C8442E14; --ok:#3E7A4E;
+          --serif:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;
+          --sans:-apple-system,"Segoe UI","Noto Sans JP","PingFang SC",sans-serif; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#EEE; font-family:var(--sans); color:var(--ink);
+         display:flex; justify-content:center; }
+  .frame { width:100%; max-width:430px; min-height:860px; background:var(--bg);
+           border:1px solid #DDD; display:flex; flex-direction:column; }
+  .screen { display:none; flex:1; flex-direction:column; }
+  .screen.on { display:flex; }
+
+  /* 顶栏 / 底部导航 */
+  .top { padding:14px 16px 10px; border-bottom:1px solid var(--line); display:flex;
+         justify-content:space-between; align-items:center; }
+  .top .t { font-size:16px; font-weight:700; }
+  .top .s { font-size:12px; color:var(--ink2); }
+  .tabs { display:flex; border-top:1px solid var(--line); background:var(--surface); }
+  .tabs button { flex:1; padding:10px 0 12px; font-size:12px; border:none; background:none;
+                 color:var(--ink2); cursor:pointer; }
+  .tabs button.on { color:var(--accent); font-weight:600; }
+
+  /* 通用 */
+  .body { padding:16px; flex:1; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:14px;
+          padding:16px; margin-bottom:12px; }
+  .btn { display:block; width:100%; padding:13px; border:none; border-radius:12px;
+         background:var(--ink); color:var(--bg); font-size:15px; cursor:pointer; margin-top:10px; }
+  .btn.accent { background:var(--accent); }
+  .btn.ghost { background:none; color:var(--ink2); border:1px solid var(--line); }
+  .hint { font-size:12px; color:var(--ink2); line-height:1.7; }
+  .big-num { font-size:34px; font-weight:700; }
+
+  /* 首页 */
+  .home-hero { display:flex; gap:10px; }
+  .home-hero .card { flex:1; margin:0; text-align:center; }
+  .lesson-state { font-size:13px; color:var(--ink2); margin:6px 0 2px; }
+
+  /* 词单输入 */
+  textarea { width:100%; height:150px; font-family:var(--serif); font-size:14px; padding:10px;
+             border:1px solid var(--line); border-radius:10px; background:var(--surface); resize:none; }
+  .words-ok { color:var(--ok); font-size:12px; }
+  .words-bad { color:var(--accent); font-size:12px; }
+
+  /* 词库 / 词单解析预览 */
+  .wcard { background:var(--surface); border:1px solid var(--line); border-radius:12px;
+           padding:10px 14px; margin-bottom:8px; }
+  .wrow { display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .wrow .w { font-family:var(--serif); font-size:17px; font-weight:600; }
+  .wrow .meta { font-size:12px; color:var(--ink2); flex:1; }
+  .st { font-size:11px; border-radius:6px; padding:2px 8px; border:1px solid var(--line); color:var(--ink2); }
+  .st.key { color:var(--accent); border-color:var(--accent); }
+  .st.ok { color:var(--ok); border-color:var(--ok); }
+  .st.weak { color:#B07A1E; border-color:#B07A1E; }
+  .occur { margin-top:8px; border-top:1px dashed var(--line); padding-top:8px;
+           font-size:12px; color:var(--ink2); }
+  .occur .ln { display:block; margin-top:5px; font-family:var(--serif); font-size:13px;
+               color:var(--ink); cursor:pointer; }
+
+  /* 生成进度 */
+  .bar { height:10px; background:var(--line); border-radius:6px; overflow:hidden; margin:8px 0 4px; }
+  .bar i { display:block; height:100%; background:var(--accent); border-radius:6px; }
+
+  /* 预览 */
+  .mat { padding:12px 14px; border:1px solid var(--line); border-radius:12px; margin-bottom:8px;
+         background:var(--surface); display:flex; justify-content:space-between; }
+  .recur { font-size:12px; line-height:2; }
+  .recur b { color:var(--ok); }
+
+  /* 日课：步骤条 */
+  .steps { display:flex; gap:4px; padding:12px 16px 8px; }
+  .steps i { flex:1; height:3px; border-radius:2px; background:var(--line); }
+  .steps i.done { background:var(--ink2); } .steps i.now { background:var(--accent); }
+  .step-cap { padding:0 16px 10px; font-size:13px; }
+  .step-cap b { font-weight:700; }
+  .step-cap span { color:var(--ink2); font-size:12px; }
+
+  /* 1 盲听 */
+  .blind { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  .blind .wave { display:flex; gap:4px; align-items:center; height:70px; }
+  .blind .wave i { width:4px; background:var(--accent); border-radius:2px; animation:w 1.1s infinite; }
+  .blind .dots { display:flex; gap:8px; margin:26px 0; }
+  .blind .dots i { width:9px; height:9px; border-radius:50%; background:var(--line); }
+  .blind .dots i.on { background:var(--accent); }
+  .selfrate { width:100%; padding:0 24px; text-align:center; }
+  .slider { margin:12px 0; }
+  input[type=range] { width:100%; accent-color:var(--accent); }
+  @keyframes w { 50% { transform:scaleY(.35); } }
+
+  /* 2 跟读 */
+  .slist .row { display:flex; gap:10px; padding:9px 8px; border-radius:10px; align-items:center; }
+  .slist .row.now { background:var(--soft); box-shadow:inset 3px 0 0 var(--accent); }
+  .slist .who { font-size:11px; color:var(--ink2); width:26px; }
+  .slist .jp { font-family:var(--serif); font-size:15px; white-space:nowrap; overflow:hidden;
+               text-overflow:ellipsis; }
+  .focus { background:var(--surface); border:1px solid var(--line); border-radius:16px;
+           padding:20px 14px; text-align:center; margin-top:12px; }
+  .focus .jp { font-family:var(--serif); font-size:27px; line-height:2.3; }
+  .focus .voice { font-size:11px; color:var(--ink2); margin-top:8px; }
+  .trans-btn { margin-top:12px; font-size:12px; color:var(--ink2); background:none;
+               border:1px solid var(--line); border-radius:999px; padding:5px 16px; cursor:pointer; }
+  .trans-btn.on { color:var(--accent); border-color:var(--accent); }
+  .zh-hidden { display:none; margin-top:10px; font-size:14px; color:var(--ink2); }
+  .ctrls { display:flex; justify-content:center; gap:18px; margin:16px 0 4px; }
+  .ctrls button { width:42px; height:42px; border-radius:50%; border:1px solid var(--line);
+                  background:var(--surface); font-size:15px; cursor:pointer; }
+  .ctrls .main { width:58px; height:58px; background:var(--ink); color:var(--bg); border:none; font-size:20px; }
+  ruby rt { font-size:10px; color:var(--ink2); font-family:var(--sans); }
+
+  /* 3 影子 */
+  .shadow-track { overflow:hidden; height:150px; border:1px solid var(--line); border-radius:12px;
+                  background:var(--surface); padding:12px 14px; }
+  .shadow-track .ln { font-family:var(--serif); font-size:15px; line-height:1.9; color:var(--ink2);
+                      white-space:nowrap; }
+  .shadow-track .ln.now { color:var(--accent); font-weight:600; }
+  .no-pause { text-align:center; font-size:12px; color:var(--accent); margin-top:10px; }
+
+  /* 4 角色扮演 */
+  .chat { display:flex; flex-direction:column; gap:10px; }
+  .bub { max-width:76%; padding:10px 14px; border-radius:16px; font-family:var(--serif); font-size:15px; }
+  .bub .voice-tag { font-size:10px; color:var(--ink2); font-family:var(--sans); margin-bottom:4px; }
+  .bub.them { background:var(--surface); border:1px solid var(--line); border-bottom-left-radius:4px; align-self:flex-start; }
+  .bub.me { background:var(--accent); color:#fff; border-bottom-right-radius:4px; align-self:flex-end; }
+  .bub.me .mic { font-size:20px; }
+  .rolebar { display:flex; gap:8px; }
+  .rolebar button { flex:1; padding:9px; border-radius:10px; border:1px solid var(--line);
+                    background:var(--surface); cursor:pointer; font-size:13px; }
+  .rolebar button.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+
+  /* 5 录音对比 */
+  .ab { display:flex; gap:12px; margin-top:14px; }
+  .ab button { flex:1; padding:14px 0; border-radius:12px; border:none; font-size:14px; cursor:pointer; }
+  .ab .std { background:var(--ink); color:var(--bg); }
+  .ab .mine { background:var(--soft); color:var(--accent); border:1px solid var(--accent); }
+
+  /* 6 复述 / 7 问答 / 8 造句 */
+  .kw { display:flex; flex-wrap:wrap; gap:8px; }
+  .kw span { padding:7px 14px; border:1px solid var(--line); border-radius:999px; background:var(--surface);
+             font-family:var(--serif); font-size:15px; }
+  .qa-q { font-family:var(--serif); font-size:19px; line-height:2; }
+  .rec-btn { width:72px; height:72px; border-radius:50%; background:var(--accent); color:#fff;
+             font-size:26px; border:none; cursor:pointer; display:block; margin:16px auto 0; }
+  .answer { border-top:1px dashed var(--line); margin-top:12px; padding-top:10px; color:var(--ink2); font-size:13px; }
+  .answer .jp { font-family:var(--serif); color:var(--ink); font-size:16px; display:block; margin-top:4px; }
+
+  /* 9 汇总 */
+  .diff-item { display:flex; gap:10px; align-items:center; padding:10px 8px; border-bottom:1px solid var(--line); }
+  .diff-item .jp { font-family:var(--serif); font-size:14px; flex:1; }
+
+  /* 复习页 */
+  .rv-form { font-size:11px; color:#fff; background:var(--accent); border-radius:6px; padding:2px 7px; }
+  .opt { display:flex; gap:8px; }
+  .opt button { flex:1; padding:10px; border:1px solid var(--line); border-radius:10px; background:var(--surface);
+                font-family:var(--serif); font-size:13px; cursor:pointer; }
+  .opt button.right { border-color:var(--ok); color:var(--ok); }
+
+  /* 历史课程 / 设置 */
+  .month { font-size:13px; color:var(--ink2); margin:8px 0; }
+  .his-row { display:flex; justify-content:space-between; align-items:center; padding:12px 4px;
+             border-bottom:1px solid var(--line); }
+  .set-row { display:flex; justify-content:space-between; align-items:center; padding:13px 2px;
+             border-bottom:1px solid var(--line); font-size:14px; }
+  .set-row .v { color:var(--ink2); font-size:13px; }
+
+  /* 流程按钮行 */
+  .nav { display:flex; gap:10px; margin-top:auto; padding:12px 16px 18px; border-top:1px solid var(--line); }
+  .nav button { flex:1; padding:12px; border-radius:12px; border:1px solid var(--line);
+                background:var(--surface); color:var(--ink2); cursor:pointer; font-size:14px; }
+  .nav button.main { background:var(--ink); color:var(--bg); border:none; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- ================= 首页（手册 §1 / §7 / FR-8.1） ================= -->
+  <section class="screen on" id="sc-home">
+    <div class="top"><span class="t">听说 TingShuo</span><span class="s">10 月 26 日 周一</span></div>
+    <div class="body">
+      <div class="card" style="text-align:center">
+        <div class="lesson-state">今日课程</div>
+        <div class="big-num" style="font-family:var(--serif)">お会計の練習</div>
+        <div class="lesson-state">20 个新词 · 3 段对话 + 1 篇短文 · 已就绪</div>
+        <button class="btn accent" onclick="go('lesson')">▶ 开始今天的学习</button>
+      </div>
+      <div class="home-hero">
+        <div class="card"><div class="big-num">12</div><div class="lesson-state">句待复习<br>约 8 分钟</div>
+          <button class="btn ghost" onclick="go('review')">去复习</button></div>
+        <div class="card"><div class="big-num">7</div><div class="lesson-state">连续学习<br>天数</div>
+          <button class="btn ghost" onclick="go('input')">明天词单</button></div>
+      </div>
+    </div>
+    <div class="tabs">
+      <button class="on" onclick="go('home')">首页</button><button onclick="go('review')">复习</button>
+      <button onclick="go('words')">词库</button><button onclick="go('history')">历史</button><button onclick="go('settings')">设置</button>
+    </div>
+  </section>
+
+  <!-- ================= 词单输入（手册 §2） ================= -->
+  <section class="screen" id="sc-input">
+    <div class="top"><span class="t">今日词单</span><span class="s">建议 20 个</span></div>
+    <div class="body">
+      <div class="card">
+        <div class="hint" style="margin-bottom:8px">一行一个词：单词｜读音｜词性｜中文。读音不确定可以空着。</div>
+        <textarea>精算｜せいさん｜名詞｜一起结账
+満員電車｜まんいんでんしゃ｜名詞｜满员电车
+預ける｜あずける｜動詞｜寄存
+この边り｜｜｜这附近</textarea>
+        <div class="words-ok">✓ 已识别 3 个词　<span class="words-bad">1 行读音为空，生成时自动补全</span></div>
+        <div class="wcard" style="margin-top:10px">
+          <div class="hint" style="margin-bottom:6px">提交前核对，点右侧状态标签可切换</div>
+          <div class="wrow"><span class="w">精算</span><span class="meta">せいさん · 名詞 · 一起结账</span><span class="st key">重点</span></div>
+          <div class="wrow" style="margin-top:8px"><span class="w">満員電車</span><span class="meta">まんいんでんしゃ · 名詞 · 满员电车</span><span class="st">新词</span></div>
+          <div class="wrow" style="margin-top:8px"><span class="w">預ける</span><span class="meta">あずける · 動詞 · 寄存</span><span class="st">新词</span></div>
+        </div>
+        <button class="btn" onclick="go('gen')">提交并生成</button>
+        <button class="btn ghost" onclick="go('home')">导入 CSV / TXT 文件</button>
+      </div>
+      <div class="hint">今天想去哪？加一句情境，材料就围绕它生成（可选）：<br>
+        <input placeholder="例：下午要去邮局寄包裹，顺便药妆店买东西"
+               style="width:100%;margin-top:6px;padding:10px;border:1px solid var(--line);border-radius:10px">
+      </div>
+    </div>
+    <div class="nav"><button onclick="go('home')">← 返回</button><button class="main" onclick="go('gen')">下一步</button></div>
+  </section>
+
+  <!-- ================= 生成进度（手册 §3） ================= -->
+  <section class="screen" id="sc-gen">
+    <div class="top"><span class="t">材料生成中</span><span class="s">2026-10-27 的课</span></div>
+    <div class="body">
+      <div class="card">
+        <div class="hint">① 写材料（3 段对话 + 1 篇短文 + 10 个问答/造句）</div>
+        <div class="bar"><i style="width:100%"></i></div>
+        <div class="hint">完成 ✓ — 每个新词都出现在句子里，重点词两遍</div>
+      </div>
+      <div class="card">
+        <div class="hint">② 配朗读（逐句生成，一句一音频）</div>
+        <div class="bar"><i style="width:64%"></i></div>
+        <div class="hint">38 / 60 句 · 约还需 1 分钟</div>
+      </div>
+      <div class="hint" style="text-align:center;margin-top:6px">可以离开页面，生成不会中断，回来就好了</div>
+    </div>
+    <div class="nav"><button onclick="go('home')">先去干别的 ←</button><button class="main" onclick="go('preview')">预览材料 →</button></div>
+  </section>
+
+  <!-- ================= 材料预览（手册 §3） ================= -->
+  <section class="screen" id="sc-preview">
+    <div class="top"><span class="t">材料预览</span><span class="s">便利店 · 车站 · 午饭 · N4</span></div>
+    <div class="body">
+      <div class="mat"><span>① コンビニでのお会計</span><span class="hint">对话 5 轮</span></div>
+      <div class="mat"><span>② 駅で乗り換え</span><span class="hint">对话 5 轮</span></div>
+      <div class="mat"><span>③ 昼ごはんどうする？</span><span class="hint">对话 6 轮</span></div>
+      <div class="mat"><span>④ 独白：昨日の一日</span><span class="hint">短文 90 秒</span></div>
+      <div class="card">
+        <div class="hint" style="margin-bottom:6px"><b style="color:var(--ink)">新词复现表</b>（每个词出现在哪几句）</div>
+        <div class="recur">
+          <b>✓</b> 精算 → ②-3、④-2　<span style="color:var(--ok)">已出现 2 次</span><br>
+          <b>✓</b> 満員電車 → ②-1、②-4<br>
+          <b>✓</b> 預ける → ④-6<br>
+          <span style="color:var(--accent)">✗</span> この边り → 今天场景不适合，已跳过（明天再战）
+        </div>
+      </div>
+    </div>
+    <div class="nav"><button onclick="go('gen')">← 重新生成</button><button class="main" onclick="go('lesson')">开始日课 →</button></div>
+  </section>
+
+  <!-- ================= 日课 9 步（手册 §5） ================= -->
+  <section class="screen" id="sc-lesson">
+    <div class="steps">
+      <i class="now" id="sd1"></i><i id="sd2"></i><i id="sd3"></i><i id="sd4"></i><i id="sd5"></i>
+      <i id="sd6"></i><i id="sd7"></i><i id="sd8"></i><i id="sd9"></i>
+    </div>
+    <div class="step-cap" id="stepCap"><b>第 1 步 · 盲听</b>　<span>不看文字，抓大意和关键词</span></div>
+
+    <!-- 1 盲听 -->
+    <div class="body" id="st1">
+      <div class="blind">
+        <div class="wave">
+          <i style="height:30px;animation-delay:0s"></i><i style="height:52px;animation-delay:.15s"></i>
+          <i style="height:38px;animation-delay:.3s"></i><i style="height:60px;animation-delay:.45s"></i>
+          <i style="height:26px;animation-delay:.6s"></i><i style="height:48px;animation-delay:.75s"></i>
+          <i style="height:34px;animation-delay:.9s"></i>
+        </div>
+        <div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        <div class="selfrate">
+          <div class="hint">第 1 遍播完 · 不看任何文字</div>
+          <div class="slider"><input type="range" min="0" max="100" value="60"></div>
+          <div class="hint">听懂了几成？<span style="color:var(--accent)"> 约 6 成</span></div>
+          <button class="btn ghost">↺ 再听一遍</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 看文本跟读 -->
+    <div class="body" id="st2" style="display:none">
+      <div class="slist">
+        <div class="row"><span class="who">店員</span><span class="jp">いらっしゃいませ。</span></div>
+        <div class="row"><span class="who">客</span><span class="jp">これ、お願いします。</span></div>
+        <div class="row now"><span class="who">店員</span>
+          <span class="jp"><ruby>全部<rt>ぜんぶ</rt></ruby>で480<ruby>円<rt>えん</rt></ruby>になります。</span></div>
+      </div>
+      <div class="focus">
+        <div class="jp"><ruby>全部<rt>ぜんぶ</rt></ruby>で480<ruby>円<rt>えん</rt></ruby>になります。</div>
+        <div class="voice">Keita 朗读（店員角色自动配音色）· 跟读 2—3 遍</div>
+        <button class="trans-btn" onclick="var t=this.nextElementSibling;var shown=t.style.display==='block';t.style.display=shown?'none':'block';this.classList.toggle('on',!shown);this.textContent=shown?'中译 ▾':'中译 ▴'">中译 ▾</button>
+        <div class="zh-hidden">一共是 480 日元。</div>
+        <div class="ctrls">
+          <button>↺</button><button>−15%</button><button class="main">▶</button>
+          <button>+15%</button><button>●</button>
+        </div>
+        <div class="hint" style="margin-top:6px">卡壳的句子点 ● 标记难点，自动进复习池</div>
+      </div>
+    </div>
+
+    <!-- 3 影子跟读 -->
+    <div class="body" id="st3" style="display:none">
+      <div class="card">
+        <div class="shadow-track">
+          <div class="ln">いらっしゃいませ。</div>
+          <div class="ln">これ、お願いします。</div>
+          <div class="ln now">全部で480円になります。</div>
+          <div class="ln">じゃあ、一緒に精算してもいいですか。</div>
+          <div class="ln">かしこまりました。</div>
+        </div>
+        <div class="bar" style="margin-top:12px"><i style="width:52%"></i></div>
+        <div class="hint" style="text-align:right">剩余 1:40</div>
+        <div class="no-pause">音频连续播放 · 像影子一样贴着说，跟不上没关系</div>
+      </div>
+    </div>
+
+    <!-- 4 角色扮演 -->
+    <div class="body" id="st4" style="display:none">
+      <div class="rolebar" style="margin-bottom:12px">
+        <button class="on">我演 客</button><button>我演 店員</button>
+      </div>
+      <div class="chat">
+        <div class="bub them"><div class="voice-tag">店員 · Keita 自动播放</div>いらっしゃいませ。</div>
+        <div class="bub me"><div class="voice-tag" style="color:#ffffff99">轮到你（客）</div>
+          <span class="mic">🎙</span> 长按说：これ、お願いします。</div>
+        <div class="bub them"><div class="voice-tag">店員 · Keita 自动播放</div>全部で480円になります。</div>
+        <div class="bub me"><div class="voice-tag" style="color:#ffffff99">轮到你（客）</div>
+          <span class="mic">🎙</span> 说话时按住这里</div>
+      </div>
+      <div class="hint" style="margin-top:10px">对方的话自动出声，轮到你时静音显示文字，由你来说</div>
+    </div>
+
+    <!-- 5 录音回放 -->
+    <div class="body" id="st5" style="display:none">
+      <div class="card">
+        <div class="jp" style="font-family:var(--serif);font-size:19px;line-height:2">
+          全部で480円になります。</div>
+        <div class="hint">这句你之前标过难点</div>
+        <div class="ab">
+          <button class="std">▶ 听标准</button>
+          <button class="mine">▶ 听我的</button>
+        </div>
+        <div class="hint" style="text-align:center;margin-top:8px">交替播放 · 差异一听便知</div>
+      </div>
+      <button class="rec-btn">🎙</button>
+      <div class="hint" style="text-align:center">重录这条</div>
+    </div>
+
+    <!-- 6 复述 -->
+    <div class="body" id="st6" style="display:none">
+      <div class="hint" style="text-align:center;margin-bottom:14px">合上文字，用自己的话说 3—5 句</div>
+      <div class="kw">
+        <span>コンビニ</span><span>精算</span><span>480円</span><span>預ける</span>
+      </div>
+      <div class="hint" style="text-align:center;margin-top:10px">只有关键词卡片 · 没有原文</div>
+      <button class="rec-btn">🎙</button>
+      <div class="answer">说完展开原文对照 ▾<span class="jp">コンビニで買い物をしました。全部で480円でした…</span></div>
+    </div>
+
+    <!-- 7 即问即答 -->
+    <div class="body" id="st7" style="display:none">
+      <div class="card">
+        <div style="font-size:11px;color:var(--ink2)">问题 2 / 5 · 可反复听</div>
+        <div class="qa-q">お会計はいくらでしたか。</div>
+        <button class="btn ghost" style="margin-top:8px">▶ 再听一遍问题</button>
+        <button class="rec-btn">🎙</button>
+        <div class="answer">参考答案 ▾<span class="jp">全部で480円でした。</span></div>
+      </div>
+    </div>
+
+    <!-- 8 替换造句 -->
+    <div class="body" id="st8" style="display:none">
+      <div class="card">
+        <div style="font-size:11px;color:var(--ink2)">任务 3 / 5 · 围绕重点词「精算」</div>
+        <div class="hint" style="font-size:15px;margin:10px 0">用「精算」造一个你自己的句子：<br><br>和朋友吃饭时说「一起结账吧」怎么说？</div>
+        <button class="rec-btn">🎙</button>
+        <div class="hint" style="text-align:center">🎙 语音优先（打字为备选）</div>
+        <div class="answer">参考答案 ▾<span class="jp">じゃあ、精算しようか。</span></div>
+      </div>
+    </div>
+
+    <!-- 9 汇总 -->
+    <div class="body" id="st9" style="display:none">
+      <div class="hint" style="margin-bottom:8px">今天标记的难点句，确认加入复习池：</div>
+      <div class="card" style="padding:4px 14px">
+        <div class="diff-item"><input type="checkbox" checked><span class="jp">全部で480円になります。</span></div>
+        <div class="diff-item"><input type="checkbox" checked><span class="jp">一緒に精算してもいいですか。</span></div>
+        <div class="diff-item"><input type="checkbox"><span class="jp">かしこまりました。</span></div>
+      </div>
+      <button class="btn accent" onclick="go('home')">✓ 完成今日课程</button>
+      <div class="hint" style="text-align:center;margin-top:8px">明天早上，这些句子准时出现在复习列表里</div>
+    </div>
+
+    <div class="nav">
+      <button onclick="step(-1)">← 上一步</button>
+      <button class="main" onclick="step(1)">下一步 →</button>
+    </div>
+  </section>
+
+  <!-- ================= 词库（手册 §2/§8 · FR-1.4/1.7） ================= -->
+  <section class="screen" id="sc-words">
+    <div class="top"><span class="t">我的词库</span><span class="s">共 187 词 · 点词看出现过的句子</span></div>
+    <div class="body">
+      <div class="kw" style="margin-bottom:12px">
+        <span style="border-color:var(--accent);color:var(--accent)">全部 187</span>
+        <span>重点 23</span><span>易错 9</span><span>已掌握 51</span>
+      </div>
+      <div class="wcard">
+        <div class="wrow"><span class="w">精算</span><span class="meta">せいさん · 名詞 · 一起结账</span><span class="st key">重点</span></div>
+        <div class="occur">出现过的句子（跨课程，可播放）：
+          <span class="ln">▶ ② 駅で乗り換え · 一緒に精算してもいいですか。</span>
+          <span class="ln">▶ ④ 独白 · 精算してお願いします。</span>
+        </div>
+      </div>
+      <div class="wcard">
+        <div class="wrow"><span class="w">満員電車</span><span class="meta">まんいんでんしゃ · 名詞 · 满员电车</span><span class="st">新词</span></div>
+      </div>
+      <div class="wcard">
+        <div class="wrow"><span class="w">預ける</span><span class="meta">あずける · 動詞 · 寄存</span><span class="st weak">易错</span></div>
+      </div>
+      <div class="wcard">
+        <div class="wrow"><span class="w">かしこまる</span><span class="meta">· 動詞 · 遵命（恭敬）</span><span class="st ok">已掌握</span></div>
+      </div>
+      <div class="hint" style="text-align:center;margin-top:8px">状态在学习中随时可改 · 复习里没过的词自动标「易错」</div>
+    </div>
+    <div class="tabs">
+      <button onclick="go('home')">首页</button><button onclick="go('review')">复习</button>
+      <button class="on" onclick="go('words')">词库</button><button onclick="go('history')">历史</button><button onclick="go('settings')">设置</button>
+    </div>
+  </section>
+
+  <!-- ================= 复习（手册 §7） ================= -->
+  <section class="screen" id="sc-review">
+    <div class="top"><span class="t">今日复习</span><span class="s">12 句 · 约每句 40 秒</span></div>
+    <div class="body">
+      <div class="card">
+        <div style="margin-bottom:10px"><span class="rv-form">听音频选句子</span>
+          <span class="hint" style="margin-left:6px">第 3 / 12 句</span></div>
+        <button class="btn ghost" style="margin:0 0 14px">▶ 播放</button>
+        <div class="opt">
+          <button>全部で480円になります。</button>
+          <button class="right">全部で480円でした。</button>
+        </div>
+        <div class="opt" style="margin-top:8px">
+          <button>ぜんぶで480円です。</button><button>480円になります。</button>
+        </div>
+        <div class="hint" style="margin-top:12px">其他形式：听写填空 · 看中文说日语 · 看关键词复述 · 看词造句</div>
+      </div>
+      <div class="hint" style="text-align:center">没过的句子明天再见 · 连续答对间隔越来越长</div>
+    </div>
+    <div class="tabs">
+      <button onclick="go('home')">首页</button><button class="on" onclick="go('review')">复习</button>
+      <button onclick="go('words')">词库</button><button onclick="go('history')">历史</button><button onclick="go('settings')">设置</button>
+    </div>
+  </section>
+
+  <!-- ================= 历史（手册 §8） ================= -->
+  <section class="screen" id="sc-history">
+    <div class="top"><span class="t">历史课程</span><span class="s">搜索词 / 场景 ⌕</span></div>
+    <div class="body">
+      <div class="month">2026 年 10 月</div>
+      <div class="his-row"><span style="font-size:14px">10-26 · お会計の練習</span>
+        <button class="btn ghost" style="width:auto;margin:0;padding:6px 12px">回听</button></div>
+      <div class="his-row"><span style="font-size:14px">10-25 · 駅での乗り換え</span>
+        <button class="btn ghost" style="width:auto;margin:0;padding:6px 12px">重学</button></div>
+      <div class="his-row"><span style="font-size:14px">10-24 · 昼ごはん</span>
+        <button class="btn ghost" style="width:auto;margin:0;padding:6px 12px">导出</button></div>
+      <div class="hint" style="margin-top:12px">导出：文本 / 音频包 / JSON</div>
+    </div>
+    <div class="tabs">
+      <button onclick="go('home')">首页</button><button onclick="go('review')">复习</button>
+      <button onclick="go('words')">词库</button><button class="on" onclick="go('history')">历史</button><button onclick="go('settings')">设置</button>
+    </div>
+  </section>
+
+  <!-- ================= 设置（手册 §10） ================= -->
+  <section class="screen" id="sc-settings">
+    <div class="top"><span class="t">设置</span></div>
+    <div class="body">
+      <div class="set-row">日语水平<span class="v">N4 ›</span></div>
+      <div class="set-row">场景主题<span class="v">便利店 · 车站 · 午饭 ›</span></div>
+      <div class="set-row">语体<span class="v">です・ます + 自然口语 ›</span></div>
+      <div class="set-row">对话音色<span class="v">Nanami / Keita ›</span></div>
+      <div class="set-row">默认语速<span class="v">正常 ›</span></div>
+      <div class="set-row">自动生成音频<span class="v">开</span></div>
+      <div class="set-row">学习提醒<span class="v">每天 8:30 ›</span></div>
+      <div class="set-row">仅 Wi-Fi 下载<span class="v">开</span></div>
+      <div class="set-row">深色模式<span class="v">跟随系统 ›</span></div>
+      <div class="set-row">缓存管理<span class="v">音频 240MB ›</span></div>
+      <div class="set-row">数据导出 / 账号删除<span class="v">›</span></div>
+    </div>
+    <div class="tabs">
+      <button onclick="go('home')">首页</button><button onclick="go('review')">复习</button>
+      <button onclick="go('words')">词库</button><button onclick="go('history')">历史</button><button class="on" onclick="go('settings')">设置</button>
+    </div>
+  </section>
+</div>
+
+<script>
+  const STEPS = [
+    ['第 1 步 · 盲听','不看文字，抓大意和关键词'],
+    ['第 2 步 · 看文本跟读','逐句播放，跟读 2—3 遍'],
+    ['第 3 步 · 影子跟读','贴着音频同步说'],
+    ['第 4 步 · 角色扮演','选一个角色，轮到你时由你来说'],
+    ['第 5 步 · 录音回放','听标准 → 听我的，交替对比'],
+    ['第 6 步 · 复述','合上文字，说 3—5 句'],
+    ['第 7 步 · 即问即答','回答 5 个口头问题'],
+    ['第 8 步 · 替换造句','用重点词造自己的句子'],
+    ['第 9 步 · 标记难点','确认加入复习池，完成今日课程']];
+  let cur = 1;
+  function step(d){
+    cur = Math.min(9, Math.max(1, cur + d));
+    for(let i=1;i<=9;i++){
+      document.getElementById('st'+i).style.display = i===cur ? '' : 'none';
+      const sd = document.getElementById('sd'+i);
+      sd.className = i<cur ? 'done' : (i===cur ? 'now' : '');
+    }
+    document.getElementById('stepCap').innerHTML =
+      '<b>'+STEPS[cur-1][0]+'</b>　<span>'+STEPS[cur-1][1]+'</span>';
+  }
+  function go(name){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+    document.getElementById('sc-'+name).classList.add('on');
+    document.querySelectorAll('.tabs button').forEach(b=>b.classList.remove('on'));
+  }
+  step(0);
+</script>
+</body>
+</html>
