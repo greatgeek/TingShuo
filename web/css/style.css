@@ -74,6 +74,14 @@ textarea { font-family: var(--serif); font-size: 14px; height: 180px; resize: ve
 }
 .modebar button.on { color: var(--accent); border-color: var(--accent); }
 
+/* 内容切换栏（生词/短语/句子模式）——实心高亮区分于显示模式栏 */
+.viewbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.viewbar button {
+  flex: 1; font-size: 13px; font-weight: 600; padding: 10px; border-radius: 10px;
+  cursor: pointer; border: 1px solid var(--line); background: var(--surface); color: var(--ink2);
+}
+.viewbar button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+
 .sents { display: flex; flex-direction: column; gap: 2px; }
 .sent { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 10px; cursor: pointer; }
 .sent:hover { background: var(--soft); }

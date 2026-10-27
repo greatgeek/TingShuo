@@ -132,8 +132,10 @@ async function switchView(v) {
   VIEW = v; CUR_MAT = 0;
   if (v === 'fav') await loadFavs();
   $('md-fav').classList.toggle('on', v === 'fav');
-  $('md-phrases').classList.toggle('on', v === 'phrases');
-  $('md-words').classList.toggle('on', v === 'words');
+  // 内容切换栏高亮（收藏视图时第二栏全灭）
+  $('vw-words').classList.toggle('on', v === 'words');
+  $('vw-phrases').classList.toggle('on', v === 'phrases');
+  $('vw-full').classList.toggle('on', v === 'material');
   $('md-normal').classList.toggle('on', v === 'material' && CUR_MODE === 'normal');
   if (v === 'fav') renderFavView();
   else if (v === 'phrases') renderPhrasesView();

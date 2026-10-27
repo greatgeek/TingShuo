@@ -95,12 +95,15 @@
   <section class="screen" id="sc-learn">
     <div class="modebar">
       <button id="md-normal" class="on" onclick="switchView('material'); setMode('normal')">跟读</button>
-      <button id="md-blind" onclick="switchView('material'); setMode('blind')">盲听</button>
+      <button id="md-blind" onclick="setMode('blind')">盲听</button>
       <button id="md-zh" onclick="setMode('zh')">译文</button>
       <button id="md-rt" class="on" onclick="toggleRT()">假名</button>
-      <button id="md-phrases" onclick="switchView('phrases')">生词短语</button>
-      <button id="md-words" onclick="switchView('words')">生词</button>
       <button id="md-fav" onclick="switchView('fav')">★ 收藏</button>
+    </div>
+    <div class="viewbar">
+      <button id="vw-words" onclick="switchView('words')">生词模式</button>
+      <button id="vw-phrases" onclick="switchView('phrases')">短语模式</button>
+      <button id="vw-full" class="on" onclick="switchView('material')">句子模式</button>
     </div>
     <div class="tabs" id="mat-tabs"></div>
     <div class="row2" style="margin-bottom:10px">
