@@ -5,8 +5,9 @@
 
 // ============ 基础 ============
 const $ = id => document.getElementById(id);
-const tokenKey = 'ts_token';
+const tokenKey = 'ts_token', refreshKey = 'ts_refresh';
 let TOKEN = localStorage.getItem(tokenKey) || '';
+let REFRESH = localStorage.getItem(refreshKey) || '';
 let CFG = {};        // /dev/config 结果
 let LESSON = null;   // 当前课程全量
 let CUR_MAT = 0;     // 当前材料 tab
@@ -25,8 +26,34 @@ function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.displa
 function hideErr(id) { $(id).style.display = 'none'; }
 function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+// doRefresh 用 refresh_token 换新 access_token（并发 401 共享同一次刷新）
+let refreshing = null;
+async function doRefresh() {
+  if (!REFRESH) return false;
+  refreshing = refreshing || (async () => {
+    try {
+      const r = await fetch('/api/v1/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: REFRESH }),
+      });
+      if (!r.ok) return false;
+      const b = await r.json();
+      TOKEN = b.access_token; localStorage.setItem(tokenKey, TOKEN);
+      return true;
+    } catch { return false; }
+    finally { setTimeout(() => (refreshing = null), 0); }
+  })();
+  return refreshing;
+}
+
+function clearSession() {
+  localStorage.removeItem(tokenKey); localStorage.removeItem(refreshKey);
+  TOKEN = ''; REFRESH = '';
+}
+
 async function api(path, opts = {}) {
-  const r = await fetch('/api/v1' + path, {
+  const call = () => fetch('/api/v1' + path, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
@@ -34,6 +61,17 @@ async function api(path, opts = {}) {
       ...(opts.headers || {}),
     },
   });
+  let r = await call();
+  // access 过期 → 自动续期并重试一次（无感续期）
+  if (r.status === 401 && REFRESH && TOKEN) {
+    if (await doRefresh()) r = await call();
+  }
+  if (r.status === 401) {
+    // refresh 也失效：清会话回登录屏
+    clearSession();
+    go('login');
+    throw new Error('登录已过期，请重新登录');
+  }
   const body = await r.json().catch(() => ({}));
   if (r.status >= 300) throw new Error(body?.error?.message || ('HTTP ' + r.status));
   return body;
@@ -52,6 +90,7 @@ async function doLogin() {
         : { email, password: pass, nickname: '试用' };
       const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
       TOKEN = r.access_token; localStorage.setItem(tokenKey, TOKEN);
+      REFRESH = r.refresh_token || ''; localStorage.setItem(refreshKey, REFRESH);
       return afterLogin();
     } catch (e) {
       if (path === '/auth/login') return showErr('login-err', e.message);
