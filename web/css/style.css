@@ -84,13 +84,13 @@ textarea { font-family: var(--serif); font-size: 14px; height: 180px; resize: ve
 .sent .zh { display: none; font-size: 12px; color: var(--ink2); margin-top: 4px; width: 100%; }
 .sent.showzh .zh { display: block; }
 .sent .play {
-  width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
-  background: var(--surface); cursor: pointer; flex: none; font-size: 12px;
+  width: 42px; height: 42px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface); cursor: pointer; flex: none; font-size: 14px;
 }
 .sent .play.has { background: var(--ink); color: #fff; border: none; }
 .sent .fav {
-  width: 30px; height: 30px; flex: none; border: none; background: none;
-  color: var(--ink2); font-size: 16px; cursor: pointer;
+  width: 46px; height: 46px; flex: none; border: none; background: none;
+  color: var(--ink2); font-size: 26px; line-height: 1; cursor: pointer;
 }
 .sent .fav.on { color: var(--accent); }
 .tab-star { margin-left: 6px; font-size: 12px; }
