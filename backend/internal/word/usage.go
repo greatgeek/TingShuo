@@ -65,6 +65,7 @@ func (h *Handler) Usage(w http.ResponseWriter, r *http.Request) {
 		AudioID    *string `json:"audio_id"` // 可空：前端点播时自动 synthesize
 	}
 	items := []item{}
+	seenText := map[string]bool{} // 展示层按文本去重（容错存量重复数据；新落库已在上游去重）
 	for rows.Next() {
 		var it item
 		if err := rows.Scan(&it.SentenceID, &it.Text, &it.Ruby, &it.Translation,
@@ -72,6 +73,10 @@ func (h *Handler) Usage(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, httpx.Internal(err.Error()))
 			return
 		}
+		if seenText[it.Text] {
+			continue
+		}
+		seenText[it.Text] = true
 		items = append(items, it)
 	}
 
