@@ -67,9 +67,10 @@ async function api(path, opts = {}) {
     if (await doRefresh()) r = await call();
   }
   if (r.status === 401) {
-    // refresh 也失效：清会话回登录屏
+    // refresh 也失效：清会话并整页重载——所有数据已失效，
+    // 重载后 app.js 以空会话初始化，自然落在登录屏
     clearSession();
-    go('login');
+    location.reload();
     throw new Error('登录已过期，请重新登录');
   }
   const body = await r.json().catch(() => ({}));
@@ -99,6 +100,7 @@ async function doLogin() {
 }
 async function afterLogin() {
   $('userchip').textContent = $('login-email').value.trim();
+  hideErr('home-err');
   CFG = await api('/dev/config').catch(() => ({}));
   await loadFavs();
   await loadHome();
@@ -135,6 +137,7 @@ async function switchView(v) {
 }
 // loadHome 回到首页枢纽：今日状态 + 历史课程入口（学习屏的返回落点）
 async function loadHome() {
+  if (!TOKEN) { go('login'); return; } // 未登录防御：绝不停留在需鉴权的屏
   const today = new Date().toISOString().slice(0, 10);
   let lessons = [];
   try {
@@ -727,4 +730,4 @@ async function genAllAudio() {
 }
 
 // ============ 启动 ============
-if (TOKEN) afterLogin(); else go('login');
+if (TOKEN) afterLogin(); else { $('userchip').textContent = '未登录'; go('login'); }
