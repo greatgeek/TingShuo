@@ -183,11 +183,18 @@ function renderPhrasesView() {
   $('tts-btn').style.display = 'none';
 }
 
-// genPhrases 为本课生词生成短语包（LLM → mode=phrases 上传 → 渲染）
+// genPhrases 学习屏入口：为本课生词补生成短语包
 async function genPhrases() {
-  hideErr('gen-err');
-  const words = LESSON.words || [];
-  if (!words.length) return;
+  if (await genPhrasesCore(LESSON.lesson.id, LESSON.words || [])) {
+    LESSON = await api('/lessons/' + LESSON.lesson.id);
+    VIEW = 'phrases';
+    go('learn'); renderPhrasesView();
+  }
+}
+
+// genPhrasesCore 短语包生成核心（LLM → 校验 → mode=phrases 上传），返回成败
+async function genPhrasesCore(lessonID, words) {
+  if (!words.length) return false;
   const t0 = Date.now();
   go('gen');
   $('gen-retry').style.display = 'none'; $('gen-back').style.display = 'none';
@@ -226,22 +233,78 @@ async function genPhrases() {
     const problems = validateLocally(out, words, false);
     if (problems.length) throw new Error('短语校验未通过：' + problems.join('；'));
 
-    const up = await api(`/lessons/${LESSON.lesson.id}/materials`, {
+    await api(`/lessons/${lessonID}/materials`, {
       method: 'POST',
       body: JSON.stringify({ mode: 'phrases', ...sanitizeOutput(out) }),
     });
-    genLog('短语落库成功');
-    LESSON = await api('/lessons/' + LESSON.lesson.id);
-    VIEW = 'phrases';
-    go('learn'); renderPhrasesView();
+    return true;
   } catch (e) {
     showErr('gen-err', e.message);
     $('gen-retry').style.display = 'block';
     $('gen-retry').textContent = '↻ 重新生成';
     $('gen-back').style.display = 'block';
     $('gen-back').textContent = '返回学习';
-    $('gen-back').onclick = () => { VIEW = 'phrases'; go('learn'); renderPhrasesView(); };
+    $('gen-back').onclick = () => { go('learn'); };
     $('gen-title').textContent = '短语生成失败';
+    return false;
+  }
+}
+
+// genFull 为短语模式课补生成句子模式材料（对话/短文）——学习屏「跟读」空态入口
+async function genFull() {
+  const words = LESSON.words || [];
+  if (!words.length) return;
+  const level = (LESSON.lesson && LESSON.lesson.level) || 'N4';
+  const t0 = Date.now();
+  go('gen');
+  $('gen-retry').style.display = 'none'; $('gen-back').style.display = 'none';
+  $('gen-log').style.display = 'none'; $('gen-log').textContent = '';
+  $('gen-title').textContent = '句子模式材料生成中';
+  $('gen-note').innerHTML = '生成对话与短文（约 3—5 分钟），完成后这节课两种模式齐备。';
+  try {
+    const prompt = buildPrompt(words, level);
+    genLog('调用大模型生成对话/短文…');
+    const started = await api('/dev/llm/start', {
+      method: 'POST',
+      body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
+    });
+    let llmText = '';
+    while (true) {
+      await new Promise(res2 => setTimeout(res2, 1000));
+      let st;
+      try { st = await api('/dev/llm/poll?id=' + started.task_id); }
+      catch (e2) { continue; }
+      llmText = st.text || '';
+      const sec = Math.floor(st.elapsed_ms / 1000);
+      $('gen-step').textContent = `已等待 ${Math.floor(sec / 60)} 分 ${sec % 60} 秒 · 已输出 ${st.chars || 0} 字符`;
+      if (st.err) throw new Error('生成失败：' + st.err);
+      if (st.done) break;
+    }
+    genLog(`生成完毕（${Math.floor((Date.now() - t0) / 1000)} 秒）`);
+    const out = JSON.parse(largestJSON(llmText));
+    const idBySurface = {};
+    for (const w of words) idBySurface[w.surface] = w.id;
+    const occ = {};
+    for (const [k, v] of Object.entries(out.word_occurrence || {})) occ[idBySurface[k] || k] = v;
+    out.word_occurrence = occ;
+    const problems = validateLocally(out, words, true);
+    if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
+    await api(`/lessons/${LESSON.lesson.id}/materials`, {
+      method: 'POST',
+      body: JSON.stringify(sanitizeOutput(out)),
+    });
+    genLog('落库成功');
+    LESSON = await api('/lessons/' + LESSON.lesson.id);
+    VIEW = 'material'; CUR_MAT = 0;
+    go('learn'); renderLearn();
+  } catch (e) {
+    showErr('gen-err', e.message);
+    $('gen-retry').style.display = 'block';
+    $('gen-retry').textContent = '↻ 重新生成';
+    $('gen-back').style.display = 'block';
+    $('gen-back').textContent = '返回学习';
+    $('gen-back').onclick = () => { go('learn'); };
+    $('gen-title').textContent = '生成失败';
   }
 }
 
@@ -390,6 +453,17 @@ function fillSample() {
   countWords();
 }
 
+// ============ 生成模式选择 ============
+let GEN_MODE = 'full'; // full=句子模式（对话+短文） / phrases=短语模式（每词一短语）
+function pickGenMode(m) {
+  GEN_MODE = m;
+  $('mode-full').classList.toggle('on', m === 'full');
+  $('mode-phrases').classList.toggle('on', m === 'phrases');
+  $('mode-desc').textContent = m === 'full'
+    ? '对话 + 短文：每个词自然出现在有场景的完整句子里（约 3—5 分钟）'
+    : '每个生词一个搭配短语（3—10 词短句，约 1—2 分钟）——背搭配比背单词更接近「说」';
+}
+
 // ============ 提交 + 生成 ============
 function genLog(msg) {
   const el = $('gen-log'); el.style.display = 'block';
@@ -433,6 +507,17 @@ async function submitWords() {
       }
     }
     genLog('课程就绪 ' + lessonID);
+
+    // 按所选模式分流：短语模式走短语包（快速），句子模式走完整包（现有）
+    if (GEN_MODE === 'phrases') {
+      const okk = await genPhrasesCore(lessonID, words);
+      if (!okk) return; // Core 已在生成屏显示真实错误与重试按钮，勿覆盖
+      genLog('短语包落库成功');
+      LESSON = await api('/lessons/' + lessonID);
+      VIEW = 'phrases';
+      go('learn'); renderPhrasesView();
+      return;
+    }
 
     // 2. LLM 生成材料（后台任务 + 轮询：刷新页面/网络抖动都不丢进度）
     const prompt = buildPrompt(words, $('sel-level').value);
@@ -623,6 +708,20 @@ function renderLearn() {
   const mats = (LESSON.materials || []).filter(m => m.type !== 'phrases');
   const tabs = $('mat-tabs'); tabs.innerHTML = '';
   tabs.style.display = 'flex';
+  if (!mats.length) {
+    // 短语模式课：句子模式材料未生成——提供按需补生成入口
+    $('sents').innerHTML = `
+      <div class="card" style="text-align:center">
+        <h2>句子模式材料</h2>
+        <p class="hint">这门课是「短语模式」生成的，还没有对话/短文。<br>
+        每个词自然出现在有场景的完整句子里——可按需补生成（约 3—5 分钟）。</p>
+        <button class="btn accent" onclick="genFull()">生成对话与短文</button>
+      </div>`;
+    applyMode();
+    $('learn-hint').textContent = '句子模式材料未生成';
+    $('tts-btn').style.display = 'none';
+    return;
+  }
   mats.forEach((m, i) => {
     const fav = FAVM.has(m.id);
     const b = document.createElement('button');

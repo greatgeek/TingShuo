@@ -55,6 +55,12 @@
       <p class="hint">每行一词：<code>单词｜读音｜词性｜中文</code>（读音可空）。重点词标 <code>★</code>（材料中出现 2 次）。</p>
       <textarea id="words-input" placeholder="精算｜せいさん｜名詞｜一起结账 ★&#10;駅｜えき｜名詞｜车站"></textarea>
       <div style="margin-top:8px" class="hint" id="words-count">0 词</div>
+      <div style="margin-top:12px" class="hint">生成模式：</div>
+      <div class="modebar" style="margin-top:6px">
+        <button id="mode-full" class="on" onclick="pickGenMode('full')">句子模式</button>
+        <button id="mode-phrases" onclick="pickGenMode('phrases')">短语模式</button>
+      </div>
+      <p class="hint" id="mode-desc" style="margin:6px 0 0">对话 + 短文：每个词自然出现在有场景的完整句子里（约 3—5 分钟）</p>
       <div class="row2" style="margin-top:10px">
         <select id="sel-level"><option>N5</option><option selected>N4</option><option>N3</option></select>
         <select id="sel-voice"><option value="Nanami" selected>Nanami（女声）</option><option value="Keita">Keita（男声）</option></select>

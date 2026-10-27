@@ -245,10 +245,11 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	// 课程归属校验
 	var lessonDate, status string
 	var wc *int
+	var level *string
 	err := h.pool.QueryRow(r.Context(), `
-		SELECT lesson_date::text, status, word_count
+		SELECT lesson_date::text, status, word_count, generate_params->>'level'
 		FROM daily_lesson WHERE id = $1 AND user_id = $2`, lessonID, userID).
-		Scan(&lessonDate, &status, &wc)
+		Scan(&lessonDate, &status, &wc, &level)
 	if err != nil {
 		httpx.Err(w, httpx.NotFound("课程不存在或不属于当前用户"))
 		return
@@ -390,7 +391,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"lesson":    map[string]any{"id": lessonID, "date": lessonDate, "status": status, "word_count": wc},
+		"lesson":    map[string]any{"id": lessonID, "date": lessonDate, "status": status, "word_count": wc, "level": level},
 		"words":     words,
 		"materials": mats,
 	})
