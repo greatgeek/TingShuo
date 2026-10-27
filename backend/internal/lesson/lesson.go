@@ -122,13 +122,14 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(r.Context())
 	ctx := r.Context()
 
-	// 依 FK 顺序清理（收藏 → 复习 → 练习 → 音频资产 → 问答 → 句子 → 材料 → 词关联 → 课程）
+	// 依 FK 顺序清理（收藏 → 复习 → 练习 → 音频资产 → 词句关联 → 问答 → 句子 → 材料 → 词关联 → 课程）
 	steps := []string{
 		`DELETE FROM favorite_sentence WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
 		`DELETE FROM favorite_material WHERE material_id IN (SELECT id FROM material WHERE lesson_id = $1)`,
 		`DELETE FROM review_item WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
 		`DELETE FROM practice_record WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
 		`DELETE FROM audio_asset WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
+		`DELETE FROM word_sentence WHERE lesson_id = $1`,
 		`DELETE FROM qa_item WHERE lesson_id = $1`,
 		`DELETE FROM sentence WHERE lesson_id = $1`,
 		`DELETE FROM material WHERE lesson_id = $1`,

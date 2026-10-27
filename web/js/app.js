@@ -278,9 +278,10 @@ async function genPhrases() {
   }
 }
 
-// genPhrasesCore 短语包生成核心（LLM → 校验 → mode=phrases 上传），返回成败
+// genPhrasesCore 短语包生成核心（LLM → 校验 → mode=phrases 上传），返回成败。
+// 统一从服务端拉课程词表（含 word_id，供 word_occurrence 重映射与校验）；
+// 幂等前置：短语包已存在则直接使用（省一次 LLM 调用）。
 async function genPhrasesCore(lessonID, words) {
-  if (!words.length) return false;
   const t0 = Date.now();
   go('gen');
   $('gen-retry').style.display = 'none'; $('gen-back').style.display = 'none';
@@ -288,7 +289,15 @@ async function genPhrasesCore(lessonID, words) {
   $('gen-title').textContent = '生词短语生成中';
   $('gen-note').innerHTML = '为每个生词写一个自然短语，通常 1—2 分钟。';
   try {
-    const prompt = buildPhrasesPrompt(words);
+    const full = await api('/lessons/' + lessonID);
+    const svWords = full.words || [];
+    if (!svWords.length) { genLog('本课无生词'); return true; }
+    if ((full.materials || []).some(m => m.type === 'phrases')) {
+      genLog('短语包已存在，直接使用');
+      return true;
+    }
+
+    const prompt = buildPhrasesPrompt(svWords);
     genLog('调用大模型生成短语…');
     const started = await api('/dev/llm/start', {
       method: 'POST',
@@ -311,18 +320,23 @@ async function genPhrasesCore(lessonID, words) {
 
     // surface → word_id 重映射（与完整包同规则）
     const idBySurface = {};
-    for (const w of words) idBySurface[w.surface] = w.id;
+    for (const w of svWords) idBySurface[w.surface] = w.id;
     const occ = {};
     for (const [k, v] of Object.entries(out.word_occurrence || {})) occ[idBySurface[k] || k] = v;
     out.word_occurrence = occ;
 
-    const problems = validateLocally(out, words, false);
+    const problems = validateLocally(out, svWords, false);
     if (problems.length) throw new Error('短语校验未通过：' + problems.join('；'));
 
-    await api(`/lessons/${lessonID}/materials`, {
-      method: 'POST',
-      body: JSON.stringify({ mode: 'phrases', ...sanitizeOutput(out) }),
-    });
+    try {
+      await api(`/lessons/${lessonID}/materials`, {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'phrases', ...sanitizeOutput(out) }),
+      });
+    } catch (e2) {
+      if (!String(e2.message).includes('已生成')) throw e2; // 409 已存在 = 幂等成功
+      genLog('短语包此前已生成，直接使用');
+    }
     return true;
   } catch (e) {
     showErr('gen-err', e.message);
@@ -375,10 +389,15 @@ async function genFull() {
     out.word_occurrence = occ;
     const problems = validateLocally(out, words, true);
     if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
-    await api(`/lessons/${LESSON.lesson.id}/materials`, {
-      method: 'POST',
-      body: JSON.stringify(sanitizeOutput(out)),
-    });
+    try {
+      await api(`/lessons/${LESSON.lesson.id}/materials`, {
+        method: 'POST',
+        body: JSON.stringify(sanitizeOutput(out)),
+      });
+    } catch (e2) {
+      if (!String(e2.message).includes('已生成')) throw e2; // 409 已存在 = 幂等成功
+      genLog('对话/短文此前已生成，直接使用');
+    }
     genLog('落库成功');
     LESSON = await api('/lessons/' + LESSON.lesson.id);
     VIEW = 'material'; CUR_MAT = 0;
@@ -566,7 +585,7 @@ async function submitWords() {
   $('gen-note').innerHTML = '正在用大模型围绕你的词单写对话和短文，通常需要 2—5 分钟。<br>请不要关闭本页。';
   go('gen');
   try {
-    // 1. 建课（同日 draft 复用；ready 重做 = 确认后删除重建，音频缓存不受影响）
+    // 1. 建课/复用（同日词单一致 → 直接复用；仅换了词单才确认删课重做）
     const today = new Date().toISOString().slice(0, 10);
     const buildBody = () => JSON.stringify({
       lesson_date: today, words,
@@ -576,23 +595,29 @@ async function submitWords() {
     try {
       const r = await api('/lessons', { method: 'POST', body: buildBody() });
       lessonID = r.lesson_id;
+      genLog('课程就绪 ' + lessonID);
     } catch (e) {
       if (!String(e.message).includes('已存在')) throw e;
       const list = await api(`/lessons?from=${today}&to=${today}`);
       const existing = (list.lessons || [])[0];
-      if (existing && existing.status === 'ready') {
-        if (!confirm('今日课程已生成。重新提交将删除今日课程并重新生成。\n\n（已生成的句子配音不受影响：重建后相同句子直接命中缓存，零重复计费）\n\n确定重做今日课程？')) {
-          throw new Error('已取消重做');
+      const full = await api('/lessons/' + existing.lesson_id);
+      const oldSet = new Set(full.words.map(w => w.surface));
+      const newSet = new Set(words.map(w => w.surface));
+      const sameWords = oldSet.size === newSet.size && [...newSet].every(s => oldSet.has(s));
+      if (!sameWords && existing.status === 'ready') {
+        // 只有换了词单才需要删除重做（课程与词单绑定）
+        if (!confirm('今日课程的词单与本次提交不同。\n\n重新提交将删除今日课程并按新词单重新生成。\n（已生成的句子配音不受影响：重建后相同句子直接命中缓存，零重复计费）\n\n确定重做？')) {
+          throw new Error('已取消');
         }
-        genLog('删除今日课程（重建）…');
+        genLog('词单已变更，删除今日课程（按新词单重建）…');
         await api('/lessons/' + existing.lesson_id, { method: 'DELETE' });
         const r2 = await api('/lessons', { method: 'POST', body: buildBody() });
         lessonID = r2.lesson_id;
       } else {
-        lessonID = existing.lesson_id; // draft：更新词单后重新生成
+        lessonID = existing.lesson_id; // 词单一致或 draft：复用现有课程
+        genLog('词单与今日课程一致，复用现有课程');
       }
     }
-    genLog('课程就绪 ' + lessonID);
 
     // 按所选模式分流：短语模式走短语包（快速），句子模式走完整包（现有）
     if (GEN_MODE === 'phrases') {
@@ -656,9 +681,14 @@ async function submitWords() {
     if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
     genLog('校验通过，上传落库…');
 
-    // 4. 上传（白名单净化后的干净结构）
-    const up = await api(`/lessons/${lessonID}/materials`, { method: 'POST', body: JSON.stringify(sanitizeOutput(out)) });
-    genLog('落库成功 status=' + up.status + (up.warnings?.length ? '（注音警告 ' + up.warnings.length + ' 句）' : ''));
+    // 4. 上传（白名单净化后的干净结构；同材料已生成 = 幂等成功直接使用）
+    try {
+      const up = await api(`/lessons/${lessonID}/materials`, { method: 'POST', body: JSON.stringify(sanitizeOutput(out)) });
+      genLog('落库成功 status=' + up.status + (up.warnings?.length ? '（注音警告 ' + up.warnings.length + ' 句）' : ''));
+    } catch (e2) {
+      if (!String(e2.message).includes('已生成')) throw e2;
+      genLog('对话/短文此前已生成，直接使用');
+    }
 
     LESSON = await api('/lessons/' + lessonID);
     go('learn'); renderLearn();
