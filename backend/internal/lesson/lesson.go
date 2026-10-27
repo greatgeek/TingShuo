@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -97,6 +98,60 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		"status":     "draft",
 		"word_count": len(words),
 	})
+}
+
+// ---- DELETE /lessons/{id}：删除课程（级联清理；音频对象不删——cache_key 全局资产，重建后同句直接命中，§8 只写不删原则）----
+
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	lessonID := chi.URLParam(r, "id")
+
+	var exists bool
+	if err := h.pool.QueryRow(r.Context(), `
+		SELECT EXISTS (SELECT 1 FROM daily_lesson WHERE id = $1 AND user_id = $2)`,
+		lessonID, userID).Scan(&exists); err != nil || !exists {
+		httpx.Err(w, httpx.NotFound("课程不存在或不属于当前用户"))
+		return
+	}
+
+	tx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer tx.Rollback(r.Context())
+	ctx := r.Context()
+
+	// 依 FK 顺序清理（收藏 → 复习 → 练习 → 音频资产 → 问答 → 句子 → 材料 → 词关联 → 课程）
+	steps := []string{
+		`DELETE FROM favorite_sentence WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
+		`DELETE FROM favorite_material WHERE material_id IN (SELECT id FROM material WHERE lesson_id = $1)`,
+		`DELETE FROM review_item WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
+		`DELETE FROM practice_record WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
+		`DELETE FROM audio_asset WHERE sentence_id IN (SELECT id FROM sentence WHERE lesson_id = $1)`,
+		`DELETE FROM qa_item WHERE lesson_id = $1`,
+		`DELETE FROM sentence WHERE lesson_id = $1`,
+		`DELETE FROM material WHERE lesson_id = $1`,
+		`DELETE FROM lesson_word WHERE lesson_id = $1`,
+		`DELETE FROM daily_lesson WHERE id = $1 AND user_id = $2`,
+	}
+	for i, sqlText := range steps {
+		var args []any
+		if strings.Contains(sqlText, "user_id = $2") {
+			args = []any{lessonID, userID}
+		} else {
+			args = []any{lessonID}
+		}
+		if _, err := tx.Exec(ctx, sqlText, args...); err != nil {
+			httpx.Err(w, httpx.Internal(fmt.Sprintf("级联删除第 %d 步失败: %v", i+1, err)))
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // replaceDraftWords 词入库 + lesson_word 全量重建（新课后提交；draft 课重新提交词单时复用）。

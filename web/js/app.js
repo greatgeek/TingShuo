@@ -288,18 +288,22 @@ async function loadHome() {
     $('lesson-desc').textContent = `今日课程已就绪（${todayIt.word_count} 词）`;
     btn.textContent = '▶ 继续学习';
     btn.onclick = openLesson(todayIt.lesson_id);
+    // 今日已生成时保留「新建词单」入口（重做今日：确认后删课重建）
+    $('home-new-btn').style.display = 'block';
   } else if (todayIt) {
     chip.textContent = '准备中'; chip.classList.remove('ready');
     $('lesson-date').textContent = todayIt.date;
-    $('lesson-desc').textContent = '今日课程草稿就绪，可重新提交词单生成。';
+    $('lesson-desc').textContent = '今日课程草稿就绪，可继续提交词单生成。';
     btn.textContent = '继续提交词单';
     btn.onclick = () => go('create');
+    $('home-new-btn').style.display = 'none';
   } else {
     chip.textContent = '未创建'; chip.classList.remove('ready');
     $('lesson-date').textContent = '—';
     $('lesson-desc').textContent = '还没有今天的课程。1 个词也可以生成一课。';
     btn.textContent = '创建今日课程';
     btn.onclick = () => go('create');
+    $('home-new-btn').style.display = 'none';
   }
 
   // 历史课程（ready 可进学习屏：重听/收藏）
@@ -402,23 +406,31 @@ async function submitWords() {
   $('gen-note').innerHTML = '正在用大模型围绕你的词单写对话和短文，通常需要 2—5 分钟。<br>请不要关闭本页。';
   go('gen');
   try {
-    // 1. 建课（同日复用 draft）
+    // 1. 建课（同日 draft 复用；ready 重做 = 确认后删除重建，音频缓存不受影响）
     const today = new Date().toISOString().slice(0, 10);
+    const buildBody = () => JSON.stringify({
+      lesson_date: today, words,
+      params: { scenes: ['便利店', '车站', '家'], level: $('sel-level').value },
+    });
     let lessonID;
     try {
-      const r = await api('/lessons', {
-        method: 'POST',
-        body: JSON.stringify({
-          lesson_date: today, words,
-          params: { scenes: ['便利店', '车站', '家'], level: $('sel-level').value },
-        }),
-      });
+      const r = await api('/lessons', { method: 'POST', body: buildBody() });
       lessonID = r.lesson_id;
     } catch (e) {
-      if (String(e.message).includes('已存在')) {
-        const list = await api(`/lessons?from=${today}&to=${today}`);
-        lessonID = list.lessons[0].lesson_id;
-      } else throw e;
+      if (!String(e.message).includes('已存在')) throw e;
+      const list = await api(`/lessons?from=${today}&to=${today}`);
+      const existing = (list.lessons || [])[0];
+      if (existing && existing.status === 'ready') {
+        if (!confirm('今日课程已生成。重新提交将删除今日课程并重新生成。\n\n（已生成的句子配音不受影响：重建后相同句子直接命中缓存，零重复计费）\n\n确定重做今日课程？')) {
+          throw new Error('已取消重做');
+        }
+        genLog('删除今日课程（重建）…');
+        await api('/lessons/' + existing.lesson_id, { method: 'DELETE' });
+        const r2 = await api('/lessons', { method: 'POST', body: buildBody() });
+        lessonID = r2.lesson_id;
+      } else {
+        lessonID = existing.lesson_id; // draft：更新词单后重新生成
+      }
     }
     genLog('课程就绪 ' + lessonID);
 

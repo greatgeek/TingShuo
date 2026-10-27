@@ -133,6 +133,7 @@ func run() error {
 			sec.Post("/lessons", lessonH.Create)
 			sec.Get("/lessons", lessonH.List)
 			sec.Get("/lessons/{id}", lessonH.Get)
+			sec.Delete("/lessons/{id}", lessonH.Delete)
 			sec.Post("/lessons/{id}/materials", genH.Upload)
 
 			sec.Post("/reviews", reviewH.Add)
