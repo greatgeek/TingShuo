@@ -23,6 +23,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/review"
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
+	"github.com/greatgeek/TingShuo/backend/internal/word"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
@@ -79,6 +80,7 @@ func run() error {
 	genH := generate.NewHandler(pool)
 	ttsH := tts.NewHandler(pool, store, azureTTS)
 	favH := favorite.NewHandler(pool)
+	wordH := word.NewHandler(pool)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -104,6 +106,8 @@ func run() error {
 			sec.Use(authH.Middleware)
 			sec.Get("/me", userH.Me)
 			sec.Put("/me", userH.Update)
+
+			sec.Get("/words/{id}/usage", wordH.Usage)
 
 			sec.Post("/favorites", favH.AddSentence)
 			sec.Delete("/favorites/sentences/{sentence_id}", favH.RemoveSentence)

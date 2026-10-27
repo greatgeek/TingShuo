@@ -172,6 +172,29 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// 词↔句子关联展开（word_sentence）：生词可索引到其短语与出现的句子（两种模式通用）。
+	// word_occurrence 的值是句子临时 ID，经 sentIDMap 换真实句子 ID；幂等冲突忽略
+	// （同一课重复上传被前置 409 拦截，此处 DO NOTHING 仅为防御）。
+	for wid, occ := range out.WordOccurrence {
+		if occ.Skipped {
+			continue
+		}
+		for _, tmpSid := range occ.Sentences {
+			realSid, ok := sentIDMap[tmpSid]
+			if !ok {
+				continue // 引用不存在句已被校验拦下，防御跳过
+			}
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO word_sentence (word_id, sentence_id, lesson_id)
+				VALUES ($1, $2, $3)
+				ON CONFLICT (word_id, sentence_id) DO NOTHING`,
+				wid, realSid, lessonID); err != nil {
+				httpx.Err(w, httpx.Internal("词句关联写入失败: "+err.Error()))
+				return
+			}
+		}
+	}
 	if _, err = tx.Exec(ctx, `
 		UPDATE daily_lesson SET status = 'ready', updated_at = now() WHERE id = $1`,
 		lessonID); err != nil {

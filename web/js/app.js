@@ -126,22 +126,108 @@ async function goHome() {
   await loadHome();
 }
 
-// switchView 学习屏内切换：当前材料 / 生词短语 / 收藏列表
+// switchView 学习屏内切换：当前材料 / 生词短语 / 生词 / 收藏列表
 async function switchView(v) {
   if (VIEW === v) return;
   VIEW = v; CUR_MAT = 0;
   if (v === 'fav') await loadFavs();
   $('md-fav').classList.toggle('on', v === 'fav');
   $('md-phrases').classList.toggle('on', v === 'phrases');
+  $('md-words').classList.toggle('on', v === 'words');
   $('md-normal').classList.toggle('on', v === 'material' && CUR_MODE === 'normal');
   if (v === 'fav') renderFavView();
   else if (v === 'phrases') renderPhrasesView();
+  else if (v === 'words') renderWordsView();
   else renderLearn();
 }
 
 // phrasesMaterial 取当前课程的生词短语材料（type='phrases'）
 function phrasesMaterial() {
   return (LESSON.materials || []).find(m => m.type === 'phrases') || null;
+}
+
+// renderWordsView 生词视图：本课词列表 → 点词展开用法索引（短语 + 按场景的句子，可点播）
+function renderWordsView() {
+  $('mat-tabs').style.display = 'none';
+  $('tts-btn').style.display = 'none';
+  const box = $('sents'); box.innerHTML = '';
+  const words = LESSON.words || [];
+  if (!words.length) {
+    $('learn-hint').textContent = '本课无生词';
+    return;
+  }
+  words.forEach((w, idx) => {
+    const div = document.createElement('div');
+    div.className = 'sent wordrow'; div.dataset.idx = idx;
+    div.innerHTML = `
+      <span class="spk">${w.is_key ? '★' : ''}</span>
+      <div class="wrap">
+        <div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
+        <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div>
+      </div>
+      <button class="play" title="展开用法">▾</button>`;
+    div.onclick = () => toggleWordUsage(w, div);
+    box.appendChild(div);
+  });
+  applyMode();
+  $('learn-hint').textContent = `生词 · 共 ${words.length} 个 · 点词展开它的短语与句子（可点播）`;
+}
+
+// toggleWordUsage 词的用法索引：GET /words/{id}/usage → 短语 + 按场景句子
+async function toggleWordUsage(w, div) {
+  const existing = div.querySelector('.usage');
+  if (existing) { existing.remove(); return; } // 再次点击收起
+  document.querySelectorAll('.usage').forEach(u => u.remove()); // 同时只展开一个
+  const box = document.createElement('div');
+  box.className = 'usage';
+  box.innerHTML = '<p class="hint">加载用法…</p>';
+  div.appendChild(box);
+  try {
+    const u = await api('/words/' + w.id + '/usage');
+    const phrases = (u.items || []).filter(x => x.type === 'phrases');
+    const sents = (u.items || []).filter(x => x.type !== 'phrases');
+    let html = '';
+    if (phrases.length) {
+      html += '<div class="usage-head">生词短语</div>';
+      phrases.forEach(x => (html += usageRow(x)));
+    }
+    if (sents.length) {
+      html += '<div class="usage-head">句子（按场景）</div>';
+      sents.forEach(x => {
+        html += `<div class="usage-scene">${esc(x.title || x.scene || '—')} · ${esc(x.lesson_date)}</div>`;
+        html += usageRow(x);
+      });
+    }
+    if (!html) html = '<p class="hint">该词暂无关联句子（此课的材料生成于关联功能上线前，重新生成可建立索引）。</p>';
+    box.innerHTML = html;
+    // 绑定点播
+    box.querySelectorAll('.usage-sent').forEach((row, i) => {
+      const sid = row.dataset.sid;
+      const it = (u.items || []).find(x2 => x2.sentence_id === sid);
+      row.onclick = () => {
+        const s = {
+          id: it.sentence_id, text: it.text, ruby_tokens: it.ruby_tokens,
+          translation: it.translation,
+          audios: it.audio_id ? [{ id: it.audio_id }] : [],
+        };
+        playOne(s, i, row);
+      };
+    });
+  } catch (e) {
+    box.innerHTML = '<p class="hint">加载失败：' + esc(e.message) + '</p>';
+  }
+}
+
+// usageRow 用法条目行（点播）
+function usageRow(x) {
+  const has = !!x.audio_id;
+  return `
+    <div class="sent usage-sent" data-sid="${esc(x.sentence_id)}">
+      <span class="spk">${x.type === 'phrases' ? '短' : '句'}</span>
+      <div class="wrap"><div class="txt">${rubyHTML(x.ruby_tokens) || esc(x.text)}</div>
+      <div class="zh">${esc(x.translation || '')}</div></div>
+      <button class="play ${has ? 'has' : ''}">${has ? '▶' : '…'}</button>
+    </div>`;
 }
 
 // renderPhrasesView 生词短语视图：每词一短语，点句即听（配音管线不变）

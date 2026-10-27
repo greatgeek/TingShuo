@@ -95,6 +95,17 @@ textarea { font-family: var(--serif); font-size: 14px; height: 180px; resize: ve
 .sent .fav.on { color: var(--accent); }
 .tab-star { margin-left: 6px; font-size: 12px; }
 .tab-star.on { color: var(--accent); }
+
+/* ===== 生词视图与用法索引 ===== */
+.wordrow .txt ruby rt { font-size: 12px; }
+.usage {
+  width: 100%; background: var(--soft); border-radius: 10px;
+  padding: 8px; margin-top: 6px;
+}
+.usage-head { font-size: 12px; font-weight: 700; color: var(--accent); margin: 6px 4px 2px; }
+.usage-scene { font-size: 11px; color: var(--ink2); margin: 6px 4px 0; }
+.usage-sent { background: var(--surface); padding: 8px; }
+.usage-sent .txt { font-size: 14px; }
 .sent .play.busy {
   background: var(--soft); color: var(--accent); border-color: var(--accent);
   animation: pulse 0.8s ease-in-out infinite;
