@@ -24,6 +24,11 @@ header {
 header .t { font-size: 15px; font-weight: 700; }
 header .t em { color: var(--accent); font-style: normal; }
 header .s { font-size: 11px; color: var(--ink2); }
+.nav-home {
+  font-size: 12px; padding: 5px 12px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink2);
+}
+.nav-home:hover { color: var(--accent); border-color: var(--accent); }
 
 .screen { display: none; flex: 1; flex-direction: column; padding: 16px; }
 .screen.on { display: flex; }
@@ -83,6 +88,13 @@ textarea { font-family: var(--serif); font-size: 14px; height: 180px; resize: ve
   background: var(--surface); cursor: pointer; flex: none; font-size: 12px;
 }
 .sent .play.has { background: var(--ink); color: #fff; border: none; }
+.sent .fav {
+  width: 30px; height: 30px; flex: none; border: none; background: none;
+  color: var(--ink2); font-size: 16px; cursor: pointer;
+}
+.sent .fav.on { color: var(--accent); }
+.tab-star { margin-left: 6px; font-size: 12px; }
+.tab-star.on { color: var(--accent); }
 .sent .play.busy {
   background: var(--soft); color: var(--accent); border-color: var(--accent);
   animation: pulse 0.8s ease-in-out infinite;

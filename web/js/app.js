@@ -11,7 +11,11 @@ let CFG = {};        // /dev/config 结果
 let LESSON = null;   // 当前课程全量
 let CUR_MAT = 0;     // 当前材料 tab
 let CUR_MODE = 'normal'; // 跟读/盲听/译文（重渲染后需恢复）
+let VIEW = 'material';   // material=当前材料 / fav=收藏视图
 let playing = null;  // 当前 audio
+let FAVS = new Set();    // 已收藏句子 ID
+let FAV_ITEMS = [];      // 收藏句列表（含内容）
+let FAVM = new Set();    // 已收藏材料 ID
 
 function go(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
@@ -57,23 +61,94 @@ async function doLogin() {
 async function afterLogin() {
   $('userchip').textContent = $('login-email').value.trim();
   CFG = await api('/dev/config').catch(() => ({}));
+  await loadFavs();
   await loadHome();
 }
+
+// loadFavs 拉取收藏句/材料（学习屏星标与收藏视图的数据源）
+async function loadFavs() {
+  try {
+    const fs = await api('/favorites/sentences');
+    FAV_ITEMS = fs.items || [];
+    FAVS = new Set(FAV_ITEMS.map(x => x.sentence_id));
+  } catch {}
+  try {
+    const fm = await api('/favorites/materials');
+    FAVM = new Set(fm.material_ids || []);
+  } catch {}
+}
+
+// goHome 回首页并刷新今日课程状态（学习屏的返回入口）
+async function goHome() {
+  stopPlay();
+  await loadFavs();
+  await loadHome();
+}
+
+// switchView 学习屏内切换：当前材料 / 收藏列表
+async function switchView(v) {
+  if (VIEW === v) return;
+  VIEW = v; CUR_MAT = 0;
+  if (v === 'fav') await loadFavs();
+  $('md-fav').classList.toggle('on', v === 'fav');
+  $('md-normal').classList.toggle('on', v === 'material' && CUR_MODE === 'normal');
+  if (v === 'fav') renderFavView(); else { renderLearn(); }
+}
+// loadHome 回到首页枢纽：今日状态 + 历史课程入口（学习屏的返回落点）
 async function loadHome() {
   const today = new Date().toISOString().slice(0, 10);
+  let lessons = [];
   try {
-    const list = await api(`/lessons?from=${today}&to=${today}`);
-    const it = (list.lessons || [])[0];
-    if (it && it.status === 'ready') {
-      LESSON = await api('/lessons/' + it.lesson_id);
-      go('learn'); renderLearn();
-    } else if (it) {
-      window._draftLesson = it.lesson_id;
-      go('create');
-    } else {
-      go('create');
-    }
-  } catch (e) { showErr('home-err', e.message); go('create'); }
+    const list = await api('/lessons');
+    lessons = list.lessons || [];
+  } catch (e) {
+    showErr('home-err', e.message); go('home'); return;
+  }
+
+  const chip = $('lesson-chip'), btn = $('home-main-btn');
+  const todayIt = lessons.find(x => x.date === today);
+  const openLesson = (id) => async () => {
+    LESSON = await api('/lessons/' + id);
+    VIEW = 'material'; CUR_MAT = 0;
+    go('learn'); renderLearn();
+  };
+
+  if (todayIt && todayIt.status === 'ready') {
+    chip.textContent = '可学习'; chip.classList.add('ready');
+    $('lesson-date').textContent = todayIt.date;
+    $('lesson-desc').textContent = `今日课程已就绪（${todayIt.word_count} 词）`;
+    btn.textContent = '▶ 继续学习';
+    btn.onclick = openLesson(todayIt.lesson_id);
+  } else if (todayIt) {
+    chip.textContent = '准备中'; chip.classList.remove('ready');
+    $('lesson-date').textContent = todayIt.date;
+    $('lesson-desc').textContent = '今日课程草稿就绪，可重新提交词单生成。';
+    btn.textContent = '继续提交词单';
+    btn.onclick = () => go('create');
+  } else {
+    chip.textContent = '未创建'; chip.classList.remove('ready');
+    $('lesson-date').textContent = '—';
+    $('lesson-desc').textContent = '还没有今天的课程。1 个词也可以生成一课。';
+    btn.textContent = '创建今日课程';
+    btn.onclick = () => go('create');
+  }
+
+  // 历史课程（ready 可进学习屏：重听/收藏）
+  const readyOnes = lessons.filter(x => x.status === 'ready').sort((a, b) => b.date.localeCompare(a.date));
+  const hl = $('history-list'); hl.innerHTML = '';
+  if (!readyOnes.length) {
+    hl.innerHTML = '<p class="hint">暂无已完成的历史课程。</p>';
+  } else {
+    readyOnes.slice(0, 10).forEach(x => {
+      const b = document.createElement('button');
+      b.className = 'btn ghost';
+      b.style.marginTop = '6px';
+      b.textContent = `${x.date} · ${x.word_count} 词 · 打开学习`;
+      b.onclick = openLesson(x.lesson_id);
+      hl.appendChild(b);
+    });
+  }
+  go('home');
 }
 
 // ============ 词单 ============
@@ -340,31 +415,111 @@ function rubyHTML(tokens) {
 }
 
 function renderLearn() {
+  if (VIEW === 'fav') return renderFavView();
   const mats = LESSON.materials || [];
   const tabs = $('mat-tabs'); tabs.innerHTML = '';
+  tabs.style.display = 'flex';
   mats.forEach((m, i) => {
+    const fav = FAVM.has(m.id);
     const b = document.createElement('button');
-    b.textContent = (m.title || m.scene || ('材料 ' + (i + 1)));
     b.className = i === CUR_MAT ? 'on' : '';
-    b.onclick = () => { CUR_MAT = i; renderLearn(); };
+    b.innerHTML = (fav ? '★ ' : '') + esc(m.title || m.scene || ('材料 ' + (i + 1)));
+    b.onclick = () => { VIEW = 'material'; CUR_MAT = i; renderLearn(); };
+    const star = document.createElement('span');
+    star.className = 'tab-star' + (fav ? ' on' : '');
+    star.textContent = fav ? '★' : '☆';
+    star.title = fav ? '取消收藏材料' : '收藏本材料';
+    star.onclick = (e) => { e.stopPropagation(); toggleFavMaterial(m.id); };
+    b.appendChild(star);
     tabs.appendChild(b);
   });
   const m = mats[CUR_MAT] || { sentences: [] };
   const box = $('sents'); box.innerHTML = '';
   m.sentences.forEach((s, idx) => {
     const has = (s.audios || []).length > 0;
+    const fav = FAVS.has(s.id);
     const div = document.createElement('div');
     div.className = 'sent'; div.dataset.idx = idx;
     div.innerHTML = `
       <span class="spk">${esc(s.speaker || '')}</span>
       <div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
       <div class="zh">${esc(s.translation || '')}</div></div>
+      <button class="fav ${fav ? 'on' : ''}" title="${fav ? '取消收藏' : '收藏句子'}">${fav ? '★' : '☆'}</button>
       <button class="play ${has ? 'has' : ''}" title="${has ? '播放' : '未配音'}">${has ? '▶' : '…'}</button>`;
+    div.querySelector('.fav').onclick = (e) => { e.stopPropagation(); toggleFavSentence(s, div); };
     div.onclick = () => playSentence(s, idx, div);
     box.appendChild(div);
   });
   applyMode();
   updateLearnHint();
+}
+
+// renderFavView 收藏视图：全部收藏句（可点播/连播，未配音的自动现场配音）
+function renderFavView() {
+  $('mat-tabs').style.display = 'none';
+  $('tts-btn').style.display = 'none';
+  const box = $('sents'); box.innerHTML = '';
+  const items = FAV_ITEMS || [];
+  if (!items.length) {
+    box.innerHTML = '<p class="hint" style="text-align:center;margin-top:30px">还没有收藏句子。<br>回到「跟读」视图，点句子旁的 ☆ 即可收藏。</p>';
+    $('learn-hint').textContent = `★ 收藏 · 共 0 句`;
+    return;
+  }
+  items.forEach((it, idx) => {
+    const s = {
+      id: it.sentence_id, text: it.text, ruby_tokens: it.ruby_tokens,
+      translation: it.translation,
+      audios: it.audio_id ? [{ id: it.audio_id }] : [],
+      _fav: true,
+    };
+    const div = document.createElement('div');
+    div.className = 'sent'; div.dataset.idx = idx;
+    div.innerHTML = `
+      <span class="spk">${esc(it.lesson_date || '')}</span>
+      <div class="wrap"><div class="txt">${rubyHTML(it.ruby_tokens) || esc(it.text)}</div>
+      <div class="zh">${esc(it.translation || '')}</div></div>
+      <button class="fav on" title="取消收藏">★</button>
+      <button class="play ${it.audio_id ? 'has' : ''}">${it.audio_id ? '▶' : '…'}</button>`;
+    div.querySelector('.fav').onclick = (e) => { e.stopPropagation(); toggleFavSentence(s, div); };
+    div.onclick = () => playSentence(s, idx, div);
+    box.appendChild(div);
+  });
+  applyMode();
+  $('learn-hint').textContent = `★ 收藏 · 共 ${items.length} 句 · 点句子即听 · 「▶ 整段连播」连播全部收藏`;
+}
+
+// toggleFavSentence 收藏/取消收藏句子（星标局部更新，不重建列表）
+async function toggleFavSentence(s, div) {
+  try {
+    if (FAVS.has(s.id)) {
+      await api('/favorites/sentences/' + s.id, { method: 'DELETE' });
+      FAVS.delete(s.id);
+      FAV_ITEMS = FAV_ITEMS.filter(x => x.sentence_id !== s.id);
+    } else {
+      await api('/favorites', { method: 'POST', body: JSON.stringify({ sentence_id: s.id }) });
+      FAVS.add(s.id);
+      FAV_ITEMS.unshift({
+        sentence_id: s.id, text: s.text, ruby_tokens: s.ruby_tokens,
+        translation: s.translation, audio_id: (s.audios || [])[0]?.id || null,
+        lesson_date: (LESSON && LESSON.lesson && LESSON.lesson.date) || '',
+      });
+    }
+    if (div) {
+      const btn = div.querySelector('.fav');
+      const on = FAVS.has(s.id);
+      btn.textContent = on ? '★' : '☆';
+      btn.classList.toggle('on', on);
+    }
+  } catch (e) { alert(e.message); }
+}
+
+// toggleFavMaterial 收藏/取消收藏材料（tab 星标刷新）
+async function toggleFavMaterial(mid) {
+  try {
+    const r = await api('/favorites/materials', { method: 'POST', body: JSON.stringify({ material_id: mid }) });
+    (r.favorited ? FAVM.add(mid) : FAVM.delete(mid));
+    renderLearn();
+  } catch (e) { alert(e.message); }
 }
 
 // updateLearnHint 只刷新底部统计与配音按钮显隐（不碰句子 DOM，模式状态安全）
@@ -469,7 +624,15 @@ async function playSentence(s, idx, div) { await playOne(s, idx, div); }
 
 async function playAll() {
   const btn = document.querySelector('#sc-learn .row2 .btn.ghost');
-  const sents = (LESSON.materials[CUR_MAT] || {}).sentences || [];
+  let sents;
+  if (VIEW === 'fav') {
+    sents = (FAV_ITEMS || []).map(it => ({
+      id: it.sentence_id, text: it.text,
+      audios: it.audio_id ? [{ id: it.audio_id }] : [],
+    }));
+  } else {
+    sents = (LESSON.materials[CUR_MAT] || {}).sentences || [];
+  }
   const need = sents.filter(s => !(s.audios || []).length).length;
   // 连播前自动补齐配音（不再无声跳过）
   if (need > 0) {
@@ -477,7 +640,7 @@ async function playAll() {
     btn.disabled = true;
     await ensureAudio(sents, (d, n) => (btn.textContent = `配音中 ${d}/${n}…`));
     btn.disabled = false; btn.textContent = old;
-    refreshSentenceButtons();
+    if (VIEW !== 'fav') refreshSentenceButtons();
   }
   if (playing) stopPlay();
   for (let i = 0; i < sents.length; i++) {

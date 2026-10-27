@@ -16,6 +16,7 @@ import (
 
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/dev"
+	"github.com/greatgeek/TingShuo/backend/internal/favorite"
 	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/internal/lesson"
@@ -77,6 +78,7 @@ func run() error {
 	reviewH := review.NewHandler(pool)
 	genH := generate.NewHandler(pool)
 	ttsH := tts.NewHandler(pool, store, azureTTS)
+	favH := favorite.NewHandler(pool)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -102,6 +104,12 @@ func run() error {
 			sec.Use(authH.Middleware)
 			sec.Get("/me", userH.Me)
 			sec.Put("/me", userH.Update)
+
+			sec.Post("/favorites", favH.AddSentence)
+			sec.Delete("/favorites/sentences/{sentence_id}", favH.RemoveSentence)
+			sec.Get("/favorites/sentences", favH.ListSentences)
+			sec.Post("/favorites/materials", favH.ToggleMaterial)
+			sec.Get("/favorites/materials", favH.ListMaterials)
 
 			sec.Post("/audio/check", ttsH.Check)
 			sec.Post("/audio/synthesize", ttsH.Synthesize)

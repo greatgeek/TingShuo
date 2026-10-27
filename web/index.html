@@ -9,6 +9,7 @@
 <body>
 <div class="frame">
   <header>
+    <button class="nav-home" id="nav-home" onclick="goHome()">⌂ 首页</button>
     <span class="t">听说 <em>TingShuo</em></span>
     <span class="s" id="userchip">桌面前端（开发版）</span>
   </header>
@@ -31,9 +32,13 @@
       <h2>今日课程</h2>
       <span class="status-chip" id="lesson-chip">未创建</span>
       <div class="bignum" id="lesson-date">—</div>
-      <p class="hint" id="lesson-desc">还没有今天的课程。</p>
+      <p class="hint" id="lesson-desc">还没有今天的课程。1 个词也可以生成一课。</p>
       <button class="btn accent" id="home-main-btn" onclick="go('create')">创建今日课程</button>
       <div class="err" id="home-err"></div>
+    </div>
+    <div class="card">
+      <h2>历史课程</h2>
+      <div id="history-list"></div>
     </div>
     <div class="card">
       <h2>使用流程</h2>
@@ -77,10 +82,11 @@
   <!-- 学习 -->
   <section class="screen" id="sc-learn">
     <div class="modebar">
-      <button id="md-normal" class="on" onclick="setMode('normal')">跟读</button>
-      <button id="md-blind" onclick="setMode('blind')">盲听</button>
+      <button id="md-normal" class="on" onclick="switchView('material'); setMode('normal')">跟读</button>
+      <button id="md-blind" onclick="switchView('material'); setMode('blind')">盲听</button>
       <button id="md-zh" onclick="setMode('zh')">译文</button>
       <button id="md-rt" class="on" onclick="toggleRT()">假名</button>
+      <button id="md-fav" onclick="switchView('fav')">★ 收藏</button>
     </div>
     <div class="tabs" id="mat-tabs"></div>
     <div class="row2" style="margin-bottom:10px">
