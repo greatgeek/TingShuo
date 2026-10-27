@@ -194,7 +194,10 @@ async function loadHome() {
 }
 
 // ============ 词单 ============
-$('words-input').addEventListener('input', countWords);
+// IME 安全处理（中日输入法关键）：composition（组词）期间不触发解析——
+// 组合中的假名/候选文字不是最终输入，边组词边解析会与 IME 内部状态互相干扰导致卡顿；
+// compositionend（用户按回车/空格确认候选）后才解析。另有 150ms 节流。
+let composing = false, countTimer = null;
 function countWords() {
   const n = parseWords($('words-input').value).length;
   let tip = '';
@@ -204,6 +207,18 @@ function countWords() {
   else if (n > 40) tip = '（词较多，生成与学习时间会变长）';
   $('words-count').textContent = n + ' 词' + tip;
 }
+function scheduleCount() {
+  if (composing) return;
+  if (countTimer) clearTimeout(countTimer);
+  countTimer = setTimeout(countWords, 150);
+}
+{
+  const wi = $('words-input');
+  wi.addEventListener('compositionstart', () => (composing = true));
+  wi.addEventListener('compositionend', () => { composing = false; scheduleCount(); });
+  wi.addEventListener('input', scheduleCount);
+}
+
 function parseWords(text) {
   const out = [];
   for (const line of text.split('\n')) {
