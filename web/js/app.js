@@ -305,6 +305,7 @@ async function genPhrasesCore(lessonID, words, isRetry) {
       method: 'POST',
       body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
     });
+    saveActiveTask(started.task_id, lessonID, 'phrases');
     let llmText = '';
     while (true) {
       await new Promise(res2 => setTimeout(res2, 1000));
@@ -317,6 +318,7 @@ async function genPhrasesCore(lessonID, words, isRetry) {
       if (st.err) throw new Error('生成失败：' + st.err);
       if (st.done) break;
     }
+    clearActiveTask();
     genLog(`生成完毕（${Math.floor((Date.now() - t0) / 1000)} 秒）`);
     const out = JSON.parse(largestJSON(llmText));
 
@@ -394,6 +396,7 @@ async function genFull() {
       method: 'POST',
       body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
     });
+    saveActiveTask(started.task_id, LESSON.lesson.id, 'full');
     let llmText = '';
     while (true) {
       await new Promise(res2 => setTimeout(res2, 1000));
@@ -406,6 +409,7 @@ async function genFull() {
       if (st.err) throw new Error('生成失败：' + st.err);
       if (st.done) break;
     }
+    clearActiveTask();
     genLog(`生成完毕（${Math.floor((Date.now() - t0) / 1000)} 秒）`);
     const out = JSON.parse(largestJSON(llmText));
     const idBySurface = {};
@@ -456,6 +460,104 @@ ${lines.join('\n')}
 严格按如下 JSON 结构输出（不要 markdown 围栏、不要解释）：
 {"materials":[{"id":"ph1","type":"phrases","scene":"生词短语","title":"生词短语","role_a":null,"role_b":null,"sort_order":99,"sentences":[{"id":"p1","sort_order":1,"speaker":"精算","text":"...","kana":"...","translation":"...","para_no":0}]}],"qa_items":[],"substitution_items":[],"word_occurrence":{"精算":["p1"]}}`;
 }
+// ============ 生成任务状态（跨页面可见：离开生成屏后首页可查、可恢复） ============
+function saveActiveTask(taskID, lessonID, mode) {
+  localStorage.setItem('ts_task', JSON.stringify({
+    task_id: taskID, lesson_id: lessonID, mode, started: Date.now(),
+  }));
+}
+function getActiveTask() {
+  try { return JSON.parse(localStorage.getItem('ts_task')); } catch { return null; }
+}
+function clearActiveTask() { localStorage.removeItem('ts_task'); }
+
+// checkActiveTask 首页状态卡：进行中显示进度（点击回生成屏），完成显示结果入口
+async function checkActiveTask() {
+  const t = getActiveTask();
+  const card = $('gen-status-card');
+  if (!t) { card.style.display = 'none'; return; }
+  let st;
+  try {
+    st = await api('/dev/llm/poll?id=' + t.task_id);
+  } catch (e) {
+    card.style.display = 'none'; return; // 任务不可查（服务重启等）——静默隐藏
+  }
+  card.style.display = 'block';
+  const label = t.mode === 'phrases' ? '生词短语' : '对话/短文';
+  const btn = $('gen-status-btn');
+  if (st.done && !st.err) {
+    $('gen-status-text').innerHTML = `「${label}」✅ 生成完成（${st.chars} 字符）`;
+    btn.textContent = '查看结果';
+    btn.onclick = async () => {
+      clearActiveTask();
+      LESSON = await api('/lessons/' + t.lesson_id);
+      if (t.mode === 'phrases') { VIEW = 'phrases'; go('learn'); renderPhrasesView(); }
+      else { VIEW = 'material'; CUR_MAT = 0; go('learn'); renderLearn(); }
+    };
+  } else if (st.err) {
+    $('gen-status-text').textContent = `「${label}」生成失败：${st.err}`;
+    btn.textContent = '返回重试';
+    btn.onclick = () => { clearActiveTask(); go('create'); };
+  } else {
+    const sec = Math.floor(st.elapsed_ms / 1000);
+    $('gen-status-text').innerHTML =
+      `「${label}」生成中 · 已等待 ${Math.floor(sec / 60)} 分 ${sec % 60} 秒 · 已输出 ${st.chars} 字符`;
+    btn.textContent = '查看进度';
+    btn.onclick = () => resumeActiveGen();
+  }
+}
+
+// resumeActiveGen 从首页回到生成屏，恢复轮询直到完成并跳转对应视图
+async function resumeActiveGen() {
+  const t = getActiveTask();
+  if (!t) return;
+  go('gen');
+  $('gen-retry').style.display = 'none'; $('gen-back').style.display = 'none';
+  $('gen-title').textContent = '材料生成中（已恢复进度）';
+  $('gen-preview').style.display = 'block';
+  try {
+    let llmText = '';
+    while (true) {
+      await new Promise(r => setTimeout(r, 1000));
+      let st;
+      try { st = await api('/dev/llm/poll?id=' + t.task_id); }
+      catch (e) { continue; }
+      llmText = st.text || '';
+      const sec = Math.floor(st.elapsed_ms / 1000);
+      if (st.chars > 0) $('gen-preview').textContent = '…' + llmText.slice(-150).replace(/\s+/g, ' ');
+      $('gen-step').textContent = `已等待 ${Math.floor(sec / 60)} 分 ${sec % 60} 秒 · 已输出 ${st.chars} 字符`;
+      if (st.err) throw new Error(st.err);
+      if (st.done) break;
+    }
+    clearActiveTask();
+    $('gen-preview').textContent = '';
+    const out = JSON.parse(largestJSON(llmText));
+    const full = await api('/lessons/' + t.lesson_id);
+    const idBySurface = {};
+    for (const w of full.words) idBySurface[w.surface] = w.id;
+    const occ = {};
+    for (const [k, v] of Object.entries(out.word_occurrence || {})) occ[idBySurface[k] || k] = v;
+    out.word_occurrence = occ;
+    const problems = validateLocally(out, full.words, t.mode !== 'phrases');
+    if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
+    try {
+      await api(`/lessons/${t.lesson_id}/materials`, {
+        method: 'POST',
+        body: JSON.stringify(t.mode === 'phrases' ? { mode: 'phrases', ...sanitizeOutput(out) } : sanitizeOutput(out)),
+      });
+    } catch (e2) { if (!String(e2.message).includes('已生成')) throw e2; }
+    LESSON = await api('/lessons/' + t.lesson_id);
+    if (t.mode === 'phrases') { VIEW = 'phrases'; go('learn'); renderPhrasesView(); }
+    else { VIEW = 'material'; CUR_MAT = 0; go('learn'); renderLearn(); }
+  } catch (e) {
+    showErr('gen-err', e.message);
+    $('gen-title').textContent = '生成失败';
+    $('gen-back').style.display = 'block';
+    $('gen-back').textContent = '返回首页';
+    $('gen-back').onclick = () => { clearActiveTask(); goHome(); };
+  }
+}
+
 // loadHome 回到首页枢纽：今日状态 + 历史课程入口（学习屏的返回落点）
 async function loadHome() {
   if (!TOKEN) { go('login'); return; } // 未登录防御：绝不停留在需鉴权的屏
@@ -467,6 +569,7 @@ async function loadHome() {
   } catch (e) {
     showErr('home-err', e.message); go('home'); return;
   }
+  checkActiveTask(); // 首页显示进行中/已完成的生成任务（可点入）
 
   const chip = $('lesson-chip'), btn = $('home-main-btn');
   const todayIt = lessons.find(x => x.date === today);
@@ -673,6 +776,7 @@ async function submitWords() {
         body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
       });
       const taskID = started.task_id;
+      saveActiveTask(taskID, lessonID, 'full');
       genLog('生成任务已启动（服务端后台执行，刷新页面也不会中断）');
       // 轮询循环
       while (true) {
@@ -713,6 +817,7 @@ async function submitWords() {
     }
     if (!out) throw new Error('材料校验未通过（已自动重试一次）：' + lastProblems.join('；'));
     $('gen-preview').textContent = '';
+    clearActiveTask();
     genLog('校验通过，上传落库…');
 
     // 4. 上传（白名单净化后的干净结构；同材料已生成 = 幂等成功直接使用）
