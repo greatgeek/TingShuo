@@ -145,6 +145,7 @@ func (out GenerationOutput) Validate(words map[string]bool, strict bool) []strin
 		default:
 			problems = append(problems, fmt.Sprintf("材料 %q 的 type 非法：%q（须 dialogue/passage/phrases）", m.ID, m.Type))
 		}
+		textSeen := map[string]bool{} // 同材料内句子文本唯一（重复输出是模型退化，handler 已先行去重）
 		for _, s := range m.Sentences {
 			if strings.TrimSpace(s.Text) == "" {
 				problems = append(problems, fmt.Sprintf("材料 %q 中存在空句子（id=%s）", m.ID, s.ID))
@@ -157,6 +158,10 @@ func (out GenerationOutput) Validate(words map[string]bool, strict bool) []strin
 				problems = append(problems, fmt.Sprintf("句子临时 ID 重复：%s", s.ID))
 			}
 			sidSet[s.ID] = true
+			if textSeen[s.Text] {
+				problems = append(problems, fmt.Sprintf("材料 %q 存在文本重复的句子（id=%s）", m.ID, s.ID))
+			}
+			textSeen[s.Text] = true
 		}
 	}
 

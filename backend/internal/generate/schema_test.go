@@ -89,6 +89,30 @@ func TestValidateKeyWordSingleOccurrence(t *testing.T) {
 	}
 }
 
+func TestDedupMaterials(t *testing.T) {
+	out := validOutput()
+	n0 := len(out.Materials[0].Sentences)
+	// 追加一个与 s1 文本相同、ID 不同的重复句，并把 w1 的引用指向它
+	dup := out.Materials[0].Sentences[0]
+	dup.ID = "s1b"
+	out.Materials[0].Sentences = append(out.Materials[0].Sentences, dup)
+	out.WordOccurrence["w1"] = WordOcc{Sentences: []string{"s1", "s1b"}}
+
+	dedupMaterials(&out)
+
+	if got := len(out.Materials[0].Sentences); got != n0 {
+		t.Fatalf("重复句应被移除，句数应回到 %d，得到 %d", n0, got)
+	}
+	for _, sid := range out.WordOccurrence["w1"].Sentences {
+		if sid == "s1b" {
+			t.Fatal("对重复句的复现引用应重定向到保留句 s1")
+		}
+	}
+	if problems := out.Validate(map[string]bool{"w1": false, "w2": true, "w3": false, "w4": false, "w5": false}, true); len(problems) > 0 {
+		t.Fatalf("去重后应通过校验: %v", problems)
+	}
+}
+
 func TestWordOccUnmarshal(t *testing.T) {
 	var occ WordOcc
 	if err := json.Unmarshal([]byte(`["s1","s2"]`), &occ); err != nil {

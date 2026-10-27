@@ -16,6 +16,46 @@ type Handler struct{ pool *pgxpool.Pool }
 
 func NewHandler(pool *pgxpool.Pool) *Handler { return &Handler{pool: pool} }
 
+// dedupMaterials 材料内按句子文本去重（LLM 偶发输出内容重复的句子）：
+// 保留首个，重复句丢弃，word_occurrence 中对重复句的引用重定向到保留句
+// （否则该词的用法索引会出现同文重复条目）。
+func dedupMaterials(out *GenerationOutput) {
+	for mi := range out.Materials {
+		m := &out.Materials[mi]
+		keep := map[string]string{} // text → 保留句的临时 ID
+		drop := map[string]string{} // 重复句临时 ID → 保留句临时 ID
+		kept := make([]SentenceGen, 0, len(m.Sentences))
+		for _, s := range m.Sentences {
+			if first, dup := keep[s.Text]; dup {
+				drop[s.ID] = first
+				continue
+			}
+			keep[s.Text] = s.ID
+			kept = append(kept, s)
+		}
+		if len(drop) == 0 {
+			continue
+		}
+		m.Sentences = kept
+		for wid, occ := range out.WordOccurrence {
+			ns := make([]string, 0, len(occ.Sentences))
+			changed := false
+			for _, sid := range occ.Sentences {
+				if to, dup := drop[sid]; dup {
+					ns = append(ns, to)
+					changed = true
+				} else {
+					ns = append(ns, sid)
+				}
+			}
+			if changed {
+				occ.Sentences = ns
+				out.WordOccurrence[wid] = occ
+			}
+		}
+	}
+}
+
 // Upload 校验、增强（振り仮名）、落库材料包，返回 临时ID→真实ID 映射与校验 warnings。
 // body 顶层 mode 字段：空 = 完整材料包（draft 课一次性上传）；"phrases" = 生词短语包
 // （ready 课后按需追加，FR-2.15 搭配卡；校验放宽、不覆盖词复现统计、不改课程状态）。
@@ -88,6 +128,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		words[wid] = isKey
 	}
 	wrows.Close()
+
+	// 材料内句子文本去重：LLM 偶发输出内容重复的句子（不同临时 ID、相同文本），
+	// 保留首个，后续重复句的 word_occurrence 引用重定向到保留句
+	dedupMaterials(&out)
 
 	if problems := out.Validate(words, req.Mode != "phrases"); len(problems) > 0 {
 		httpx.WriteJSON(w, http.StatusBadRequest, map[string]any{
