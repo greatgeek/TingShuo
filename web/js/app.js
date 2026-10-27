@@ -200,11 +200,12 @@ async function toggleWordUsage(w, div) {
     }
     if (!html) html = '<p class="hint">该词暂无关联句子（此课的材料生成于关联功能上线前，重新生成可建立索引）。</p>';
     box.innerHTML = html;
-    // 绑定点播
+    // 绑定点播（阻止冒泡到词行——否则会触发 toggleWordUsage 的收起逻辑）
     box.querySelectorAll('.usage-sent').forEach((row, i) => {
       const sid = row.dataset.sid;
       const it = (u.items || []).find(x2 => x2.sentence_id === sid);
-      row.onclick = () => {
+      row.onclick = (e) => {
+        e.stopPropagation();
         const s = {
           id: it.sentence_id, text: it.text, ruby_tokens: it.ruby_tokens,
           translation: it.translation,
