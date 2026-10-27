@@ -280,8 +280,9 @@ async function genPhrases() {
 
 // genPhrasesCore 短语包生成核心（LLM → 校验 → mode=phrases 上传），返回成败。
 // 统一从服务端拉课程词表（含 word_id，供 word_occurrence 重映射与校验）；
-// 幂等前置：短语包已存在则直接使用（省一次 LLM 调用）。
-async function genPhrasesCore(lessonID, words) {
+// 幂等前置：短语包已存在则直接使用（省一次 LLM 调用）；
+// isRetry=true 表示已在自动重试（最多一次，避免无限消耗 token）。
+async function genPhrasesCore(lessonID, words, isRetry) {
   const t0 = Date.now();
   go('gen');
   $('gen-retry').style.display = 'none'; $('gen-back').style.display = 'none';
@@ -325,8 +326,32 @@ async function genPhrasesCore(lessonID, words) {
     for (const [k, v] of Object.entries(out.word_occurrence || {})) occ[idBySurface[k] || k] = v;
     out.word_occurrence = occ;
 
+    // 短语包自修复：LLM 偶发漏写部分词的 word_occurrence——短语包每句的
+    // speaker 就是词面，可直接从句子重建缺失的复现记录（无需重试 LLM）
+    const pm = (out.materials || [])[0];
+    if (pm && pm.sentences) {
+      const bySpeaker = {};
+      pm.sentences.forEach(s => { if (s.speaker) bySpeaker[s.speaker] = s.id; });
+      let rebuilt = 0;
+      for (const w of svWords) {
+        const o = out.word_occurrence[w.id];
+        const empty = !o || (Array.isArray(o) && o.length === 0);
+        if (empty && bySpeaker[w.surface]) {
+          out.word_occurrence[w.id] = [bySpeaker[w.surface]];
+          rebuilt++;
+        }
+      }
+      if (rebuilt > 0) genLog('自动重建了 ' + rebuilt + ' 个词的复现记录（模型漏写，已从短语修复）');
+    }
+
     const problems = validateLocally(out, svWords, false);
-    if (problems.length) throw new Error('短语校验未通过：' + problems.join('；'));
+    if (problems.length) {
+      if (!isRetry) {
+        genLog('首次输出未达标（' + problems.length + ' 项问题），自动重试一次…');
+        return genPhrasesCore(lessonID, words, true);
+      }
+      throw new Error('短语校验未通过（已自动重试一次）：' + problems.join('；'));
+    }
 
     try {
       await api(`/lessons/${lessonID}/materials`, {
@@ -630,55 +655,63 @@ async function submitWords() {
       return;
     }
 
-    // 2. LLM 生成材料（后台任务 + 轮询：刷新页面/网络抖动都不丢进度）
-    const prompt = buildPrompt(words, $('sel-level').value);
-    genLog('调用大模型生成材料…');
-    let llmText = '', fullLen = 0, llmErr = '';
-    const t0 = Date.now();
-    $('gen-preview').style.display = 'block';
-    const started = await api('/dev/llm/start', {
-      method: 'POST',
-      body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
-    });
-    const taskID = started.task_id;
-    genLog('生成任务已启动（服务端后台执行，刷新页面也不会中断）');
-    // 轮询循环
-    while (true) {
-      await new Promise(r => setTimeout(r, 1000));
-      let st;
-      try {
-        st = await api('/dev/llm/poll?id=' + taskID);
-      } catch (e) {
-        continue; // 网络抖动容忍：继续轮询，服务端任务不受影响
+    // 2. LLM 生成材料（校验未通过自动重试一次；后台任务 + 轮询不丢进度）
+    let out = null, lastProblems = [];
+    for (let attempt = 1; attempt <= 2 && !out; attempt++) {
+      if (attempt === 2) {
+        genLog('首次输出未达标（' + lastProblems.length + ' 项问题），自动重试一次…');
+        $('gen-title').textContent = '材料生成中（自动重试）';
       }
-      llmText = st.text || ''; fullLen = st.chars || 0;
-      const sec = Math.floor(st.elapsed_ms / 1000);
-      if (fullLen > 0) {
-        $('gen-preview').textContent = '…' + llmText.slice(-150).replace(/\s+/g, ' ');
+      const prompt = buildPrompt(words, $('sel-level').value);
+      genLog(attempt === 1 ? '调用大模型生成材料…' : '重试：调用大模型生成材料…');
+      let llmText = '', fullLen = 0, llmErr = '';
+      const t0 = Date.now();
+      $('gen-preview').style.display = 'block';
+      const started = await api('/dev/llm/start', {
+        method: 'POST',
+        body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
+      });
+      const taskID = started.task_id;
+      genLog('生成任务已启动（服务端后台执行，刷新页面也不会中断）');
+      // 轮询循环
+      while (true) {
+        await new Promise(r => setTimeout(r, 1000));
+        let st;
+        try {
+          st = await api('/dev/llm/poll?id=' + taskID);
+        } catch (e) {
+          continue; // 网络抖动容忍：继续轮询，服务端任务不受影响
+        }
+        llmText = st.text || ''; fullLen = st.chars || 0;
+        const sec = Math.floor(st.elapsed_ms / 1000);
+        if (fullLen > 0) {
+          $('gen-preview').textContent = '…' + llmText.slice(-150).replace(/\s+/g, ' ');
+        }
+        $('gen-step').textContent =
+          `已等待 ${Math.floor(sec / 60)} 分 ${sec % 60} 秒 · 模型已输出 ${fullLen} 字符`;
+        if (st.err) { llmErr = st.err; break; }
+        if (st.done) break;
       }
-      $('gen-step').textContent =
-        `已等待 ${Math.floor(sec / 60)} 分 ${sec % 60} 秒 · 模型已输出 ${fullLen} 字符`;
-      if (st.err) { llmErr = st.err; break; }
-      if (st.done) break;
-    }
-    if (llmErr) throw new Error('LLM 生成失败：' + llmErr);
-    if (!llmText.trim()) throw new Error('LLM 返回为空，请重试');
-    const genSec = Math.floor((Date.now() - t0) / 1000);
-    genLog(`生成完毕（${fullLen} 字符，耗时 ${genSec} 秒）`);
-    $('gen-step').textContent = `生成完成（${fullLen} 字符 / ${genSec} 秒），正在校验落库…`;
-    $('gen-preview').textContent = '';
-    const out = JSON.parse(largestJSON(llmText));
-    genLog('材料解析成功（' + (out.materials || []).length + ' 段）');
+      if (llmErr) throw new Error('LLM 生成失败：' + llmErr);
+      if (!llmText.trim()) throw new Error('LLM 返回为空，请重试');
+      const genSec = Math.floor((Date.now() - t0) / 1000);
+      genLog(`生成完毕（${fullLen} 字符，耗时 ${genSec} 秒）`);
+      $('gen-step').textContent = `生成完成（${fullLen} 字符 / ${genSec} 秒），正在校验…`;
+      const cand = JSON.parse(largestJSON(llmText));
+      genLog('材料解析成功（' + (cand.materials || []).length + ' 段）');
 
-    // 3. 校验 + surface → word_id 重映射
-    const full = await api('/lessons/' + lessonID);
-    const idBySurface = {};
-    for (const w of full.words) idBySurface[w.surface] = w.id;
-    const occ = {};
-    for (const [k, v] of Object.entries(out.word_occurrence || {})) occ[idBySurface[k] || k] = v;
-    out.word_occurrence = occ;
-    const problems = validateLocally(out, full.words, true);
-    if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
+      // 3. 校验 + surface → word_id 重映射
+      const full = await api('/lessons/' + lessonID);
+      const idBySurface = {};
+      for (const w of full.words) idBySurface[w.surface] = w.id;
+      const occ = {};
+      for (const [k, v] of Object.entries(cand.word_occurrence || {})) occ[idBySurface[k] || k] = v;
+      cand.word_occurrence = occ;
+      const problems = validateLocally(cand, full.words, true);
+      if (!problems.length) { out = cand; } else { lastProblems = problems; }
+    }
+    if (!out) throw new Error('材料校验未通过（已自动重试一次）：' + lastProblems.join('；'));
+    $('gen-preview').textContent = '';
     genLog('校验通过，上传落库…');
 
     // 4. 上传（白名单净化后的干净结构；同材料已生成 = 幂等成功直接使用）
