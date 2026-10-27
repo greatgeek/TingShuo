@@ -126,14 +126,141 @@ async function goHome() {
   await loadHome();
 }
 
-// switchView 学习屏内切换：当前材料 / 收藏列表
+// switchView 学习屏内切换：当前材料 / 生词短语 / 收藏列表
 async function switchView(v) {
   if (VIEW === v) return;
   VIEW = v; CUR_MAT = 0;
   if (v === 'fav') await loadFavs();
   $('md-fav').classList.toggle('on', v === 'fav');
+  $('md-phrases').classList.toggle('on', v === 'phrases');
   $('md-normal').classList.toggle('on', v === 'material' && CUR_MODE === 'normal');
-  if (v === 'fav') renderFavView(); else { renderLearn(); }
+  if (v === 'fav') renderFavView();
+  else if (v === 'phrases') renderPhrasesView();
+  else renderLearn();
+}
+
+// phrasesMaterial 取当前课程的生词短语材料（type='phrases'）
+function phrasesMaterial() {
+  return (LESSON.materials || []).find(m => m.type === 'phrases') || null;
+}
+
+// renderPhrasesView 生词短语视图：每词一短语，点句即听（配音管线不变）
+function renderPhrasesView() {
+  $('mat-tabs').style.display = 'none';
+  const pm = phrasesMaterial();
+  const box = $('sents'); box.innerHTML = '';
+  if (!pm) {
+    $('tts-btn').style.display = 'none';
+    box.innerHTML = `
+      <div class="card" style="text-align:center">
+        <h2>生词短语</h2>
+        <p class="hint">为本课每个生词生成一个自然短语（3—10 词的短句，含该词）——
+        背搭配比背单词更接近「说」的最小单位（FR-2.15 搭配卡）。<br>
+        生成后：点短语即听、可收藏、可连播。</p>
+        <button class="btn accent" onclick="genPhrases()">为 ${LESSON.words.length} 个生词生成短语</button>
+      </div>`;
+    $('learn-hint').textContent = '尚未生成生词短语';
+    return;
+  }
+  pm.sentences.forEach((s, idx) => {
+    const has = (s.audios || []).length > 0;
+    const fav = FAVS.has(s.id);
+    const div = document.createElement('div');
+    div.className = 'sent'; div.dataset.idx = idx;
+    div.innerHTML = `
+      <span class="spk">${esc(s.speaker || '')}</span>
+      <div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
+      <div class="zh">${esc(s.translation || '')}</div></div>
+      <button class="fav ${fav ? 'on' : ''}" title="${fav ? '取消收藏' : '收藏句子'}">${fav ? '★' : '☆'}</button>
+      <button class="play ${has ? 'has' : ''}" title="${has ? '播放' : '未配音'}">${has ? '▶' : '…'}</button>`;
+    div.querySelector('.fav').onclick = (e) => { e.stopPropagation(); toggleFavSentence(s, div); };
+    div.onclick = () => playSentence(s, idx, div);
+    box.appendChild(div);
+  });
+  applyMode();
+  const withAudio = pm.sentences.filter(s => (s.audios || []).length).length;
+  $('learn-hint').textContent = `生词短语 · 共 ${pm.sentences.length} 句 / 已配音 ${withAudio} 句 · 点短语即听 · 「▶ 整段连播」连播全部`;
+  $('tts-btn').style.display = 'none';
+}
+
+// genPhrases 为本课生词生成短语包（LLM → mode=phrases 上传 → 渲染）
+async function genPhrases() {
+  hideErr('gen-err');
+  const words = LESSON.words || [];
+  if (!words.length) return;
+  const t0 = Date.now();
+  go('gen');
+  $('gen-retry').style.display = 'none'; $('gen-back').style.display = 'none';
+  $('gen-log').style.display = 'none'; $('gen-log').textContent = '';
+  $('gen-title').textContent = '生词短语生成中';
+  $('gen-note').innerHTML = '为每个生词写一个自然短语，通常 1—2 分钟。';
+  try {
+    const prompt = buildPhrasesPrompt(words);
+    genLog('调用大模型生成短语…');
+    const started = await api('/dev/llm/start', {
+      method: 'POST',
+      body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
+    });
+    let llmText = '';
+    while (true) {
+      await new Promise(res2 => setTimeout(res2, 1000));
+      let st;
+      try { st = await api('/dev/llm/poll?id=' + started.task_id); }
+      catch (e2) { continue; }
+      llmText = st.text || '';
+      const sec = Math.floor(st.elapsed_ms / 1000);
+      $('gen-step').textContent = `已等待 ${Math.floor(sec / 60)} 分 ${sec % 60} 秒 · 已输出 ${st.chars || 0} 字符`;
+      if (st.err) throw new Error('生成失败：' + st.err);
+      if (st.done) break;
+    }
+    genLog(`生成完毕（${Math.floor((Date.now() - t0) / 1000)} 秒）`);
+    const out = JSON.parse(largestJSON(llmText));
+
+    // surface → word_id 重映射（与完整包同规则）
+    const idBySurface = {};
+    for (const w of words) idBySurface[w.surface] = w.id;
+    const occ = {};
+    for (const [k, v] of Object.entries(out.word_occurrence || {})) occ[idBySurface[k] || k] = v;
+    out.word_occurrence = occ;
+
+    const problems = validateLocally(out, words, false);
+    if (problems.length) throw new Error('短语校验未通过：' + problems.join('；'));
+
+    const up = await api(`/lessons/${LESSON.lesson.id}/materials`, {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'phrases', ...sanitizeOutput(out) }),
+    });
+    genLog('短语落库成功');
+    LESSON = await api('/lessons/' + LESSON.lesson.id);
+    VIEW = 'phrases';
+    go('learn'); renderPhrasesView();
+  } catch (e) {
+    showErr('gen-err', e.message);
+    $('gen-retry').style.display = 'block';
+    $('gen-retry').textContent = '↻ 重新生成';
+    $('gen-back').style.display = 'block';
+    $('gen-back').textContent = '返回学习';
+    $('gen-back').onclick = () => { VIEW = 'phrases'; go('learn'); renderPhrasesView(); };
+    $('gen-title').textContent = '短语生成失败';
+  }
+}
+
+// buildPhrasesPrompt 生词短语包的生成提示（FR-2.15 搭配卡形态）
+function buildPhrasesPrompt(words) {
+  const lines = words.map((w, i) => `p${i + 1}｜${w.surface}｜${w.reading || '—'}｜${w.meaning}`);
+  return `你是日语教学专家。请为下面的每个词生成**恰好一个自然短语**（3—10 个词的短句，必须包含该词），难度贴合初级水平，です・ます体，来自真实生活场景。
+
+要求：
+- 每个短语独立成句，自然地道，不用生硬堆砌
+- 句子 id 用 p1、p2…（与词汇表顺序对应），sort_order 从 1 开始
+- 每句包含 text（日语）、kana（整句假名读音）、translation（中文翻译）、speaker（填该词的 surface）
+- word_occurrence：key 是词的 surface，value 是该词所在短语的 id 数组（如 ["p1"]）
+
+词汇表（id｜surface｜读音｜中文）：
+${lines.join('\n')}
+
+严格按如下 JSON 结构输出（不要 markdown 围栏、不要解释）：
+{"materials":[{"id":"ph1","type":"phrases","scene":"生词短语","title":"生词短语","role_a":null,"role_b":null,"sort_order":99,"sentences":[{"id":"p1","sort_order":1,"speaker":"精算","text":"...","kana":"...","translation":"...","para_no":0}]}],"qa_items":[],"substitution_items":[],"word_occurrence":{"精算":["p1"]}}`;
 }
 // loadHome 回到首页枢纽：今日状态 + 历史课程入口（学习屏的返回落点）
 async function loadHome() {
@@ -342,7 +469,7 @@ async function submitWords() {
     const occ = {};
     for (const [k, v] of Object.entries(out.word_occurrence || {})) occ[idBySurface[k] || k] = v;
     out.word_occurrence = occ;
-    const problems = validateLocally(out, full.words);
+    const problems = validateLocally(out, full.words, true);
     if (problems.length) throw new Error('材料校验未通过：' + problems.join('；'));
     genLog('校验通过，上传落库…');
 
@@ -394,13 +521,17 @@ function levelHint(level) {
   }
 }
 
-function validateLocally(out, words) {
+function validateLocally(out, words, strict) {
   const problems = [];
   const sids = new Set();
   for (const m of out.materials || []) {
     for (const s of m.sentences || []) sids.add(s.id);
     const n = (m.sentences || []).length;
-    if (n < 8 || n > 12) problems.push(`材料 ${m.id} 句数 ${n} 超出 8—12`);
+    if (m.type === 'phrases') {
+      if (n < 1 || n > 40) problems.push(`短语材料 ${m.id} 句数 ${n} 异常`);
+    } else if (strict && (n < 8 || n > 12)) {
+      problems.push(`材料 ${m.id} 句数 ${n} 超出 8—12`);
+    }
   }
   for (const w of words) {
     const occ = (out.word_occurrence || {})[w.id];
@@ -408,7 +539,9 @@ function validateLocally(out, words) {
     const list = Array.isArray(occ) ? occ : (occ.sentences || []);
     const skipped = typeof occ === 'string' && occ.startsWith('skipped');
     if (!skipped && list.length === 0) problems.push(`词 ${w.surface} 复现列表为空`);
-    if (!skipped && w.is_key && list.length < 2) problems.push(`重点词 ${w.surface} 仅出现 1 次（需 2 次）`);
+    if (strict && !skipped && w.is_key && list.length < 2) {
+      problems.push(`重点词 ${w.surface} 仅出现 1 次（需 2 次）`);
+    }
   }
   return problems;
 }
@@ -473,7 +606,9 @@ function rubyHTML(tokens) {
 
 function renderLearn() {
   if (VIEW === 'fav') return renderFavView();
-  const mats = LESSON.materials || [];
+  if (VIEW === 'phrases') return renderPhrasesView();
+  // 生词短语在独立视图展示，不混入对话/短文 tabs
+  const mats = (LESSON.materials || []).filter(m => m.type !== 'phrases');
   const tabs = $('mat-tabs'); tabs.innerHTML = '';
   tabs.style.display = 'flex';
   mats.forEach((m, i) => {
@@ -687,6 +822,8 @@ async function playAll() {
       id: it.sentence_id, text: it.text,
       audios: it.audio_id ? [{ id: it.audio_id }] : [],
     }));
+  } else if (VIEW === 'phrases') {
+    sents = (phrasesMaterial() || {}).sentences || [];
   } else {
     sents = (LESSON.materials[CUR_MAT] || {}).sentences || [];
   }

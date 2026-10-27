@@ -114,13 +114,17 @@ func (o *WordOcc) UnmarshalJSON(b []byte) error {
 const (
 	MinSentencesPerMaterial = 8  // §5.3：对话每段 8—12 句、短文 8—12 句
 	MaxSentencesPerMaterial = 12
+	MinPhrases              = 1  // 生词短语：句数 = 词数（1—40）
+	MaxPhrases              = 40
 	QAItemCount             = 5 // FR-2.4
 	SubstitutionCount       = 5 // FR-2.5
 )
 
 // Validate 校验材料包：words 为本课词集合（wordID → isKey）。
+// strict=true 为完整材料包（对话/短文 + 5 问答 + 5 造句，AC-2.1/2.3）；
+// strict=false 为生词短语包（FR-2.15 搭配卡：每词一短语，问答/造句允许为空）。
 // 返回问题列表（空 = 通过）。
-func (out GenerationOutput) Validate(words map[string]bool) []string {
+func (out GenerationOutput) Validate(words map[string]bool, strict bool) []string {
 	var problems []string
 
 	// 1. 材料与句子
@@ -131,11 +135,15 @@ func (out GenerationOutput) Validate(words map[string]bool) []string {
 	for _, m := range out.Materials {
 		switch m.Type {
 		case "dialogue", "passage":
+			if n := len(m.Sentences); n < MinSentencesPerMaterial || n > MaxSentencesPerMaterial {
+				problems = append(problems, fmt.Sprintf("材料 %q 句数 %d 超出 %d—%d 范围（§5.3）", m.ID, n, MinSentencesPerMaterial, MaxSentencesPerMaterial))
+			}
+		case "phrases":
+			if n := len(m.Sentences); n < MinPhrases || n > MaxPhrases {
+				problems = append(problems, fmt.Sprintf("短语材料 %q 句数 %d 超出 %d—%d 范围", m.ID, n, MinPhrases, MaxPhrases))
+			}
 		default:
-			problems = append(problems, fmt.Sprintf("材料 %q 的 type 非法：%q（须 dialogue/passage）", m.ID, m.Type))
-		}
-		if n := len(m.Sentences); n < MinSentencesPerMaterial || n > MaxSentencesPerMaterial {
-			problems = append(problems, fmt.Sprintf("材料 %q 句数 %d 超出 %d—%d 范围（§5.3）", m.ID, n, MinSentencesPerMaterial, MaxSentencesPerMaterial))
+			problems = append(problems, fmt.Sprintf("材料 %q 的 type 非法：%q（须 dialogue/passage/phrases）", m.ID, m.Type))
 		}
 		for _, s := range m.Sentences {
 			if strings.TrimSpace(s.Text) == "" {
@@ -152,21 +160,23 @@ func (out GenerationOutput) Validate(words map[string]bool) []string {
 		}
 	}
 
-	// 2. 问答与造句数量（FR-2.4/2.5）
-	if len(out.QAItems) != QAItemCount {
-		problems = append(problems, fmt.Sprintf("qa_items 数量 %d ≠ %d", len(out.QAItems), QAItemCount))
-	}
-	for i, qa := range out.QAItems {
-		if qa.Prompt == "" || qa.Answer == "" {
-			problems = append(problems, fmt.Sprintf("qa_items[%d] 缺少 prompt 或 answer", i))
+	// 2. 问答与造句数量（FR-2.4/2.5；短语包跳过——轻量生成不含任务）
+	if strict {
+		if len(out.QAItems) != QAItemCount {
+			problems = append(problems, fmt.Sprintf("qa_items 数量 %d ≠ %d", len(out.QAItems), QAItemCount))
 		}
-	}
-	if len(out.Substitutions) != SubstitutionCount {
-		problems = append(problems, fmt.Sprintf("substitution_items 数量 %d ≠ %d", len(out.Substitutions), SubstitutionCount))
-	}
-	for i, sub := range out.Substitutions {
-		if sub.WordID == "" || sub.PromptZh == "" || sub.Answer == "" {
-			problems = append(problems, fmt.Sprintf("substitution_items[%d] 字段不完整", i))
+		for i, qa := range out.QAItems {
+			if qa.Prompt == "" || qa.Answer == "" {
+				problems = append(problems, fmt.Sprintf("qa_items[%d] 缺少 prompt 或 answer", i))
+			}
+		}
+		if len(out.Substitutions) != SubstitutionCount {
+			problems = append(problems, fmt.Sprintf("substitution_items 数量 %d ≠ %d", len(out.Substitutions), SubstitutionCount))
+		}
+		for i, sub := range out.Substitutions {
+			if sub.WordID == "" || sub.PromptZh == "" || sub.Answer == "" {
+				problems = append(problems, fmt.Sprintf("substitution_items[%d] 字段不完整", i))
+			}
 		}
 	}
 
@@ -192,7 +202,7 @@ func (out GenerationOutput) Validate(words map[string]bool) []string {
 				problems = append(problems, fmt.Sprintf("词 %s 引用了不存在的句子 %s", wid, sid))
 			}
 		}
-		if isKey && len(occ.Sentences) < 2 {
+		if strict && isKey && len(occ.Sentences) < 2 {
 			// 重点词出现 2 次是 FR-2.2 要求，偶发不达标记为提示性问题（客户端可重试）
 			problems = append(problems, fmt.Sprintf("重点词 %s 仅出现 %d 次（FR-2.2 要求 2 次）", wid, len(occ.Sentences)))
 		}

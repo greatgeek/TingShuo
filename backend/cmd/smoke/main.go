@@ -117,8 +117,8 @@ func run() error {
 			}
 			continue
 		}
-		// 本地预校验（与服务端同规则：含真实 isKey）
-		if problems := out.Validate(wordKeyMap(words)); len(problems) > 0 {
+		// 本地预校验（与服务端同规则：完整包 strict）
+		if problems := out.Validate(wordKeyMap(words), true); len(problems) > 0 {
 			if attempt == 2 {
 				return fmt.Errorf("材料校验不通过（已重试）: %v", problems)
 			}

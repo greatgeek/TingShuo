@@ -45,14 +45,14 @@ func validOutput() GenerationOutput {
 
 func TestValidatePass(t *testing.T) {
 	words := map[string]bool{"w1": false, "w2": true, "w3": false, "w4": false, "w5": false}
-	if problems := validOutput().Validate(words); len(problems) > 0 {
+	if problems := validOutput().Validate(words, true); len(problems) > 0 {
 		t.Fatalf("合法材料不应报错: %v", problems)
 	}
 }
 
 func TestValidateMissingWord(t *testing.T) {
 	out := validOutput()
-	if problems := out.Validate(map[string]bool{"w1": false, "w2": true, "w3": false, "w4": false, "w5": false, "w6": false}); len(problems) == 0 {
+	if problems := out.Validate(map[string]bool{"w1": false, "w2": true, "w3": false, "w4": false, "w5": false, "w6": false}, true); len(problems) == 0 {
 		t.Fatal("缺少 w6 复现应报错")
 	}
 }
@@ -60,7 +60,7 @@ func TestValidateMissingWord(t *testing.T) {
 func TestValidateSkippedOK(t *testing.T) {
 	out := validOutput()
 	out.WordOccurrence["w1"] = WordOcc{Skipped: true, SkipReason: "专有名词不适合本场景"}
-	if problems := out.Validate(map[string]bool{"w1": true, "w2": true, "w3": false, "w4": false, "w5": false}); len(problems) > 0 {
+	if problems := out.Validate(map[string]bool{"w1": true, "w2": true, "w3": false, "w4": false, "w5": false}, true); len(problems) > 0 {
 		t.Fatalf("skipped 且有原因应通过（重点词允许 skip）: %v", problems)
 	}
 }
@@ -68,7 +68,7 @@ func TestValidateSkippedOK(t *testing.T) {
 func TestValidateBadSentenceRef(t *testing.T) {
 	out := validOutput()
 	out.WordOccurrence["w1"] = WordOcc{Sentences: []string{"s999"}}
-	if problems := out.Validate(map[string]bool{"w1": true, "w2": true, "w3": false, "w4": false, "w5": false}); len(problems) == 0 {
+	if problems := out.Validate(map[string]bool{"w1": true, "w2": true, "w3": false, "w4": false, "w5": false}, true); len(problems) == 0 {
 		t.Fatal("引用不存在的句子应报错")
 	}
 }
@@ -76,7 +76,7 @@ func TestValidateBadSentenceRef(t *testing.T) {
 func TestValidateKeyWordSingleOccurrence(t *testing.T) {
 	out := validOutput()
 	out.WordOccurrence["w2"] = WordOcc{Sentences: []string{"s1"}} // 重点词只出现 1 次
-	problems := out.Validate(map[string]bool{"w1": false, "w2": true, "w3": false, "w4": false, "w5": false})
+	problems := out.Validate(map[string]bool{"w1": false, "w2": true, "w3": false, "w4": false, "w5": false}, true)
 	t.Logf("problems: %v", problems)
 	found := false
 	for _, p := range problems {
