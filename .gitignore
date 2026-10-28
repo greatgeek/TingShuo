@@ -8,6 +8,8 @@
 backend/bin/
 *.test
 *.out
+*.exe
+*.exe~
 
 # ===== Flutter / Dart =====
 app/.dart_tool/
