@@ -24,6 +24,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
 	"github.com/greatgeek/TingShuo/backend/internal/word"
+	"github.com/greatgeek/TingShuo/backend/internal/wordstudy"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
@@ -107,7 +108,15 @@ func run() error {
 			sec.Get("/me", userH.Me)
 			sec.Put("/me", userH.Update)
 
+			sec.Get("/words/library", wordH.Library)
 			sec.Get("/words/{id}/usage", wordH.Usage)
+
+			wsH := wordstudy.NewHandler(pool, azureTTS)
+			sec.Get("/word-study/status", wsH.Status)
+			sec.Get("/word-study/new", wsH.NewWords)
+			sec.Get("/word-study/due", wsH.DueWords)
+			sec.Post("/word-study/{word_id}/result", wsH.Result)
+			sec.Get("/word-study/{word_id}/audio", wsH.Audio)
 
 			sec.Post("/favorites", favH.AddSentence)
 			sec.Delete("/favorites/sentences/{sentence_id}", favH.RemoveSentence)
@@ -142,6 +151,7 @@ func run() error {
 
 			sec.Post("/reviews", reviewH.Add)
 			sec.Get("/reviews/due", reviewH.Due)
+			sec.Get("/reviews/pool", reviewH.Pool)
 			sec.Post("/reviews/{id}/result", reviewH.SubmitResult)
 			sec.Post("/reviews/{id}/master", reviewH.Master)
 		})

@@ -2,6 +2,7 @@
 package review
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -74,9 +75,15 @@ func (h *Handler) Due(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.pool.Query(r.Context(), `
 		SELECT rv.id, rv.sentence_id, rv.source, rv.interval_days, rv.due_date::text,
-		       rv.error_count, rv.mastered, s.text, s.translation, s.speaker, s.lesson_id
+		       rv.error_count, rv.mastered, s.text, s.translation, s.speaker, s.lesson_id,
+		       s.ruby_tokens, aa.audio_id
 		FROM review_item rv
 		JOIN sentence s ON s.id = rv.sentence_id
+		LEFT JOIN LATERAL (
+			SELECT a.id AS audio_id FROM audio_asset a
+			WHERE a.sentence_id = s.id AND a.status = 'ready'
+			ORDER BY (a.rate = 1.0) DESC LIMIT 1
+		) aa ON true
 		WHERE rv.user_id = $1 AND rv.mastered = false AND rv.due_date <= $2
 		ORDER BY rv.due_date`, userID, date)
 	if err != nil {
@@ -89,22 +96,60 @@ func (h *Handler) Due(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id, sentenceID, source, dueDate, text, lessonID string
 		var interval, errCount int
-		var translation, speaker *string
+		var translation, speaker, audioID *string
 		var mastered bool
+		var ruby []byte
 		if err := rows.Scan(&id, &sentenceID, &source, &interval, &dueDate,
-			&errCount, &mastered, &text, &translation, &speaker, &lessonID); err != nil {
+			&errCount, &mastered, &text, &translation, &speaker, &lessonID,
+			&ruby, &audioID); err != nil {
 			httpx.Err(w, httpx.Internal(err.Error()))
 			return
+		}
+		sentence := map[string]any{
+			"text": text, "translation": translation, "speaker": speaker, "lesson_id": lessonID,
+		}
+		if len(ruby) > 0 {
+			sentence["ruby_tokens"] = json.RawMessage(ruby)
 		}
 		items = append(items, map[string]any{
 			"id": id, "sentence_id": sentenceID, "source": source,
 			"interval_days": interval, "due_date": dueDate, "error_count": errCount,
-			"sentence": map[string]any{
-				"text": text, "translation": translation, "speaker": speaker, "lesson_id": lessonID,
-			},
+			"audio_id": audioID,
+			"sentence": sentence,
 		})
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
+}
+
+// Pool GET /reviews/pool —— 复习池句子 ID 列表（含已掌握，供前端渲染星标用）。
+func (h *Handler) Pool(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	rows, err := h.pool.Query(r.Context(), `
+		SELECT sentence_id, mastered FROM review_item WHERE user_id = $1`, userID)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer rows.Close()
+
+	active := []string{}
+	mastered := []string{}
+	for rows.Next() {
+		var sid string
+		var m bool
+		if err := rows.Scan(&sid, &m); err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+		if m {
+			mastered = append(mastered, sid)
+		} else {
+			active = append(active, sid)
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"active": active, "mastered": mastered,
+	})
 }
 
 // SubmitResult POST /reviews/{id}/result {result:"pass"|"fail"}

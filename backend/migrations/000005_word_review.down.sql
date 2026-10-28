@@ -1,0 +1,3 @@
+BEGIN;
+DROP TABLE IF EXISTS word_review_item;
+COMMIT;
