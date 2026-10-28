@@ -64,6 +64,9 @@ func run() error {
 	}
 	defer pool.Close()
 
+	// 上次进程残留的 running/pending 生成任务置 failed（上游连接随进程死亡不可恢复）
+	generate.CleanupStale(ctx, pool)
+
 	store, err := storage.New(
 		mustEnv("S3_ENDPOINT"), mustEnv("S3_ACCESS_KEY"), mustEnv("S3_SECRET_KEY"),
 		mustEnv("S3_BUCKET_AUDIO"), mustEnv("S3_BUCKET_RECORDING"))
@@ -79,6 +82,7 @@ func run() error {
 	lessonH := lesson.NewHandler(pool)
 	reviewH := review.NewHandler(pool)
 	genH := generate.NewHandler(pool)
+	jobH := generate.NewJobHandler(pool)
 	ttsH := tts.NewHandler(pool, store, azureTTS)
 	favH := favorite.NewHandler(pool)
 	wordH := word.NewHandler(pool)
@@ -148,6 +152,11 @@ func run() error {
 			sec.Get("/lessons/{id}", lessonH.Get)
 			sec.Delete("/lessons/{id}", lessonH.Delete)
 			sec.Post("/lessons/{id}/materials", genH.Upload)
+
+			// 生成任务服务端化（部署文档 §4）：服务端持 Key 代生成，任务落 generation_job
+			sec.Get("/config", jobH.Config)
+			sec.Post("/generate/start", jobH.Start)
+			sec.Get("/generate/poll", jobH.Poll)
 
 			sec.Post("/reviews", reviewH.Add)
 			sec.Get("/reviews/due", reviewH.Due)

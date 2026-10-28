@@ -1,0 +1,3 @@
+BEGIN;
+ALTER TABLE generation_job DROP COLUMN IF EXISTS output;
+COMMIT;

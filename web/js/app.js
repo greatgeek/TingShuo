@@ -9,7 +9,7 @@ const tokenKey = 'ts_token', refreshKey = 'ts_refresh', emailKey = 'ts_email';
 let TOKEN = localStorage.getItem(tokenKey) || '';
 let REFRESH = localStorage.getItem(refreshKey) || '';
 let EMAIL = localStorage.getItem(emailKey) || ''; // 刷新后登录框为空，账号名从这里恢复
-let CFG = {};        // /dev/config 结果
+let CFG = {};        // /config 结果（仅 llm_model；Key 永不下放客户端）
 let LESSON = null;   // 当前课程全量
 let CUR_MAT = 0;     // 当前材料 tab
 let CUR_MODE = 'normal'; // 跟读/盲听/译文（重渲染后需恢复）
@@ -89,6 +89,16 @@ async function api(path, opts = {}) {
   return body;
 }
 
+// ============ LLM 生成小助手（服务端持 Key 代生成，任务落 generation_job）============
+async function startGen(lessonID, prompt) {
+  const r = await api('/generate/start', {
+    method: 'POST',
+    body: JSON.stringify({ lesson_id: lessonID, messages: [{ role: 'user', content: prompt }] }),
+  });
+  return r.task_id;
+}
+function pollGen(id) { return api('/generate/poll?id=' + id); }
+
 // ============ 登录 ============
 async function doLogin() {
   hideErr('login-err');
@@ -120,7 +130,7 @@ async function afterLogin() {
   $('userchip').textContent = EMAIL;
   $('logout-btn').style.display = 'block';
   hideErr('home-err');
-  CFG = await api('/dev/config').catch(() => ({}));
+  CFG = await api('/config').catch(() => ({}));
   await loadFavs();
   await loadReviewPool();
   await loadHome();
@@ -336,16 +346,13 @@ async function genPhrasesCore(lessonID, words, isRetry) {
 
     const prompt = buildPhrasesPrompt(svWords);
     genLog('调用大模型生成短语…');
-    const started = await api('/dev/llm/start', {
-      method: 'POST',
-      body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
-    });
+    const started = { task_id: await startGen(lessonID, prompt) };
     saveActiveTask(started.task_id, lessonID, 'phrases');
     let llmText = '';
     while (true) {
       await new Promise(res2 => setTimeout(res2, 1000));
       let st;
-      try { st = await api('/dev/llm/poll?id=' + started.task_id); }
+      try { st = await pollGen(started.task_id); }
       catch (e2) { continue; }
       llmText = st.text || '';
       const sec = Math.floor(st.elapsed_ms / 1000);
@@ -427,16 +434,13 @@ async function genFull() {
   try {
     const prompt = buildPrompt(words, level);
     genLog('调用大模型生成对话/短文…');
-    const started = await api('/dev/llm/start', {
-      method: 'POST',
-      body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
-    });
+    const started = { task_id: await startGen(LESSON.lesson.id, prompt) };
     saveActiveTask(started.task_id, LESSON.lesson.id, 'full');
     let llmText = '';
     while (true) {
       await new Promise(res2 => setTimeout(res2, 1000));
       let st;
-      try { st = await api('/dev/llm/poll?id=' + started.task_id); }
+      try { st = await pollGen(started.task_id); }
       catch (e2) { continue; }
       llmText = st.text || '';
       const sec = Math.floor(st.elapsed_ms / 1000);
@@ -518,7 +522,7 @@ async function checkActiveTask() {
   if (!t) { card.style.display = 'none'; return; }
   let st;
   try {
-    st = await api('/dev/llm/poll?id=' + t.task_id);
+    st = await pollGen(t.task_id);
   } catch (e) {
     card.style.display = 'none'; return; // 任务不可查（服务重启等）——静默隐藏
   }
@@ -560,7 +564,7 @@ async function resumeActiveGen() {
     while (true) {
       await new Promise(r => setTimeout(r, 1000));
       let st;
-      try { st = await api('/dev/llm/poll?id=' + t.task_id); }
+      try { st = await pollGen(t.task_id); }
       catch (e) { continue; }
       llmText = st.text || '';
       const sec = Math.floor(st.elapsed_ms / 1000);
@@ -814,11 +818,7 @@ async function submitWords() {
       let llmText = '', fullLen = 0, llmErr = '';
       const t0 = Date.now();
       $('gen-preview').style.display = 'block';
-      const started = await api('/dev/llm/start', {
-        method: 'POST',
-        body: JSON.stringify({ model: CFG.llm_model, messages: [{ role: 'user', content: prompt }] }),
-      });
-      const taskID = started.task_id;
+      const taskID = await startGen(lessonID, prompt);
       saveActiveTask(taskID, lessonID, 'full');
       genLog('生成任务已启动（服务端后台执行，刷新页面也不会中断）');
       // 轮询循环
@@ -826,7 +826,7 @@ async function submitWords() {
         await new Promise(r => setTimeout(r, 1000));
         let st;
         try {
-          st = await api('/dev/llm/poll?id=' + taskID);
+          st = await pollGen(taskID);
         } catch (e) {
           continue; // 网络抖动容忍：继续轮询，服务端任务不受影响
         }
