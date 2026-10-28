@@ -101,6 +101,12 @@ textarea { font-family: var(--serif); font-size: 14px; height: 180px; resize: ve
   color: var(--ink2); font-size: 26px; line-height: 1; cursor: pointer;
 }
 .sent .fav.on { color: var(--accent); }
+.sent .rv-btn {
+  width: 36px; height: 36px; flex: none; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); color: var(--ink2);
+  font-size: 13px; cursor: pointer;
+}
+.sent .rv-btn.on { color: var(--accent); border-color: var(--accent); background: var(--soft); }
 .tab-star { margin-left: 6px; font-size: 12px; }
 .tab-star.on { color: var(--accent); }
 
@@ -150,3 +156,72 @@ body.no-rt rt { display: none; }
   background: var(--surface); border: 1px dashed var(--line); border-radius: 10px;
   padding: 8px 12px; margin-top: 10px; word-break: break-all;
 }
+
+/* ===== 复习 ===== */
+.rv-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.rv-progress .bar { flex: 1; margin: 0; }
+.rv-progress span { font-size: 12px; color: var(--ink2); white-space: nowrap; }
+
+.rv-play {
+  width: 72px; height: 72px; border-radius: 50%; border: 2px solid var(--ink);
+  background: var(--surface); font-size: 28px; cursor: pointer; margin: 20px auto;
+  display: flex; align-items: center; justify-content: center;
+}
+.rv-play.playing { border-color: var(--accent); color: var(--accent); }
+
+.rv-text {
+  font-family: var(--serif); font-size: 18px; line-height: 2.2;
+  text-align: center; margin: 16px 0; padding: 0 8px;
+}
+.rv-zh { font-size: 14px; color: var(--ink2); text-align: center; margin-bottom: 12px; }
+.rv-meta { font-size: 11px; color: var(--ink2); text-align: center; margin-bottom: 12px; }
+.rv-actions { display: flex; gap: 12px; margin-top: 16px; }
+.rv-actions .btn { font-size: 16px; padding: 15px; }
+
+.rv-done-card { text-align: center; padding: 24px 16px; }
+.rv-done-card h2 { font-size: 20px; margin-bottom: 16px; }
+.rv-stats { display: flex; gap: 16px; justify-content: center; margin: 20px 0; }
+.rv-stat { text-align: center; }
+.rv-stat .n { font-size: 28px; font-weight: 700; }
+.rv-stat .l { font-size: 12px; color: var(--ink2); }
+.rv-stat.pass .n { color: var(--ok); }
+.rv-stat.fail .n { color: var(--accent); }
+
+/* ===== 生词库与选词层 ===== */
+.lib-meta { font-size: 11px; color: var(--ink2); }
+.picker-mask {
+  position: fixed; inset: 0; background: rgba(28,28,26,.45);
+  display: flex; align-items: flex-end; justify-content: center; z-index: 50;
+}
+.picker {
+  width: 100%; max-width: 520px; margin: 0; border-radius: 16px 16px 0 0;
+  max-height: 82vh; display: flex; flex-direction: column; padding-bottom: 8px;
+}
+.picker-list { flex: 1; overflow-y: auto; margin-top: 10px; }
+.pick-row {
+  display: flex; align-items: center; gap: 10px; padding: 10px;
+  border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.pick-row .wrap { flex: 1; }
+.pick-row .txt { font-family: var(--serif); font-size: 15px; }
+.pick-row .zh { font-size: 12px; color: var(--ink2); margin-top: 2px; }
+.pick-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+
+/* ===== 背词屏 ===== */
+.ws-front, .ws-back { text-align: center; padding: 8px 0; }
+.ws-word {
+  font-family: var(--serif); font-size: 40px; line-height: 1.4; color: var(--ink);
+  background: none; border: none; cursor: pointer; padding: 18px 24px;
+}
+.ws-word:hover { color: var(--accent); }
+.ws-word-line {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  font-family: var(--serif); font-size: 30px; margin: 12px 0 4px;
+}
+.ws-mini {
+  width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface); cursor: pointer; font-size: 16px; flex: none;
+}
+.ws-meaning { font-size: 14px; color: var(--ink); margin: 8px 0; }
+#ws-usage { text-align: left; margin-top: 10px; }
+.ws-word-txt { font-family: var(--serif); font-size: 40px; line-height: 1.4; }

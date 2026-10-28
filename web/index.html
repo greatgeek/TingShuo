@@ -12,6 +12,7 @@
     <button class="nav-home" id="nav-home" onclick="goHome()">⌂ 首页</button>
     <span class="t">听说 <em>TingShuo</em></span>
     <span class="s" id="userchip">桌面前端（开发版）</span>
+    <button class="nav-home" id="logout-btn" onclick="doLogout()" style="display:none">登出</button>
   </header>
 
   <!-- 登录 -->
@@ -42,6 +43,22 @@
       <button class="btn ghost" id="home-new-btn" onclick="go('create')" style="display:none">✎ 新建词单（重做今日）</button>
       <div class="err" id="home-err"></div>
     </div>
+    <div class="card" id="review-card" style="display:none">
+      <h2>复习</h2>
+      <p class="hint" id="review-desc">有句子需要复习</p>
+      <button class="btn accent" id="review-btn" onclick="goReview()">开始复习</button>
+    </div>
+    <div class="card">
+      <h2>背词</h2>
+      <p class="hint" id="wordstudy-desc">提交过的词单会自动累积到这里。</p>
+      <div class="row2" style="margin-top:12px">
+        <button class="btn ghost" id="ws-due-btn" onclick="goWordStudy('due')" style="margin-top:0">复习</button>
+        <button class="btn accent" id="ws-new-btn" onclick="goWordStudy('new')" style="margin-top:0">新学</button>
+      </div>
+      <p class="hint" style="margin-top:10px">
+        <a href="javascript:void(0)" onclick="goLibrary()" style="color:var(--accent)">进入生词库 →</a>
+      </p>
+    </div>
     <div class="card">
       <h2>历史课程</h2>
       <div id="history-list"></div>
@@ -71,6 +88,7 @@
         <select id="sel-voice"><option value="Nanami" selected>Nanami（女声）</option><option value="Keita">Keita（男声）</option></select>
       </div>
       <button class="btn accent" onclick="submitWords()">提交并生成材料</button>
+      <button class="btn ghost" onclick="openWordPicker()">从生词库选词</button>
       <button class="btn ghost" onclick="fillSample()">填入示例 20 词</button>
       <div class="err" id="create-err"></div>
     </div>
@@ -113,6 +131,30 @@
     <div class="sents" id="sents"></div>
     <p class="hint" id="learn-hint" style="margin-top:12px"></p>
   </section>
+  <!-- 复习 -->
+  <section class="screen" id="sc-review">
+    <div id="review-content"></div>
+  </section>
+  <!-- 生词库 -->
+  <section class="screen" id="sc-library">
+    <input id="lib-search" placeholder="搜索单词 / 读音 / 含义" oninput="libSearch(this.value)">
+    <div class="sents" id="lib-list" style="margin-top:10px"></div>
+    <p class="hint" id="lib-hint" style="margin-top:12px"></p>
+  </section>
+  <!-- 背词 -->
+  <section class="screen" id="sc-wordstudy">
+    <div id="wordstudy-content"></div>
+  </section>
+</div>
+<!-- 生词库选词层（创建课程页用） -->
+<div class="picker-mask" id="picker-mask" style="display:none">
+  <div class="picker card">
+    <h2>从生词库选词</h2>
+    <input id="picker-search" placeholder="搜索单词 / 读音 / 含义" oninput="pickerSearch(this.value)">
+    <div class="picker-list" id="picker-list"></div>
+    <button class="btn accent" id="picker-ok" onclick="pickerConfirm()">加入词单</button>
+    <button class="btn ghost" onclick="closePicker()">取消</button>
+  </div>
 </div>
 <script src="js/app.js"></script>
 </body>

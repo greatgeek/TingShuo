@@ -5,9 +5,10 @@
 
 // ============ 基础 ============
 const $ = id => document.getElementById(id);
-const tokenKey = 'ts_token', refreshKey = 'ts_refresh';
+const tokenKey = 'ts_token', refreshKey = 'ts_refresh', emailKey = 'ts_email';
 let TOKEN = localStorage.getItem(tokenKey) || '';
 let REFRESH = localStorage.getItem(refreshKey) || '';
+let EMAIL = localStorage.getItem(emailKey) || ''; // 刷新后登录框为空，账号名从这里恢复
 let CFG = {};        // /dev/config 结果
 let LESSON = null;   // 当前课程全量
 let CUR_MAT = 0;     // 当前材料 tab
@@ -17,6 +18,7 @@ let playing = null;  // 当前 audio
 let FAVS = new Set();    // 已收藏句子 ID
 let FAV_ITEMS = [];      // 收藏句列表（含内容）
 let FAVM = new Set();    // 已收藏材料 ID
+let RV_POOL = new Set(); // 已在复习池的句子 ID（含已掌握）
 
 function go(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
@@ -49,7 +51,16 @@ async function doRefresh() {
 
 function clearSession() {
   localStorage.removeItem(tokenKey); localStorage.removeItem(refreshKey);
-  TOKEN = ''; REFRESH = '';
+  localStorage.removeItem(emailKey);
+  TOKEN = ''; REFRESH = ''; EMAIL = '';
+}
+
+// doLogout 登出：清会话并整页重载，落回登录屏
+function doLogout() {
+  stopPlay();
+  if (RV_AUDIO) { RV_AUDIO.pause(); RV_AUDIO = null; }
+  clearSession();
+  location.reload();
 }
 
 async function api(path, opts = {}) {
@@ -92,6 +103,7 @@ async function doLogin() {
       const r = await api(path, { method: 'POST', body: JSON.stringify(payload) });
       TOKEN = r.access_token; localStorage.setItem(tokenKey, TOKEN);
       REFRESH = r.refresh_token || ''; localStorage.setItem(refreshKey, REFRESH);
+      EMAIL = email; localStorage.setItem(emailKey, EMAIL);
       return afterLogin();
     } catch (e) {
       if (path === '/auth/login') return showErr('login-err', e.message);
@@ -99,10 +111,18 @@ async function doLogin() {
   }
 }
 async function afterLogin() {
-  $('userchip').textContent = $('login-email').value.trim();
+  if (!EMAIL) { // 旧会话无缓存邮箱（修复前登录的）：从 /me 补
+    try {
+      const me = await api('/me');
+      EMAIL = me.email || ''; localStorage.setItem(emailKey, EMAIL);
+    } catch {}
+  }
+  $('userchip').textContent = EMAIL;
+  $('logout-btn').style.display = 'block';
   hideErr('home-err');
   CFG = await api('/dev/config').catch(() => ({}));
   await loadFavs();
+  await loadReviewPool();
   await loadHome();
 }
 
@@ -119,10 +139,20 @@ async function loadFavs() {
   } catch {}
 }
 
+// loadReviewPool 拉取复习池句子 ID（学习屏"加入复习"按钮状态用）
+async function loadReviewPool() {
+  try {
+    const r = await api('/reviews/pool');
+    RV_POOL = new Set([...(r.active || []), ...(r.mastered || [])]);
+  } catch {}
+}
+
 // goHome 回首页并刷新今日课程状态（学习屏的返回入口）
 async function goHome() {
   stopPlay();
+  if (RV_AUDIO) { RV_AUDIO.pause(); RV_AUDIO = null; }
   await loadFavs();
+  await loadReviewPool();
   await loadHome();
 }
 
@@ -243,7 +273,7 @@ function renderPhrasesView() {
     box.innerHTML = `
       <div class="card" style="text-align:center">
         <h2>生词短语</h2>
-        <p class="hint">为本课每个生词生成一个自然短语（3—10 词的短句，含该词）——
+        <p class="hint">为本课每个生词生成一个自然搭配短语（4—14 字符、省略主语的最小表达单位）——
         背搭配比背单词更接近「说」的最小单位（FR-2.15 搭配卡）。<br>
         生成后：点短语即听、可收藏、可连播。</p>
         <button class="btn accent" onclick="genPhrases()">为 ${LESSON.words.length} 个生词生成短语</button>
@@ -254,14 +284,17 @@ function renderPhrasesView() {
   pm.sentences.forEach((s, idx) => {
     const has = (s.audios || []).length > 0;
     const fav = FAVS.has(s.id);
+    const inRv = RV_POOL.has(s.id);
     const div = document.createElement('div');
     div.className = 'sent'; div.dataset.idx = idx;
     div.innerHTML = `
       <span class="spk">${esc(s.speaker || '')}</span>
       <div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
       <div class="zh">${esc(s.translation || '')}</div></div>
+      <button class="rv-btn ${inRv ? 'on' : ''}" title="${inRv ? '已在复习池' : '加入复习'}">复</button>
       <button class="fav ${fav ? 'on' : ''}" title="${fav ? '取消收藏' : '收藏句子'}">${fav ? '★' : '☆'}</button>
       <button class="play ${has ? 'has' : ''}" title="${has ? '播放' : '未配音'}">${has ? '▶' : '…'}</button>`;
+    div.querySelector('.rv-btn').onclick = (e) => { e.stopPropagation(); toggleReviewSentence(s, div); };
     div.querySelector('.fav').onclick = (e) => { e.stopPropagation(); toggleFavSentence(s, div); };
     div.onclick = () => playSentence(s, idx, div);
     box.appendChild(div);
@@ -448,12 +481,17 @@ async function genFull() {
 // buildPhrasesPrompt 生词短语包的生成提示（FR-2.15 搭配卡形态）
 function buildPhrasesPrompt(words) {
   const lines = words.map((w, i) => `p${i + 1}｜${w.surface}｜${w.reading || '—'}｜${w.meaning}`);
-  return `你是日语教学专家。请为下面的每个词生成**恰好一个自然短语**（3—10 个词的短句，必须包含该词），难度贴合初级水平，です・ます体，来自真实生活场景。
+  return `你是日语教学专家。请为下面的每个词生成**恰好一个搭配短语**（フレーズ），不是完整句子。
+
+短语 = 该词最典型的最小使用单位：省略主语、省略时间/场景铺垫，只保留自然的词语搭配，4—14 个日文字符。
+  好的例子：切符を買う ／ 切符を二枚ください ／ 電子切符にする ／ 部屋を掃除する
+  坏的例子：京都行きの切符を昨日買いました。（完整叙述句：加了时间背景，太长，不要这样写）
 
 要求：
-- 每个短语独立成句，自然地道，不用生硬堆砌
+- 每个短语必须包含该词本身；名词短语或です・ます体短语皆可
+- 严格控制长度：超过 14 个字符说明写成句子了，请缩短重写
 - 句子 id 用 p1、p2…（与词汇表顺序对应），sort_order 从 1 开始
-- 每句包含 text（日语）、kana（整句假名读音）、translation（中文翻译）、speaker（填该词的 surface）
+- 每句包含 text（日语短语）、kana（整句假名读音）、translation（中文翻译）、speaker（填该词的 surface）
 - word_occurrence：key 是词的 surface，value 是该词所在短语的 id 数组（如 ["p1"]）
 
 词汇表（id｜surface｜读音｜中文）：
@@ -572,6 +610,9 @@ async function loadHome() {
     showErr('home-err', e.message); go('home'); return;
   }
   checkActiveTask(); // 首页显示进行中/已完成的生成任务（可点入）
+  loadReviewCount(); // 首页显示到期复习数量（不阻塞主流程）
+  loadWordStudyStatus(); // 首页背词卡片状态（不阻塞主流程）
+  loadLibCount();    // 首页显示生词库数量（不阻塞主流程）
 
   const chip = $('lesson-chip'), btn = $('home-main-btn');
   const todayIt = lessons.find(x => x.date === today);
@@ -883,6 +924,11 @@ function validateLocally(out, words, strict) {
     const n = (m.sentences || []).length;
     if (m.type === 'phrases') {
       if (n < 1 || n > 40) problems.push(`短语材料 ${m.id} 句数 ${n} 异常`);
+      // 短语超长 = 模型写成了完整句子（prompt 已给正反例，仍需硬校验兜底）
+      for (const s of m.sentences || []) {
+        const len = (s.text || '').replace(/[、。！？\s「」]/g, '').length;
+        if (len > 14) problems.push(`短语「${s.text}」${len} 字符过长，疑似完整句子`);
+      }
     } else if (strict && (n < 8 || n > 12)) {
       problems.push(`材料 ${m.id} 句数 ${n} 超出 8—12`);
     }
@@ -998,14 +1044,17 @@ function renderLearn() {
   m.sentences.forEach((s, idx) => {
     const has = (s.audios || []).length > 0;
     const fav = FAVS.has(s.id);
+    const inRv = RV_POOL.has(s.id);
     const div = document.createElement('div');
     div.className = 'sent'; div.dataset.idx = idx;
     div.innerHTML = `
       <span class="spk">${esc(s.speaker || '')}</span>
       <div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
       <div class="zh">${esc(s.translation || '')}</div></div>
+      <button class="rv-btn ${inRv ? 'on' : ''}" title="${inRv ? '已在复习池' : '加入复习'}">${inRv ? '复' : '复'}</button>
       <button class="fav ${fav ? 'on' : ''}" title="${fav ? '取消收藏' : '收藏句子'}">${fav ? '★' : '☆'}</button>
       <button class="play ${has ? 'has' : ''}" title="${has ? '播放' : '未配音'}">${has ? '▶' : '…'}</button>`;
+    div.querySelector('.rv-btn').onclick = (e) => { e.stopPropagation(); toggleReviewSentence(s, div); };
     div.querySelector('.fav').onclick = (e) => { e.stopPropagation(); toggleFavSentence(s, div); };
     div.onclick = () => playSentence(s, idx, div);
     box.appendChild(div);
@@ -1032,14 +1081,17 @@ function renderFavView() {
       audios: it.audio_id ? [{ id: it.audio_id }] : [],
       _fav: true,
     };
+    const inRv = RV_POOL.has(s.id);
     const div = document.createElement('div');
     div.className = 'sent'; div.dataset.idx = idx;
     div.innerHTML = `
       <span class="spk">${esc(it.lesson_date || '')}</span>
       <div class="wrap"><div class="txt">${rubyHTML(it.ruby_tokens) || esc(it.text)}</div>
       <div class="zh">${esc(it.translation || '')}</div></div>
+      <button class="rv-btn ${inRv ? 'on' : ''}" title="${inRv ? '已在复习池' : '加入复习'}">复</button>
       <button class="fav on" title="取消收藏">★</button>
       <button class="play ${it.audio_id ? 'has' : ''}">${it.audio_id ? '▶' : '…'}</button>`;
+    div.querySelector('.rv-btn').onclick = (e) => { e.stopPropagation(); toggleReviewSentence(s, div); };
     div.querySelector('.fav').onclick = (e) => { e.stopPropagation(); toggleFavSentence(s, div); };
     div.onclick = () => playSentence(s, idx, div);
     box.appendChild(div);
@@ -1079,6 +1131,35 @@ async function toggleFavMaterial(mid) {
     const r = await api('/favorites/materials', { method: 'POST', body: JSON.stringify({ material_id: mid }) });
     (r.favorited ? FAVM.add(mid) : FAVM.delete(mid));
     renderLearn();
+  } catch (e) { alert(e.message); }
+}
+
+// toggleReviewSentence 加入/移出复习池（局部更新按钮状态）
+async function toggleReviewSentence(s, div) {
+  try {
+    if (RV_POOL.has(s.id)) {
+      // 已在池中 → 标记已掌握（移出活跃池）
+      // 需要找到 review_item id，这里简化处理：直接调用 master 需要 id
+      // 先用 due 列表找 id（仅活跃项），若已掌握则跳过
+      const due = await api('/reviews/due');
+      const it = (due.items || []).find(x => x.sentence_id === s.id);
+      if (it) {
+        await api('/reviews/' + it.id + '/master', { method: 'POST' });
+      }
+      RV_POOL.delete(s.id);
+    } else {
+      await api('/reviews', {
+        method: 'POST',
+        body: JSON.stringify({ sentence_id: s.id, source: 'manual' }),
+      });
+      RV_POOL.add(s.id);
+    }
+    if (div) {
+      const btn = div.querySelector('.rv-btn');
+      const on = RV_POOL.has(s.id);
+      btn.classList.toggle('on', on);
+      btn.title = on ? '已在复习池' : '加入复习';
+    }
   } catch (e) { alert(e.message); }
 }
 
@@ -1247,6 +1328,456 @@ async function genAllAudio() {
   btn.disabled = false;
   refreshSentenceButtons(); // 局部同步按钮与统计（不重置模式状态）
   alert(`配音完成：成功 ${r.ok} / 失败 ${r.fail}（失败句可重新点击补齐）`);
+}
+
+// ============ 复习 ============
+let RV_ITEMS = [];   // 到期复习项
+let RV_IDX = 0;      // 当前索引
+let RV_PASS = 0;     // 本轮认识计数
+let RV_FAIL = 0;     // 本轮不认识计数
+let RV_AUDIO = null;  // 当前播放的 Audio
+
+async function loadReviewCount() {
+  const card = $('review-card');
+  try {
+    const r = await api('/reviews/due');
+    const n = r.count || 0;
+    if (n > 0) {
+      card.style.display = 'block';
+      $('review-desc').textContent = `有 ${n} 个句子需要复习`;
+      RV_ITEMS = r.items || [];
+    } else {
+      card.style.display = 'none';
+    }
+  } catch {
+    card.style.display = 'none';
+  }
+}
+
+function goReview() {
+  if (!RV_ITEMS.length) return;
+  RV_IDX = 0; RV_PASS = 0; RV_FAIL = 0;
+  go('review');
+  renderReviewItem();
+}
+
+function renderReviewItem() {
+  const box = $('review-content');
+  if (RV_IDX >= RV_ITEMS.length) { renderReviewDone(); return; }
+  const it = RV_ITEMS[RV_IDX];
+  const s = it.sentence;
+  const hasAudio = !!it.audio_id;
+  const srcLabel = { marked: '难点', blind_low: '盲听', retell_stuck: '复述', manual: '手动' };
+  box.innerHTML = `
+    <div class="card">
+      <div class="rv-progress">
+        <div class="bar"><i style="width:${RV_ITEMS.length ? ((RV_IDX) / RV_ITEMS.length * 100) : 0}%"></i></div>
+        <span>${RV_IDX + 1} / ${RV_ITEMS.length}</span>
+      </div>
+      <button class="rv-play" id="rv-play-btn" onclick="reviewPlayAudio()">${hasAudio ? '▶' : '…'}</button>
+      <div id="rv-detail" style="display:none">
+        <div class="rv-text">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
+        <div class="rv-zh">${esc(s.translation || '')}</div>
+        <div class="rv-meta">${srcLabel[it.source] || it.source} · 间隔 ${it.interval_days} 天 · 错 ${it.error_count} 次</div>
+      </div>
+      <div class="rv-actions" id="rv-reveal-row" style="display:none">
+        <button class="btn ghost" onclick="reviewReveal()">显示原文</button>
+      </div>
+      <div class="rv-actions" id="rv-result-row" style="display:none">
+        <button class="btn" onclick="reviewResult('fail')">不认识</button>
+        <button class="btn accent" onclick="reviewResult('pass')">认识</button>
+      </div>
+      <div style="text-align:center;margin-top:12px">
+        <button class="hint" style="background:none;border:none;cursor:pointer;color:var(--ink2);font-size:12px"
+          onclick="reviewMaster()">已掌握，移出复习</button>
+      </div>
+    </div>
+    <button class="btn ghost" onclick="goHome()" style="margin-top:8px">返回首页</button>`;
+  if (hasAudio) reviewPlayAudio();
+  else $('rv-reveal-row').style.display = 'flex';
+}
+
+async function reviewPlayAudio() {
+  const it = RV_ITEMS[RV_IDX];
+  if (!it || !it.audio_id) return;
+  const btn = $('rv-play-btn');
+  try {
+    if (RV_AUDIO) { RV_AUDIO.pause(); RV_AUDIO = null; }
+    const r = await fetch('/api/v1/audio/' + it.audio_id + '/file',
+      { headers: { Authorization: 'Bearer ' + TOKEN } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const url = URL.createObjectURL(await r.blob());
+    RV_AUDIO = new Audio(url);
+    if (btn) { btn.classList.add('playing'); btn.textContent = '⏳'; }
+    RV_AUDIO.onended = () => {
+      if (btn) { btn.classList.remove('playing'); btn.textContent = '▶'; }
+      $('rv-reveal-row').style.display = 'flex';
+    };
+    RV_AUDIO.onerror = () => {
+      if (btn) { btn.classList.remove('playing'); btn.textContent = '▶'; }
+    };
+    await RV_AUDIO.play();
+  } catch (e) {
+    if (btn) { btn.classList.remove('playing'); btn.textContent = '▶'; }
+    $('rv-reveal-row').style.display = 'flex';
+  }
+}
+
+function reviewReveal() {
+  $('rv-detail').style.display = 'block';
+  $('rv-reveal-row').style.display = 'none';
+  $('rv-result-row').style.display = 'flex';
+}
+
+async function reviewResult(result) {
+  const it = RV_ITEMS[RV_IDX];
+  try {
+    await api('/reviews/' + it.id + '/result', {
+      method: 'POST',
+      body: JSON.stringify({ result }),
+    });
+    if (result === 'pass') RV_PASS++; else RV_FAIL++;
+  } catch (e) {
+    alert(e.message);
+  }
+  RV_IDX++;
+  renderReviewItem();
+}
+
+async function reviewMaster() {
+  const it = RV_ITEMS[RV_IDX];
+  if (!confirm('确定将此句标记为已掌握？它不会再出现在复习列表中。')) return;
+  try {
+    await api('/reviews/' + it.id + '/master', { method: 'POST' });
+    RV_ITEMS.splice(RV_IDX, 1);
+    if (RV_IDX >= RV_ITEMS.length && RV_ITEMS.length === 0) {
+      renderReviewDone();
+    } else {
+      renderReviewItem();
+    }
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function renderReviewDone() {
+  const total = RV_PASS + RV_FAIL;
+  $('review-content').innerHTML = `
+    <div class="card rv-done-card">
+      <h2>复习完成</h2>
+      <div class="rv-stats">
+        <div class="rv-stat pass"><div class="n">${RV_PASS}</div><div class="l">认识</div></div>
+        <div class="rv-stat fail"><div class="n">${RV_FAIL}</div><div class="l">不认识</div></div>
+        <div class="rv-stat"><div class="n">${total}</div><div class="l">总计</div></div>
+      </div>
+      <button class="btn accent" onclick="goHome()">返回首页</button>
+    </div>`;
+}
+
+// ============ 生词库 ============
+// 跨课程累积的全部生词（word 表按用户持久）；点词复用用法索引，创建页可从这里选词。
+let LIB_WORDS = [];
+let LIB_Q = '';
+let PICKED = new Set();
+let PICK_Q = '';
+
+async function loadLibWords() {
+  const r = await api('/words/library');
+  LIB_WORDS = r.items || [];
+  return LIB_WORDS;
+}
+
+// loadLibCount 首页卡片：生词库数量
+async function loadLibCount() {
+  try {
+    await loadLibWords();
+    const d = $('lib-desc');
+    if (!LIB_WORDS.length) d.textContent = '还没有生词。提交词单创建课程后，词语会自动累积到这里。';
+    else d.textContent = `共 ${LIB_WORDS.length} 词 · 点词可看它的短语与句子，也可选词造新句。`;
+  } catch {}
+}
+
+async function goLibrary() {
+  stopPlay();
+  try {
+    if (!LIB_WORDS.length) await loadLibWords();
+  } catch (e) { alert(e.message); return; }
+  LIB_Q = ''; $('lib-search').value = '';
+  renderLibrary();
+  go('library');
+}
+
+function libSearch(v) { LIB_Q = v.trim(); renderLibrary(); }
+
+function libFilter(list, q) {
+  if (!q) return list;
+  const s = q.toLowerCase();
+  return list.filter(w =>
+    (w.surface || '').toLowerCase().includes(s)
+    || (w.reading || '').toLowerCase().includes(s)
+    || (w.meaning || '').toLowerCase().includes(s));
+}
+
+function renderLibrary() {
+  const box = $('lib-list'); box.innerHTML = '';
+  const words = libFilter(LIB_WORDS, LIB_Q);
+  if (!words.length) {
+    box.innerHTML = `<p class="hint" style="text-align:center;margin-top:30px">${LIB_WORDS.length ? '没有匹配的词。' : '生词库是空的。提交词单创建课程后，词语会自动累积到这里。'}</p>`;
+    $('lib-hint').textContent = '';
+    return;
+  }
+  words.forEach(w => {
+    const div = document.createElement('div');
+    div.className = 'sent wordrow';
+    div.innerHTML = `
+      <span class="spk">${w.is_key ? '★' : ''}</span>
+      <div class="wrap">
+        <div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
+        <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')} <span class="lib-meta">· ${w.lesson_count} 课${w.first_seen ? ' · 首见 ' + w.first_seen : ''}</span></div>
+      </div>
+      <button class="play" title="展开用法">▾</button>`;
+    div.onclick = () => toggleWordUsage(w, div);
+    box.appendChild(div);
+  });
+  $('lib-hint').textContent = `生词库 · 共 ${LIB_WORDS.length} 词${LIB_Q ? ` · 匹配 ${words.length}` : ''} · 点词展开它的短语与句子（可点播）`;
+}
+
+// openWordPicker 创建页「从生词库选词」：底部弹出选词层，确认后追加到词单输入框
+async function openWordPicker() {
+  try {
+    if (!LIB_WORDS.length) await loadLibWords();
+  } catch (e) { alert(e.message); return; }
+  if (!LIB_WORDS.length) {
+    alert('生词库是空的。先手动提交一次词单，之后的词都会自动累积进来。');
+    return;
+  }
+  PICKED = new Set(); PICK_Q = '';
+  $('picker-search').value = '';
+  renderPickerList();
+  $('picker-mask').style.display = 'flex';
+}
+function closePicker() { $('picker-mask').style.display = 'none'; }
+function pickerSearch(v) { PICK_Q = v.trim(); renderPickerList(); }
+
+function renderPickerList() {
+  const box = $('picker-list'); box.innerHTML = '';
+  const words = libFilter(LIB_WORDS, PICK_Q);
+  if (!words.length) {
+    box.innerHTML = '<p class="hint" style="text-align:center;margin-top:20px">没有匹配的词。</p>';
+  }
+  words.forEach(w => {
+    const div = document.createElement('div');
+    div.className = 'pick-row';
+    div.innerHTML = `
+      <input type="checkbox" ${PICKED.has(w.id) ? 'checked' : ''}>
+      <div class="wrap">
+        <div class="txt">${esc(w.surface)}${w.reading ? '（' + esc(w.reading) + '）' : ''}</div>
+        <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div>
+      </div>`;
+    div.onclick = () => {
+      if (PICKED.has(w.id)) PICKED.delete(w.id); else PICKED.add(w.id);
+      div.querySelector('input').checked = PICKED.has(w.id);
+      updatePickerOk();
+    };
+    box.appendChild(div);
+  });
+  updatePickerOk();
+}
+
+function updatePickerOk() {
+  $('picker-ok').textContent = PICKED.size ? `加入词单（已选 ${PICKED.size} 词）` : '加入词单';
+}
+
+function pickerConfirm() {
+  if (PICKED.size) {
+    const lines = LIB_WORDS.filter(w => PICKED.has(w.id)).map(w =>
+      [w.surface, w.reading || '', w.pos || '', w.meaning || ''].join('｜') + (w.is_key ? ' ★' : ''));
+    const ta = $('words-input');
+    const cur = ta.value.trim();
+    ta.value = (cur ? cur + '\n' : '') + lines.join('\n');
+    countWords();
+  }
+  closePicker();
+}
+
+// ============ 背词（词级 SRS）============
+// 新学 = 无卡的最旧 20 词；复习 = 有卡未掌握且到期。翻卡：正面词面 →
+// 翻面读音/词性/中文 + 例句（可点播）；点词面发单词音（/dev/tts 现场合成）。
+let WS_MODE = 'new', WS_ITEMS = [], WS_IDX = 0, WS_PASS = 0, WS_FAIL = 0;
+let WS_AUDIO = null; // 背词屏专用音频对象（与句子播放互不干扰）
+const WS_VOICE = 'Nanami';
+
+// loadWordStudyStatus 首页背词卡片：新学候选数 + 今日到期数
+async function loadWordStudyStatus() {
+  try {
+    const st = await api('/word-study/status');
+    const d = $('wordstudy-desc');
+    const nb = $('ws-new-btn'), db = $('ws-due-btn');
+    d.textContent = `新学 ${st.fresh} 词待学 · 今日 ${st.due} 词到期`;
+    nb.disabled = !st.fresh;
+    db.disabled = !st.due;
+    db.textContent = st.due ? `复习（${st.due}）` : '复习 · 今日无到期';
+    nb.textContent = st.fresh ? `新学（${Math.min(st.fresh, 20)}）` : '新学 · 已全部学过';
+  } catch {}
+}
+
+async function goWordStudy(mode) {
+  WS_MODE = mode;
+  try {
+    const r = await api('/word-study/' + (mode === 'new' ? 'new' : 'due'));
+    WS_ITEMS = r.words || [];
+  } catch (e) { alert(e.message); return; }
+  if (!WS_ITEMS.length) { alert(mode === 'new' ? '没有待学的新词了。' : '今日没有到期的复习词。'); return; }
+  WS_IDX = 0; WS_PASS = 0; WS_FAIL = 0;
+  go('wordstudy');
+  renderWordStudyItem();
+}
+
+function wsStopAudio() { if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; } }
+
+// wsSpeakWord 单词发音：后端 /word-study/{id}/audio（首次合成落库，之后直接用缓存）
+function wsSpeakWord(wordId, btn) {
+  return new Promise(async resolve => {
+    try {
+      if (btn) { btn.textContent = '⏳'; }
+      const r = await fetch('/api/v1/word-study/' + wordId + '/audio',
+        { headers: { Authorization: 'Bearer ' + TOKEN } });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const url = URL.createObjectURL(await r.blob());
+      wsStopAudio();
+      WS_AUDIO = new Audio(url);
+      WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🔊'; resolve(); };
+      await WS_AUDIO.play();
+    } catch (e) {
+      if (btn) btn.textContent = '🔊';
+      resolve();
+    }
+  });
+}
+
+// wsPlaySentence 例句点播：有音频直接播，没有先 synthesize 再播
+async function wsPlaySentence(it, btn) {
+  try {
+    if (btn) { btn.textContent = '⏳'; }
+    let audioId = it.audio_id;
+    if (!audioId) {
+      const r = await api('/audio/synthesize', {
+        method: 'POST',
+        body: JSON.stringify({ sentence_id: it.sentence_id, voice: WS_VOICE, rate: 1.0 }),
+      });
+      audioId = r.audio_id;
+    }
+    const f = await fetch('/api/v1/audio/' + audioId + '/file',
+      { headers: { Authorization: 'Bearer ' + TOKEN } });
+    if (!f.ok) throw new Error('HTTP ' + f.status);
+    const url = URL.createObjectURL(await f.blob());
+    wsStopAudio();
+    WS_AUDIO = new Audio(url);
+    WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; };
+    await WS_AUDIO.play();
+  } catch (e) {
+    if (btn) btn.textContent = '▶';
+  }
+}
+
+function renderWordStudyItem() {
+  wsStopAudio();
+  const box = $('wordstudy-content');
+  if (WS_IDX >= WS_ITEMS.length) { renderWordStudyDone(); return; }
+  const w = WS_ITEMS[WS_IDX];
+  const total = WS_ITEMS.length;
+  box.innerHTML = `
+    <div class="card">
+      <div class="rv-progress">
+        <div class="bar"><i style="width:${(WS_IDX / total * 100)}%"></i></div>
+        <span>${WS_IDX + 1} / ${total}</span>
+      </div>
+      <div class="ws-front" id="ws-front">
+        <div class="ws-word-line">
+          <span class="ws-word-txt">${esc(w.surface)}</span>
+          <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
+        </div>
+        <p class="hint">回想它的读音和意思，然后翻面</p>
+        <button class="btn ghost" onclick="wsFlip()">翻面</button>
+      </div>
+      <div class="ws-back" id="ws-back" style="display:none">
+        <div class="ws-word-line">
+          <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
+          <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
+        </div>
+        <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
+        ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
+        <div id="ws-usage"><p class="hint">加载例句…</p></div>
+        <div class="rv-actions">
+          <button class="btn" onclick="wsResult('fail')">不认识</button>
+          <button class="btn accent" onclick="wsResult('pass')">认识</button>
+        </div>
+      </div>
+    </div>
+    <button class="btn ghost" onclick="wsQuit()" style="margin-top:8px">返回首页</button>`;
+}
+
+// wsFlip 翻面：显示读音释义 + 拉取该词的例句/短语
+async function wsFlip() {
+  $('ws-front').style.display = 'none';
+  $('ws-back').style.display = 'block';
+  const w = WS_ITEMS[WS_IDX];
+  const box = $('ws-usage');
+  try {
+    const u = await api('/words/' + w.id + '/usage');
+    const items = u.items || [];
+    if (!items.length) { box.innerHTML = '<p class="hint">该词暂无关联句子。</p>'; return; }
+    box.innerHTML = '<div class="usage-head">它的短语与句子（点播）</div>';
+    items.slice(0, 4).forEach(x => {
+      const row = document.createElement('div');
+      row.className = 'sent usage-sent';
+      row.innerHTML = `
+        <span class="spk">${x.type === 'phrases' ? '短' : '句'}</span>
+        <div class="wrap"><div class="txt">${rubyHTML(x.ruby_tokens) || esc(x.text)}</div>
+        <div class="zh">${esc(x.translation || '')}</div></div>
+        <button class="play ${x.audio_id ? 'has' : ''}">${x.audio_id ? '▶' : '…'}</button>`;
+      row.querySelector('.play').onclick = (e) => { e.stopPropagation(); wsPlaySentence(x, e.target); };
+      box.appendChild(row);
+    });
+  } catch (e) {
+    box.innerHTML = '<p class="hint">例句加载失败：' + esc(e.message) + '</p>';
+  }
+}
+
+async function wsResult(result) {
+  const w = WS_ITEMS[WS_IDX];
+  try {
+    await api('/word-study/' + w.id + '/result', {
+      method: 'POST',
+      body: JSON.stringify({ result }),
+    });
+    if (result === 'pass') WS_PASS++; else WS_FAIL++;
+  } catch (e) { alert(e.message); return; }
+  WS_IDX++;
+  renderWordStudyItem();
+}
+
+function wsQuit() {
+  wsStopAudio();
+  loadWordStudyStatus();
+  loadHome();
+}
+
+function renderWordStudyDone() {
+  const total = WS_PASS + WS_FAIL;
+  const label = WS_MODE === 'new' ? '新学完成' : '复习完成';
+  $('wordstudy-content').innerHTML = `
+    <div class="card rv-done-card">
+      <h2>${label}</h2>
+      <div class="rv-stats">
+        <div class="rv-stat pass"><div class="n">${WS_PASS}</div><div class="l">认识</div></div>
+        <div class="rv-stat fail"><div class="n">${WS_FAIL}</div><div class="l">不认识</div></div>
+        <div class="rv-stat"><div class="n">${total}</div><div class="l">总计</div></div>
+      </div>
+      <p class="hint" style="text-align:center;margin-top:6px">认识的词明天到期，间隔会逐次翻倍；不认识的明天就会再出现。</p>
+      <button class="btn accent" onclick="wsQuit()">返回首页</button>
+    </div>`;
+  loadWordStudyStatus();
 }
 
 // ============ 启动 ============
