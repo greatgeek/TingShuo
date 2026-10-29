@@ -102,6 +102,13 @@ func run() error {
 	})
 
 	r.Route("/api/v1", func(api chi.Router) {
+		// API 响应一律禁缓存：避免浏览器启发式缓存把旧数据（如修复前的句子）留给页面
+		api.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				next.ServeHTTP(w, req)
+			})
+		})
 		// 公开端点
 		api.Post("/auth/register", authH.Register)
 		api.Post("/auth/login", authH.Login)

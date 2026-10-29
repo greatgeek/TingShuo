@@ -1,7 +1,7 @@
 // 修复生词本句子文本的两类解析残留（在 import 之前跑）：
 //  1) 复合词被交错注音拆散：「日に本」「佐さ藤」「二に年」→ 用 kagome 判定
 //     （单汉字+1-2假名+单汉字 且两汉字合成一个词、其读音以该假名开头）→ 删掉中间假名碎片。
-//  2) 孤立全角括号：只有 ） 没有 （（或反之）时整行清除该种括号。
+//  2) 不成对括号：栈扫描删掉配不上的 （ ( ） )（全半角都算），配对的保留（如 1日（ついたち）、サイズ(size)）。
 // 用法: node 管线之后、import 之前：go run ./cmd/textrepair <fullJson>
 package main
 
@@ -17,14 +17,41 @@ import (
 
 var fragRe = regexp.MustCompile(`([一-鿯])([ぁ-ん]{1,2})([一-鿯])`)
 
+// 栈扫描：配对的括号（全半角混算）保留，配不上的删掉。
+func stripUnbalancedParens(s string) string {
+	rs := []rune(s)
+	keep := make([]bool, len(rs))
+	for i := range keep {
+		keep[i] = true
+	}
+	var stack []int
+	for i, r := range rs {
+		switch r {
+		case '（', '(':
+			stack = append(stack, i)
+		case '）', ')':
+			if len(stack) > 0 {
+				stack = stack[:len(stack)-1]
+			} else {
+				keep[i] = false
+			}
+		}
+	}
+	for _, i := range stack {
+		keep[i] = false
+	}
+	var b strings.Builder
+	for i, r := range rs {
+		if keep[i] {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func repair(text string) (string, bool) {
 	orig := text
-	if !strings.Contains(text, "（") {
-		text = strings.ReplaceAll(text, "）", "")
-	}
-	if !strings.Contains(text, "）") {
-		text = strings.ReplaceAll(text, "（", "")
-	}
+	text = stripUnbalancedParens(text)
 	// 复合词假名碎片：从左往右扫；未合并时只前进到 mid 之后，保留 k3 供重叠候选匹配
 	var b strings.Builder
 	rest := text
