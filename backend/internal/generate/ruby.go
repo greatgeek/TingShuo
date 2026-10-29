@@ -13,6 +13,12 @@ import (
 // ipaDict 全局加载一次（IPA 词典约 50MB，进程内共享，只读安全）。
 var ipaDict = ipa.Dict()
 
+// readingFix 上下文读音纠正：kagome 按词元取词典读音，个别组合会误读
+//（「この後」被拆成 この＋後(のち)，实读 このあと）。键为 [前一词元, 当前词元]。
+var readingFix = map[[2]string]string{
+	{"この", "後"}: "あと",
+}
+
 // BuildRubyTokens 对句子分词并输出振り仮名结构：
 // [["会計","かいけい"],["を",null],...]——含汉字词带平假名读音，其余 null。
 func BuildRubyTokens(text string) [][]any {
@@ -21,7 +27,11 @@ func BuildRubyTokens(text string) [][]any {
 		// 词典加载失败时退化为纯文本 token（振り仮名缺失但不阻塞落库）
 		return [][]any{{text, nil}}
 	}
-	out := make([][]any, 0, 16)
+	type tok struct {
+		surface string
+		reading string
+	}
+	toks := make([]tok, 0, 16)
 	for _, m := range t.Tokenize(text) {
 		if m.ID == tokenizer.BosEosID {
 			continue // BOS/EOS 占位词元（Surface 为字面量 "BOS"/"EOS"）
@@ -32,9 +42,22 @@ func BuildRubyTokens(text string) [][]any {
 		}
 		reading, _ := m.Reading()
 		if reading != "" && containsKanji(surface) {
-			out = append(out, []any{surface, kataToHira(reading)})
+			toks = append(toks, tok{surface, kataToHira(reading)})
 		} else {
-			out = append(out, []any{surface, nil})
+			toks = append(toks, tok{surface, ""})
+		}
+	}
+	for i := 1; i < len(toks); i++ {
+		if r, ok := readingFix[[2]string{toks[i-1].surface, toks[i].surface}]; ok {
+			toks[i].reading = r
+		}
+	}
+	out := make([][]any, 0, len(toks))
+	for _, tk := range toks {
+		if tk.reading != "" {
+			out = append(out, []any{tk.surface, tk.reading})
+		} else {
+			out = append(out, []any{tk.surface, nil})
 		}
 	}
 	if len(out) == 0 {
