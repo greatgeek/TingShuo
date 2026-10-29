@@ -617,6 +617,7 @@ async function loadHome() {
   loadReviewCount(); // 首页显示到期复习数量（不阻塞主流程）
   loadWordStudyStatus(); // 首页背词卡片状态（不阻塞主流程）
   loadLibCount();    // 首页显示生词库数量（不阻塞主流程）
+  updateCacheStats(); // 首页本地音频缓存占用（不阻塞主流程）
 
   const chip = $('lesson-chip'), btn = $('home-main-btn');
   const todayIt = lessons.find(x => x.date === today);
@@ -1210,13 +1211,118 @@ function toggleRT() {
 
 // audioURL 取句子音频并返回同源 blob URL（服务端流式代理返回 MP3，
 // 302/跨域/预签名全部绕开；Audio 元素无法带 Bearer，故先 fetch 成 blob）
+// ============ 本地音频缓存（IndexedDB，FR-4.6 离线/省流量）============
+// 命中零网络；未命中拉取后落缓存。重复听/连播/复习再听都不再下载。
+const AUDIO_DB = 'tingshuo-audio', AUDIO_STORE = 'audio';
+const AUDIO_MAX_BYTES = 150 * 1024 * 1024; // 上限 150MB，超出按最久未用淘汰
+let _adb = null;
+function idbOpen() {
+  if (_adb) return Promise.resolve(_adb);
+  return new Promise((res, rej) => {
+    const rq = indexedDB.open(AUDIO_DB, 1);
+    rq.onupgradeneeded = () => {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains(AUDIO_STORE)) {
+        db.createObjectStore(AUDIO_STORE, { keyPath: 'id' }).createIndex('lastUsed', 'lastUsed');
+      }
+    };
+    rq.onsuccess = () => { _adb = rq.result; res(_adb); };
+    rq.onerror = () => rej(rq.error);
+  });
+}
+function _idbAll() {
+  return idbOpen().then(db => new Promise(res => {
+    const rq = db.transaction(AUDIO_STORE).objectStore(AUDIO_STORE).getAll();
+    rq.onsuccess = () => res(rq.result || []); rq.onerror = () => res([]);
+  }));
+}
+async function idbGet(id) {
+  try {
+    const db = await idbOpen();
+    return await new Promise(res => {
+      const rq = db.transaction(AUDIO_STORE).objectStore(AUDIO_STORE).get(id);
+      rq.onsuccess = () => res(rq.result || null); rq.onerror = () => res(null);
+    });
+  } catch { return null; }
+}
+async function idbPut(id, blob) {
+  try {
+    const db = await idbOpen();
+    await new Promise(res => {
+      const tx = db.transaction(AUDIO_STORE, 'readwrite');
+      tx.objectStore(AUDIO_STORE).put({ id, blob, size: blob.size, lastUsed: Date.now() });
+      tx.oncomplete = res; tx.onerror = res; tx.onabort = res;
+    });
+    // 超上限淘汰最久未用
+    const all = await _idbAll();
+    let total = all.reduce((s, x) => s + (x.size || 0), 0);
+    if (total > AUDIO_MAX_BYTES) {
+      all.sort((a, b) => (a.lastUsed || 0) - (b.lastUsed || 0));
+      const tx = db.transaction(AUDIO_STORE, 'readwrite');
+      const st = tx.objectStore(AUDIO_STORE);
+      for (const x of all) { if (total <= AUDIO_MAX_BYTES) break; st.delete(x.id); total -= (x.size || 0); }
+    }
+  } catch {}
+}
+async function idbClear() {
+  try {
+    const db = await idbOpen();
+    await new Promise(res => {
+      const tx = db.transaction(AUDIO_STORE, 'readwrite');
+      tx.objectStore(AUDIO_STORE).clear(); tx.oncomplete = res; tx.onerror = res;
+    });
+  } catch {}
+}
+async function idbStats() {
+  try {
+    const all = await _idbAll();
+    return { count: all.length, bytes: all.reduce((s, x) => s + (x.size || 0), 0) };
+  } catch { return { count: 0, bytes: 0 }; }
+}
+// 缓存优先取句子音频 blob URL
+async function audioBlobURL(audioId) {
+  const hit = await idbGet(audioId);
+  if (hit && hit.blob) { idbPut(audioId, hit.blob); return URL.createObjectURL(hit.blob); }
+  const r = await fetch('/api/v1/audio/' + audioId + '/file', { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!r.ok) throw new Error('音频获取失败 HTTP ' + r.status);
+  const blob = await r.blob();
+  idbPut(audioId, blob);
+  return URL.createObjectURL(blob);
+}
+// 缓存优先取单词发音 blob URL（key 加 w: 前缀与句子音频区分）
+async function wordAudioBlobURL(wordId) {
+  const key = 'w:' + wordId;
+  const hit = await idbGet(key);
+  if (hit && hit.blob) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
+  const r = await fetch('/api/v1/word-study/' + wordId + '/audio', { headers: { Authorization: 'Bearer ' + TOKEN } });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const blob = await r.blob();
+  idbPut(key, blob);
+  return URL.createObjectURL(blob);
+}
+
 async function audioURL(s) {
   const a = (s.audios || [])[0];
   if (!a) return null;
-  const r = await fetch('/api/v1/audio/' + a.id + '/file',
-    { headers: { Authorization: 'Bearer ' + TOKEN } });
-  if (!r.ok) throw new Error('音频获取失败 HTTP ' + r.status);
-  return URL.createObjectURL(await r.blob());
+  return audioBlobURL(a.id);
+}
+
+// 首页缓存卡片：显示占用 + 清理入口（FR-10.5 缓存管理）
+async function updateCacheStats() {
+  const el = $('cache-desc');
+  if (!el) return;
+  const st = await idbStats();
+  const size = st.bytes >= 1024 * 1024
+    ? (st.bytes / 1024 / 1024).toFixed(1) + ' MB'
+    : Math.round(st.bytes / 1024) + ' KB';
+  el.textContent = st.count
+    ? `已缓存 ${st.count} 条音频 · ${size}（重复听不再下载）`
+    : '尚未缓存音频，播放过的句子会自动存到本地。';
+}
+async function clearAudioCache() {
+  if (!confirm('清理本地音频缓存？清理后下次播放会重新下载。')) return;
+  await idbClear();
+  updateCacheStats();
 }
 
 // playOne 播放单句并返回 Promise（连播顺序 await 用）。
@@ -1403,10 +1509,7 @@ async function reviewPlayAudio() {
   const btn = $('rv-play-btn');
   try {
     if (RV_AUDIO) { RV_AUDIO.pause(); RV_AUDIO = null; }
-    const r = await fetch('/api/v1/audio/' + it.audio_id + '/file',
-      { headers: { Authorization: 'Bearer ' + TOKEN } });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const url = URL.createObjectURL(await r.blob());
+    const url = await audioBlobURL(it.audio_id);
     RV_AUDIO = new Audio(url);
     if (btn) { btn.classList.add('playing'); btn.textContent = '⏳'; }
     RV_AUDIO.onended = () => {
@@ -1640,10 +1743,7 @@ function wsSpeakWord(wordId, btn) {
   return new Promise(async resolve => {
     try {
       if (btn) { btn.textContent = '⏳'; }
-      const r = await fetch('/api/v1/word-study/' + wordId + '/audio',
-        { headers: { Authorization: 'Bearer ' + TOKEN } });
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const url = URL.createObjectURL(await r.blob());
+      const url = await wordAudioBlobURL(wordId);
       wsStopAudio();
       WS_AUDIO = new Audio(url);
       WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🔊'; resolve(); };
@@ -1667,10 +1767,7 @@ async function wsPlaySentence(it, btn) {
       });
       audioId = r.audio_id;
     }
-    const f = await fetch('/api/v1/audio/' + audioId + '/file',
-      { headers: { Authorization: 'Bearer ' + TOKEN } });
-    if (!f.ok) throw new Error('HTTP ' + f.status);
-    const url = URL.createObjectURL(await f.blob());
+    const url = await audioBlobURL(audioId);
     wsStopAudio();
     WS_AUDIO = new Audio(url);
     WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; };
