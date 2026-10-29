@@ -260,3 +260,9 @@ body.no-rt rt { display: none; }
 .nb-sent .zh { display: block; }
 #ws-nb .zh { display: block; }
 #nb-words > .sent .zh { display: block; }
+
+/* 词行发音按钮（生词本/生词库共用） */
+.sent .word-speak {
+  width: 36px; height: 36px; flex: none; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--surface); font-size: 14px; cursor: pointer;
+}

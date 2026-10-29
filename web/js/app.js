@@ -1665,11 +1665,13 @@ function renderLibrary() {
         <div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
         <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')} <span class="lib-meta">· ${w.lesson_count} 课${w.first_seen ? ' · 首见 ' + w.first_seen : ''}</span></div>
       </div>
+      <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开用法">▾</button>`;
+    div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.id, e.currentTarget); };
     div.onclick = () => toggleWordUsage(w, div);
     box.appendChild(div);
   });
-  $('lib-hint').textContent = `生词库 · 共 ${LIB_WORDS.length} 词${LIB_Q ? ` · 匹配 ${words.length}` : ''} · 点词展开它的短语与句子（可点播）`;
+  $('lib-hint').textContent = `生词库 · 共 ${LIB_WORDS.length} 词${LIB_Q ? ` · 匹配 ${words.length}` : ''} · 🔊 听词音 · 点词展开短语与句子`;
 }
 
 // openWordPicker 创建页「从生词库选词」：底部弹出选词层，确认后追加到词单输入框
@@ -2012,11 +2014,13 @@ function renderNbWords() {
       <span class="spk">${i + 1}</span>
       <div class="wrap"><div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
       <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>
+      <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开例句">▾</button>`;
+    div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.word_id, e.currentTarget); };
     div.onclick = () => nbToggleWord(w, div);
     box.appendChild(div);
   });
-  $('nb-hint').textContent = `共 ${items.length} 词 · 点词展开例句（▶ 点播，首次合成后缓存）`;
+  $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 点词展开例句（▶ 点播）`;
 }
 
 function nbToggleWord(w, div) {
