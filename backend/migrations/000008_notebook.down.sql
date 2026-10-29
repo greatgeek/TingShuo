@@ -1,0 +1,6 @@
+BEGIN;
+DROP TABLE IF EXISTS notebook_sentence;
+DROP TABLE IF EXISTS notebook_word;
+DROP TABLE IF EXISTS notebook_dir;
+DROP TABLE IF EXISTS notebook;
+COMMIT;

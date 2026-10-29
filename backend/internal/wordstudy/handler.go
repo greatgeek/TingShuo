@@ -182,6 +182,42 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 	w.Write(audio)
 }
 
+// NbSentences GET /word-study/{word_id}/sentences —— 该词在生词本里绑定的例句（背词翻面展示）。
+func (h *Handler) NbSentences(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	wordID := chi.URLParam(r, "word_id")
+	rows, err := h.pool.Query(r.Context(), `
+		SELECT s.text, s.translation, s.src, d.name
+		FROM notebook_sentence s
+		JOIN notebook_word nw ON nw.id = s.notebook_word_id
+		JOIN notebook_dir d  ON d.id = nw.dir_id
+		JOIN notebook nb     ON nb.id = nw.notebook_id
+		WHERE nw.word_id = $1 AND nb.user_id = $2
+		ORDER BY d.sort_order, s.sort_order
+		LIMIT 8`, wordID, userID)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer rows.Close()
+	type item struct {
+		Text        string  `json:"text"`
+		Translation *string `json:"translation"`
+		Src         *string `json:"src"`
+		Dir         string  `json:"dir"`
+	}
+	items := []item{}
+	for rows.Next() {
+		var it item
+		if err := rows.Scan(&it.Text, &it.Translation, &it.Src, &it.Dir); err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+		items = append(items, it)
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
+}
+
 type word struct {
 	ID      string  `json:"id"`
 	Surface string  `json:"surface"`

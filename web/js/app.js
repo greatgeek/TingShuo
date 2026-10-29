@@ -1805,6 +1805,7 @@ function renderWordStudyItem() {
         <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
         ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
         <div id="ws-usage"><p class="hint">加载例句…</p></div>
+        <div id="ws-nb"></div>
         <div class="rv-actions">
           <button class="btn" onclick="wsResult('fail')">不认识</button>
           <button class="btn accent" onclick="wsResult('pass')">认识</button>
@@ -1823,22 +1824,42 @@ async function wsFlip() {
   try {
     const u = await api('/words/' + w.id + '/usage');
     const items = u.items || [];
-    if (!items.length) { box.innerHTML = '<p class="hint">该词暂无关联句子。</p>'; return; }
-    box.innerHTML = '<div class="usage-head">它的短语与句子（点播）</div>';
-    items.slice(0, 4).forEach(x => {
-      const row = document.createElement('div');
-      row.className = 'sent usage-sent';
-      row.innerHTML = `
-        <span class="spk">${x.type === 'phrases' ? '短' : '句'}</span>
-        <div class="wrap"><div class="txt">${rubyHTML(x.ruby_tokens) || esc(x.text)}</div>
-        <div class="zh">${esc(x.translation || '')}</div></div>
-        <button class="play ${x.audio_id ? 'has' : ''}">${x.audio_id ? '▶' : '…'}</button>`;
-      row.querySelector('.play').onclick = (e) => { e.stopPropagation(); wsPlaySentence(x, e.target); };
-      box.appendChild(row);
-    });
+    if (!items.length) { box.innerHTML = '<p class="hint">该词暂无课程关联句子。</p>'; }
+    else {
+      box.innerHTML = '<div class="usage-head">它的短语与句子（点播）</div>';
+      items.slice(0, 4).forEach(x => {
+        const row = document.createElement('div');
+        row.className = 'sent usage-sent';
+        row.innerHTML = `
+          <span class="spk">${x.type === 'phrases' ? '短' : '句'}</span>
+          <div class="wrap"><div class="txt">${rubyHTML(x.ruby_tokens) || esc(x.text)}</div>
+          <div class="zh">${esc(x.translation || '')}</div></div>
+          <button class="play ${x.audio_id ? 'has' : ''}">${x.audio_id ? '▶' : '…'}</button>`;
+        row.querySelector('.play').onclick = (e) => { e.stopPropagation(); wsPlaySentence(x, e.target); };
+        box.appendChild(row);
+      });
+    }
   } catch (e) {
     box.innerHTML = '<p class="hint">例句加载失败：' + esc(e.message) + '</p>';
   }
+  // 生词本绑定例句（梁爽讲义等导入源）
+  const nb = $('ws-nb');
+  try {
+    const r = await api('/word-study/' + w.id + '/sentences');
+    const its = r.items || [];
+    if (its.length) {
+      nb.innerHTML = '<div class="usage-head">生词本例句</div>';
+      its.slice(0, 4).forEach(x => {
+        const row = document.createElement('div');
+        row.className = 'sent usage-sent';
+        row.innerHTML = `
+          <span class="spk">${x.src === 'llm' ? '补' : '本'}</span>
+          <div class="wrap"><div class="txt">${esc(x.text)}</div>
+          <div class="zh">${esc(x.translation || '')}</div></div>`;
+        nb.appendChild(row);
+      });
+    } else nb.innerHTML = '';
+  } catch { nb.innerHTML = ''; }
 }
 
 async function wsResult(result) {

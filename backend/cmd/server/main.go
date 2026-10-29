@@ -121,6 +121,7 @@ func run() error {
 			sec.Get("/word-study/due", wsH.DueWords)
 			sec.Post("/word-study/{word_id}/result", wsH.Result)
 			sec.Get("/word-study/{word_id}/audio", wsH.Audio)
+			sec.Get("/word-study/{word_id}/sentences", wsH.NbSentences)
 
 			sec.Post("/favorites", favH.AddSentence)
 			sec.Delete("/favorites/sentences/{sentence_id}", favH.RemoveSentence)
