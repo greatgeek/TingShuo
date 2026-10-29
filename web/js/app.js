@@ -2002,11 +2002,10 @@ function nbToggleWord(w, div) {
   if (!w.sentences.length) wrap.innerHTML = '<p class="hint" style="margin-left:26px">暂无例句</p>';
   w.sentences.forEach(s => {
     const row = document.createElement('div');
-    row.className = 'nb-sent'; row.style.position = 'relative';
-    row.innerHTML = `<div class="txt">${esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div>`;
+    row.className = 'nb-sent';
+    row.innerHTML = `<div class="wrap"><div class="txt">${esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div></div>`;
     const btn = document.createElement('button');
-    btn.className = 'play'; btn.textContent = '▶';
-    btn.style.cssText = 'position:absolute;right:6px;top:6px;width:32px;height:32px;font-size:12px';
+    btn.className = 'play'; btn.textContent = '▶'; btn.title = '点播';
     btn.onclick = (e) => { e.stopPropagation(); sayAudio(s.text, btn); };
     row.appendChild(btn);
     wrap.appendChild(row);
