@@ -20,9 +20,35 @@ let FAV_ITEMS = [];      // 收藏句列表（含内容）
 let FAVM = new Set();    // 已收藏材料 ID
 let RV_POOL = new Set(); // 已在复习池的句子 ID（含已掌握）
 
+// ============ 页面导航与「返回上一级」============
+// 页面树：home 为根；create/learn/review/library/wordstudy/notebook 为一级；
+// gen 是中转页（生成中），其上一级 = 进入它时的来源页（create 或 learn）。
+const NAV_PARENT = {
+  home: null, login: null,
+  create: 'home', learn: 'home', review: 'home',
+  library: 'home', wordstudy: 'home', notebook: 'home',
+};
+let CUR_SCREEN = 'login';
+let GEN_FROM = 'create';
+
 function go(name) {
+  if (name === 'gen') GEN_FROM = CUR_SCREEN; // 记录中转页来源
+  CUR_SCREEN = name;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   $('sc-' + name).classList.add('on');
+  updateBackBtn();
+}
+
+// goBack 返回上一级；根页面不响应
+function goBack() {
+  if (CUR_SCREEN === 'home' || CUR_SCREEN === 'login') return;
+  const target = CUR_SCREEN === 'gen' ? GEN_FROM : (NAV_PARENT[CUR_SCREEN] || 'home');
+  go(target);
+}
+
+function updateBackBtn() {
+  const b = $('nav-back');
+  if (b) b.style.display = (CUR_SCREEN === 'home' || CUR_SCREEN === 'login') ? 'none' : 'inline-block';
 }
 function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.display = 'block'; }
 function hideErr(id) { $(id).style.display = 'none'; }
