@@ -93,9 +93,30 @@ ${lines}
     console.log(`  词批 ${bi + 1}: ${r.length}/${batch.length}`);
     return r.filter(x => x && x.surface && x.text);
   });
+  const norm = x => String(x).replace(/\s/g, '').replace(/[０-９Ａ-Ｚａ-ｚ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
   const genBySurface = {};
-  for (const g of gen) (genBySurface[g.surface] = genBySurface[g.surface] || []).push(g);
+  for (const g of gen) { const k = norm(g.surface); (genBySurface[k] = genBySurface[k] || []).push(g); }
 
+  // ①b 仍无句的词：按下标批量补句（绕开 surface 形式不一致，如裸数字）
+  const still = [];
+  const stillSeen = new Set();
+  for (const L of data.lessons) for (const c of L.categories) for (const w of c.words) {
+    if (!w.sentences.length && !stillSeen.has(w.surface)) { stillSeen.add(w.surface); still.push(w); }
+  }
+  for (let i = 0; i < still.length; i += 15) {
+    const batch = still.slice(i, i + 15);
+    const lines = batch.map((w, k) => `${k}. ${w.surface}（${w.reading || ''}）${w.meaning}`).join('\n');
+    const prompt = `为下列每个日语词/数字生成一个自然短句（8—20 字符、包含该项、です・ます体或自然口语；数字请放进价格/房间号/电话/年龄等场景），并给完整中文翻译（以句号结尾）。
+词表（下标. surface（reading）中文）：
+${lines}
+严格输出 JSON 数组（不要围栏）：[{"i":0,"text":"...","translation":"..."}]`;
+    const r = await llm(prompt);
+    for (const g of (r || [])) {
+      if (g && typeof g.i === 'number' && batch[g.i] && g.text && g.translation) {
+        batch[g.i].sentences = [{ text: g.text, ruby: [], translation: g.translation, src: 'llm' }];
+      }
+    }
+  }
   // ② 会话句补译文：收集唯一无译文句
   const convSet = new Map();
   for (const L of data.lessons) for (const c of L.categories) for (const w of c.words) for (const s of w.sentences) {
@@ -119,8 +140,8 @@ ${lines}`;
   // 合并
   let filledWords = 0, filledTrans = 0;
   for (const L of data.lessons) for (const c of L.categories) for (const w of c.words) {
-    if (!w.sentences.length && genBySurface[w.surface]) {
-      w.sentences = genBySurface[w.surface].map(g => ({ text: g.text, ruby: [], translation: g.translation || '', src: 'llm' }));
+    if (!w.sentences.length && genBySurface[norm(w.surface)]) {
+      w.sentences = genBySurface[norm(w.surface)].map(g => ({ text: g.text, ruby: [], translation: g.translation || '', src: 'llm' }));
       filledWords++;
     }
     for (const s of w.sentences) {
