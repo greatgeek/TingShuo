@@ -20,6 +20,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/internal/lesson"
+	"github.com/greatgeek/TingShuo/backend/internal/notebook"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
@@ -122,6 +123,13 @@ func run() error {
 			sec.Post("/word-study/{word_id}/result", wsH.Result)
 			sec.Get("/word-study/{word_id}/audio", wsH.Audio)
 			sec.Get("/word-study/{word_id}/sentences", wsH.NbSentences)
+
+			nbH := notebook.NewHandler(pool)
+			sec.Get("/notebooks", nbH.List)
+			sec.Get("/notebooks/{id}/tree", nbH.Tree)
+			sec.Get("/notebooks/dir/{dir_id}/words", nbH.DirWords)
+
+			sec.Post("/audio/say", ttsH.Say)
 
 			sec.Post("/favorites", favH.AddSentence)
 			sec.Delete("/favorites/sentences/{sentence_id}", favH.RemoveSentence)

@@ -64,6 +64,11 @@
       <div id="history-list"></div>
     </div>
     <div class="card">
+      <h2>生词本</h2>
+      <p class="hint" id="nb-desc">按目录浏览导入的生词与例句。</p>
+      <button class="btn ghost" onclick="goNotebook()">浏览生词本</button>
+    </div>
+    <div class="card">
       <h2>本地音频缓存</h2>
       <p class="hint" id="cache-desc">尚未缓存音频，播放过的句子会自动存到本地。</p>
       <button class="btn ghost" onclick="clearAudioCache()">清理缓存</button>
@@ -149,6 +154,20 @@
   <!-- 背词 -->
   <section class="screen" id="sc-wordstudy">
     <div id="wordstudy-content"></div>
+  </section>
+  <!-- 生词本 -->
+  <section class="screen" id="sc-notebook">
+    <div class="card" style="padding:10px 12px">
+      <div class="nb-head">
+        <span id="nb-title">生词本</span>
+        <select id="nb-select" onchange="nbSwitch(this.value)" style="width:auto;flex:none;padding:6px 10px"></select>
+      </div>
+    </div>
+    <div class="card" style="padding:10px 12px">
+      <div id="nb-tree"></div>
+    </div>
+    <div class="sents" id="nb-words"></div>
+    <p class="hint" id="nb-hint" style="margin-top:12px"></p>
   </section>
 </div>
 <!-- 生词库选词层（创建课程页用） -->

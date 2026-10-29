@@ -617,6 +617,7 @@ async function loadHome() {
   loadReviewCount(); // 首页显示到期复习数量（不阻塞主流程）
   loadWordStudyStatus(); // 首页背词卡片状态（不阻塞主流程）
   loadLibCount();    // 首页显示生词库数量（不阻塞主流程）
+  loadNbCount();     // 首页显示生词本概览（不阻塞主流程）
   updateCacheStats(); // 首页本地音频缓存占用（不阻塞主流程）
 
   const chip = $('lesson-chip'), btn = $('home-main-btn');
@@ -1896,6 +1897,150 @@ function renderWordStudyDone() {
       <button class="btn accent" onclick="wsQuit()">返回首页</button>
     </div>`;
   loadWordStudyStatus();
+}
+
+// ============ 生词本浏览 ============
+let NB_LIST = [], NB_CUR = null, NB_DIRS = [], NB_OPEN = new Set(), NB_WORDS = {}, NB_CURDIR = null;
+
+async function loadNbCount() {
+  try {
+    const r = await api('/notebooks');
+    const items = r.items || [];
+    const total = items.reduce((s, x) => s + x.word_count, 0);
+    $('nb-desc').textContent = items.length
+      ? `共 ${items.length} 本 · ${total} 词 · 按目录浏览导入的生词与例句。`
+      : '还没有生词本。';
+  } catch {}
+}
+
+async function goNotebook() {
+  stopPlay();
+  try { NB_LIST = (await api('/notebooks')).items || []; } catch (e) { alert(e.message); return; }
+  if (!NB_LIST.length) { alert('还没有生词本。'); return; }
+  const sel = $('nb-select'); sel.innerHTML = '';
+  NB_LIST.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n.id; o.textContent = `${n.name}（${n.word_count} 词）`;
+    sel.appendChild(o);
+  });
+  if (!NB_CUR || !NB_LIST.find(x => x.id === NB_CUR)) NB_CUR = NB_LIST[0].id;
+  sel.value = NB_CUR;
+  await nbLoadTree();
+  go('notebook');
+}
+
+async function nbSwitch(id) { NB_CUR = id; NB_WORDS = {}; NB_CURDIR = null; await nbLoadTree(); }
+
+async function nbLoadTree() {
+  try { NB_DIRS = (await api('/notebooks/' + NB_CUR + '/tree')).dirs || []; } catch (e) { alert(e.message); return; }
+  NB_OPEN = new Set(NB_DIRS.filter(d => !d.parent_id).map(d => d.id)); // 默认展开一级
+  $('nb-title').textContent = (NB_LIST.find(x => x.id === NB_CUR) || {}).name || '生词本';
+  renderNbTree();
+  $('nb-words').innerHTML = '';
+  $('nb-hint').textContent = '点目录查看该目录下的生词与例句';
+}
+
+function nbChildren(pid) {
+  return NB_DIRS.filter(d => (d.parent_id || '') === (pid || '')).sort((a, b) => a.sort_order - b.sort_order);
+}
+
+function renderNbTree() {
+  const box = $('nb-tree'); box.innerHTML = '';
+  const walk = (pid, depth) => {
+    nbChildren(pid).forEach(d => {
+      const kids = nbChildren(d.id);
+      const row = document.createElement('div');
+      row.className = 'nb-dir' + (NB_CURDIR === d.id ? ' on' : '');
+      row.style.paddingLeft = (6 + depth * 16) + 'px';
+      row.innerHTML = `<span class="tw">${kids.length ? (NB_OPEN.has(d.id) ? '▾' : '▸') : '·'}</span>` +
+        `<span class="nm">${esc(d.name)}</span><span class="ct">${d.word_count || ''}</span>`;
+      row.onclick = () => {
+        if (kids.length) { NB_OPEN.has(d.id) ? NB_OPEN.delete(d.id) : NB_OPEN.add(d.id); }
+        nbOpenDir(d.id);
+      };
+      box.appendChild(row);
+      if (kids.length && NB_OPEN.has(d.id)) walk(d.id, depth + 1);
+    });
+  };
+  walk('', 0);
+}
+
+async function nbOpenDir(dirId) {
+  NB_CURDIR = dirId;
+  renderNbTree();
+  const box = $('nb-words'); box.innerHTML = '<p class="hint">加载…</p>';
+  let r;
+  try { r = await api('/notebooks/dir/' + dirId + '/words'); }
+  catch { box.innerHTML = '<p class="hint">加载失败</p>'; return; }
+  NB_WORDS[dirId] = r.items || [];
+  renderNbWords();
+}
+
+function renderNbWords() {
+  const items = NB_WORDS[NB_CURDIR] || [];
+  const box = $('nb-words'); box.innerHTML = '';
+  items.forEach((w, i) => {
+    const div = document.createElement('div');
+    div.className = 'sent wordrow';
+    div.innerHTML = `
+      <span class="spk">${i + 1}</span>
+      <div class="wrap"><div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
+      <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>
+      <button class="play" title="展开例句">▾</button>`;
+    div.onclick = () => nbToggleWord(w, div);
+    box.appendChild(div);
+  });
+  $('nb-hint').textContent = `共 ${items.length} 词 · 点词展开例句（▶ 点播，首次合成后缓存）`;
+}
+
+function nbToggleWord(w, div) {
+  const ex = div.querySelector('.nb-sents');
+  if (ex) { ex.remove(); return; }
+  document.querySelectorAll('.nb-sents').forEach(x => x.remove());
+  const wrap = document.createElement('div');
+  wrap.className = 'nb-sents';
+  if (!w.sentences.length) wrap.innerHTML = '<p class="hint" style="margin-left:26px">暂无例句</p>';
+  w.sentences.forEach(s => {
+    const row = document.createElement('div');
+    row.className = 'nb-sent'; row.style.position = 'relative';
+    row.innerHTML = `<div class="txt">${esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div>`;
+    const btn = document.createElement('button');
+    btn.className = 'play'; btn.textContent = '▶';
+    btn.style.cssText = 'position:absolute;right:6px;top:6px;width:32px;height:32px;font-size:12px';
+    btn.onclick = (e) => { e.stopPropagation(); sayAudio(s.text, btn); };
+    row.appendChild(btn);
+    wrap.appendChild(row);
+  });
+  div.appendChild(wrap);
+}
+
+// sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
+async function sayAudio(text, btn) {
+  try {
+    if (btn) btn.textContent = '⏳';
+    const key = 'say:' + text;
+    let url;
+    const hit = await idbGet(key);
+    if (hit && hit.blob) {
+      url = URL.createObjectURL(hit.blob);
+    } else {
+      const r = await fetch('/api/v1/audio/say', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+        body: JSON.stringify({ text }),
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      idbPut(key, blob);
+      url = URL.createObjectURL(blob);
+    }
+    wsStopAudio();
+    WS_AUDIO = new Audio(url);
+    WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; };
+    await WS_AUDIO.play();
+  } catch (e) {
+    if (btn) btn.textContent = '▶';
+  }
 }
 
 // ============ 启动 ============

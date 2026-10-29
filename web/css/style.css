@@ -225,3 +225,19 @@ body.no-rt rt { display: none; }
 .ws-meaning { font-size: 14px; color: var(--ink); margin: 8px 0; }
 #ws-usage { text-align: left; margin-top: 10px; }
 .ws-word-txt { font-family: var(--serif); font-size: 40px; line-height: 1.4; }
+
+/* ===== 生词本浏览 ===== */
+.nb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.nb-head #nb-title { font-size: 15px; font-weight: 700; }
+.nb-dir {
+  display: flex; align-items: center; gap: 6px; padding: 8px 6px;
+  border-radius: 8px; cursor: pointer; font-size: 14px;
+}
+.nb-dir:hover { background: var(--soft); }
+.nb-dir .tw { flex: none; width: 16px; color: var(--ink2); font-size: 11px; }
+.nb-dir .nm { flex: 1; }
+.nb-dir .ct { font-size: 11px; color: var(--ink2); }
+.nb-dir.on { color: var(--accent); font-weight: 600; }
+.nb-sent { background: var(--surface); border-radius: 8px; padding: 6px 8px; margin: 2px 0 2px 26px; }
+.nb-sent .txt { font-family: var(--serif); font-size: 14px; }
+.nb-sent .zh { font-size: 12px; color: var(--ink2); margin-top: 2px; }
