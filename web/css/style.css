@@ -255,3 +255,8 @@ body.no-rt rt { display: none; }
   header .s { display: none; }
 }
 .nav-home { white-space: nowrap; }
+
+/* 生词本内译文/词义默认显示（.sent .zh 的隐藏规则只应用于学习屏跟读脚手架） */
+.nb-sent .zh { display: block; }
+#ws-nb .zh { display: block; }
+#nb-words > .sent .zh { display: block; }

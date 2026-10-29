@@ -3,6 +3,7 @@
 package notebook
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -111,9 +112,10 @@ func (h *Handler) DirWords(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type sent struct {
-		Text        string  `json:"text"`
-		Translation *string `json:"translation"`
-		Src         *string `json:"src"`
+		Text        string          `json:"text"`
+		Ruby        json.RawMessage `json:"ruby_tokens"`
+		Translation *string         `json:"translation"`
+		Src         *string         `json:"src"`
 	}
 	type item struct {
 		LinkID    string  `json:"link_id"`
@@ -139,7 +141,7 @@ func (h *Handler) DirWords(w http.ResponseWriter, r *http.Request) {
 	}
 	// 句子单独查一次按 link 分组（避免 GROUP_CONCAT 拼接破坏结构）
 	srows, err := h.pool.Query(r.Context(), `
-		SELECT s.notebook_word_id, s.text, s.translation, s.src
+		SELECT s.notebook_word_id, s.text, s.ruby_tokens, s.translation, s.src
 		FROM notebook_sentence s
 		JOIN notebook_word nw ON nw.id = s.notebook_word_id
 		WHERE nw.dir_id = $1
@@ -151,13 +153,16 @@ func (h *Handler) DirWords(w http.ResponseWriter, r *http.Request) {
 	defer srows.Close()
 	for srows.Next() {
 		var linkID, text string
+		var ruby []byte
 		var trans, src *string
-		if err := srows.Scan(&linkID, &text, &trans, &src); err != nil {
+		if err := srows.Scan(&linkID, &text, &ruby, &trans, &src); err != nil {
 			httpx.Err(w, httpx.Internal(err.Error()))
 			return
 		}
 		if i, ok := index[linkID]; ok {
-			items[i].Sentences = append(items[i].Sentences, sent{Text: text, Translation: trans, Src: src})
+			items[i].Sentences = append(items[i].Sentences, sent{
+				Text: text, Ruby: json.RawMessage(ruby), Translation: trans, Src: src,
+			})
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})

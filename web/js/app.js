@@ -1881,7 +1881,7 @@ async function wsFlip() {
         row.className = 'sent usage-sent';
         row.innerHTML = `
           <span class="spk">${x.src === 'llm' ? '补' : '本'}</span>
-          <div class="wrap"><div class="txt">${esc(x.text)}</div>
+          <div class="wrap"><div class="txt">${rubyHTML(x.ruby_tokens) || esc(x.text)}</div>
           <div class="zh">${esc(x.translation || '')}</div></div>`;
         nb.appendChild(row);
       });
@@ -2029,7 +2029,7 @@ function nbToggleWord(w, div) {
   w.sentences.forEach(s => {
     const row = document.createElement('div');
     row.className = 'nb-sent';
-    row.innerHTML = `<div class="wrap"><div class="txt">${esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div></div>`;
+    row.innerHTML = `<div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div></div>`;
     const btn = document.createElement('button');
     btn.className = 'play'; btn.textContent = '▶'; btn.title = '点播';
     btn.onclick = (e) => { e.stopPropagation(); sayAudio(s.text, btn); };

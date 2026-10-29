@@ -7,6 +7,7 @@ package wordstudy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -204,7 +205,7 @@ func (h *Handler) NbSentences(w http.ResponseWriter, r *http.Request) {
 	userID := auth.FromContext(r.Context())
 	wordID := chi.URLParam(r, "word_id")
 	rows, err := h.pool.Query(r.Context(), `
-		SELECT s.text, s.translation, s.src, d.name
+		SELECT s.text, s.ruby_tokens, s.translation, s.src, d.name
 		FROM notebook_sentence s
 		JOIN notebook_word nw ON nw.id = s.notebook_word_id
 		JOIN notebook_dir d  ON d.id = nw.dir_id
@@ -218,18 +219,21 @@ func (h *Handler) NbSentences(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 	type item struct {
-		Text        string  `json:"text"`
-		Translation *string `json:"translation"`
-		Src         *string `json:"src"`
-		Dir         string  `json:"dir"`
+		Text        string          `json:"text"`
+		Ruby        json.RawMessage `json:"ruby_tokens"`
+		Translation *string         `json:"translation"`
+		Src         *string         `json:"src"`
+		Dir         string          `json:"dir"`
 	}
 	items := []item{}
 	for rows.Next() {
 		var it item
-		if err := rows.Scan(&it.Text, &it.Translation, &it.Src, &it.Dir); err != nil {
+		var ruby []byte
+		if err := rows.Scan(&it.Text, &ruby, &it.Translation, &it.Src, &it.Dir); err != nil {
 			httpx.Err(w, httpx.Internal(err.Error()))
 			return
 		}
+		it.Ruby = json.RawMessage(ruby)
 		items = append(items, it)
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
