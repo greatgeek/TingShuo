@@ -4,11 +4,12 @@
 package tts
 
 import (
+	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
-	"github.com/jackc/pgx/v5"
+	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 )
 
 func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
@@ -33,29 +34,38 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ck := CacheKey(req.Text, Params{Voice: req.Voice, Rate: req.Rate, Style: "", EngineVer: "say-v1"})
+	key := "say-" + ck // OSS 对象 key 前缀，与句子音频/单词音频区分
 
-	var cached []byte
-	err := h.pool.QueryRow(r.Context(),
-		`SELECT data FROM text_audio WHERE cache_key = $1`, ck).Scan(&cached)
-	if err == nil {
-		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("Content-Length", strconv.Itoa(len(cached)))
-		w.Write(cached)
-		return
-	}
-	if err != pgx.ErrNoRows {
-		httpx.Err(w, httpx.Internal(err.Error()))
-		return
+	// OSS 缓存命中；DB 只留元信息（空对象视为未命中，自愈重合成）
+	if obj, err := h.store.GetObject(r.Context(), storage.AudioKey(key)); err == nil {
+		data, rerr := io.ReadAll(obj)
+		obj.Close()
+		if rerr == nil && len(data) > 0 {
+			w.Header().Set("Content-Type", "audio/mpeg")
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+			w.Write(data)
+			return
+		}
 	}
 
-	audio, serr := h.azure.Synthesize(r.Context(), req.Text, req.Voice, req.Rate)
+	// Azure 偶发空体/连接失效：重试一次
+	var audio []byte
+	var serr error
+	for i := 0; i < 2; i++ {
+		audio, serr = h.azure.Synthesize(r.Context(), req.Text, req.Voice, req.Rate)
+		if serr == nil {
+			break
+		}
+	}
 	if serr != nil {
 		httpx.Err(w, httpx.BadGateway("TTS 生成失败: "+serr.Error()))
 		return
 	}
+	_ = h.store.PutAudio(r.Context(), key, audio)
 	_, _ = h.pool.Exec(r.Context(), `
-		INSERT INTO text_audio (cache_key, voice, rate, data) VALUES ($1, $2, $3, $4)
-		ON CONFLICT (cache_key) DO NOTHING`, ck, req.Voice, req.Rate, audio)
+		INSERT INTO text_audio (cache_key, voice, rate) VALUES ($1, $2, $3)
+		ON CONFLICT (cache_key) DO UPDATE SET voice = EXCLUDED.voice, rate = EXCLUDED.rate`,
+		ck, req.Voice, req.Rate)
 
 	w.Header().Set("Content-Type", "audio/mpeg")
 	w.Header().Set("Content-Length", strconv.Itoa(len(audio)))

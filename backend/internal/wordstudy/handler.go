@@ -6,7 +6,9 @@
 package wordstudy
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
+	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 	"github.com/greatgeek/TingShuo/backend/pkg/ulid"
 	"github.com/jackc/pgx/v5"
@@ -29,10 +32,11 @@ const (
 type Handler struct {
 	pool  *pgxpool.Pool
 	azure *ttsclient.Client
+	store *storage.Client
 }
 
-func NewHandler(pool *pgxpool.Pool, azure *ttsclient.Client) *Handler {
-	return &Handler{pool: pool, azure: azure}
+func NewHandler(pool *pgxpool.Pool, azure *ttsclient.Client, store *storage.Client) *Handler {
+	return &Handler{pool: pool, azure: azure, store: store}
 }
 
 // Status GET /word-study/status —— 首页背词卡片：新学候选数 + 今日到期数。
@@ -143,18 +147,10 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 命中缓存：直接流式返回
-	var cached []byte
-	err = h.pool.QueryRow(r.Context(),
-		`SELECT data FROM word_audio WHERE word_id = $1`, wordID).Scan(&cached)
-	if err == nil {
-		w.Header().Set("Content-Type", "audio/mpeg")
-		w.Header().Set("Content-Length", fmt.Sprint(len(cached)))
-		w.Write(cached)
-		return
-	}
-	if err != pgx.ErrNoRows {
-		httpx.Err(w, httpx.Internal(err.Error()))
+	// OSS 缓存命中（对象 key = word-<word_id>.mp3）；DB 只留元信息
+	key := "word-" + wordID
+	if data, ok := fetchOSS(r.Context(), h.store, key); ok {
+		serveMP3(w, data)
 		return
 	}
 
@@ -167,19 +163,40 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	audio, err := h.azure.Synthesize(r.Context(), speakText, defaultVoice, defaultRate)
+	if err != nil { // Azure 偶发空体/连接失效：重试一次
+		audio, err = h.azure.Synthesize(r.Context(), speakText, defaultVoice, defaultRate)
+	}
 	if err != nil {
 		httpx.Err(w, httpx.BadGateway("TTS 上游失败: "+err.Error()))
 		return
 	}
-	// 落库缓存（并发插入竞态无害：UNIQUE 主键，失败也照常返回音频）
+	_ = h.store.PutAudio(r.Context(), key, audio)
 	_, _ = h.pool.Exec(r.Context(),
-		`INSERT INTO word_audio (word_id, voice, rate, data) VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (word_id) DO NOTHING`,
-		wordID, defaultVoice, defaultRate, audio)
+		`INSERT INTO word_audio (word_id, voice, rate) VALUES ($1, $2, $3)
+		 ON CONFLICT (word_id) DO UPDATE SET voice = EXCLUDED.voice, rate = EXCLUDED.rate`,
+		wordID, defaultVoice, defaultRate)
 
+	serveMP3(w, audio)
+}
+
+// fetchOSS 读音频对象；不存在/读失败返回 false（调用方回退合成）。
+func fetchOSS(ctx context.Context, store *storage.Client, key string) ([]byte, bool) {
+	obj, err := store.GetObject(ctx, storage.AudioKey(key))
+	if err != nil {
+		return nil, false
+	}
+	defer obj.Close()
+	data, err := io.ReadAll(obj)
+	if err != nil || len(data) == 0 {
+		return nil, false
+	}
+	return data, true
+}
+
+func serveMP3(w http.ResponseWriter, data []byte) {
 	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("Content-Length", fmt.Sprint(len(audio)))
-	w.Write(audio)
+	w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+	w.Write(data)
 }
 
 // NbSentences GET /word-study/{word_id}/sentences —— 该词在生词本里绑定的例句（背词翻面展示）。

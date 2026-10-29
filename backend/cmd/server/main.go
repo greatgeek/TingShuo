@@ -116,7 +116,7 @@ func run() error {
 			sec.Get("/words/library", wordH.Library)
 			sec.Get("/words/{id}/usage", wordH.Usage)
 
-			wsH := wordstudy.NewHandler(pool, azureTTS)
+			wsH := wordstudy.NewHandler(pool, azureTTS, store)
 			sec.Get("/word-study/status", wsH.Status)
 			sec.Get("/word-study/new", wsH.NewWords)
 			sec.Get("/word-study/due", wsH.DueWords)

@@ -23,7 +23,7 @@ func New(apiKey, region string) *Client {
 	return &Client{
 		apiKey: apiKey,
 		region: region,
-		http:   &http.Client{Timeout: 30 * time.Second},
+		http: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -58,6 +58,9 @@ func (c *Client) Synthesize(ctx context.Context, text, voice string, rate float6
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("TTS 返回 %d: %s", resp.StatusCode, truncate(string(audio), 200))
+	}
+	if len(audio) == 0 {
+		return nil, fmt.Errorf("TTS 返回 200 但空体")
 	}
 	return audio, nil
 }
