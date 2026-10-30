@@ -65,6 +65,11 @@ func (c *Client) Synthesize(ctx context.Context, text, voice string, rate float6
 	return audio, nil
 }
 
+// ValidMP3 校验合成产物：最小字节数 + MP3 帧同步头（0xFF + 0xE0 掩码），防坏音频落缓存。
+func ValidMP3(b []byte) bool {
+	return len(b) >= 1024 && b[0] == 0xFF && b[1]&0xE0 == 0xE0
+}
+
 func escapeXML(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;", "'", "&#39;")
 	return r.Replace(s)

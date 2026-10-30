@@ -3,6 +3,8 @@
 package generate
 
 import (
+	"encoding/json"
+	"os"
 	"strings"
 	"unicode"
 
@@ -12,6 +14,33 @@ import (
 
 // ipaDict 全局加载一次（IPA 词典约 50MB，进程内共享，只读安全）。
 var ipaDict = ipa.Dict()
+
+// rubyOverride 逐词读音覆盖表（qa_ruby 产出的零星误读，免改代码修正），
+// 优先级高于 kagome 与所有纠正表。文件缺失静默忽略。
+var rubyOverride = loadRubyOverride()
+
+func loadRubyOverride() map[string]string {
+	cands := []string{
+		os.Getenv("RUBY_OVERRIDE"),
+		"tools/liangshuang/ruby_override.json",
+		"../tools/liangshuang/ruby_override.json",
+		"/opt/tingshuo/src/tools/liangshuang/ruby_override.json",
+	}
+	for _, p := range cands {
+		if p == "" {
+			continue
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var m map[string]string
+		if json.Unmarshal(b, &m) == nil {
+			return m
+		}
+	}
+	return map[string]string{}
+}
 
 // readingFix 上下文读音纠正：kagome 按词元取词典读音，个别组合会误读
 //（「この後」被拆成 この＋後(のち)，实读 このあと）。键为 [前一词元, 当前词元]。
@@ -40,6 +69,7 @@ var singleFix = map[string]string{
 // nextFix 由后一词元决定的读音（ okurigana 被拆出时）：[当前词元, 后一词元]。
 var nextFix = map[[2]string]string{
 	{"失", "くし"}: "な",
+	{"長", "い"}:  "なが",
 }
 
 // BuildRubyTokens 对句子分词并输出振り仮名结构：
@@ -71,6 +101,10 @@ func BuildRubyTokens(text string) [][]any {
 		}
 	}
 	for i := 0; i < len(toks); i++ {
+		if r, ok := rubyOverride[toks[i].surface]; ok && toks[i].reading != "" {
+			toks[i].reading = r
+			continue
+		}
 		if i > 0 {
 			if r, ok := readingFix[[2]string{toks[i-1].surface, toks[i].surface}]; ok {
 				toks[i].reading = r

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -29,6 +30,11 @@ const (
 	defaultVoice = "Nanami"
 	defaultRate  = 1.0
 )
+
+// kanaOnlyReading 读音是否为可读假名串（模式词记法如 -じん / George 除外）。
+var kanaOnlyReadingRe = regexp.MustCompile(`^[ぁ-ゖァ-ヺー・]+$`)
+
+func kanaOnlyReading(s string) bool { return kanaOnlyReadingRe.MatchString(s) }
 
 type Handler struct {
 	pool  *pgxpool.Pool
@@ -159,16 +165,20 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 	speakText := surface
 	if reading != nil {
 		r := strings.TrimSpace(strings.Split(*reading, " ")[0])
-		if r != "" {
+		// 模式词记法（-じん / George 等）不是可读假名：回退读 surface，避免坏配音
+		if r != "" && kanaOnlyReading(r) {
 			speakText = r
 		}
 	}
 	audio, err := h.azure.Synthesize(r.Context(), speakText, defaultVoice, defaultRate)
-	if err != nil { // Azure 偶发空体/连接失效：重试一次
+	if err == nil && !ttsclient.ValidMP3(audio) {
+		err = fmt.Errorf("invalid mp3 (%d bytes)", len(audio))
+	}
+	if err != nil { // Azure 偶发空体/连接失效/坏流：重试一次
 		audio, err = h.azure.Synthesize(r.Context(), speakText, defaultVoice, defaultRate)
 	}
-	if err != nil {
-		httpx.Err(w, httpx.BadGateway("TTS 上游失败: "+err.Error()))
+	if err != nil || !ttsclient.ValidMP3(audio) {
+		httpx.Err(w, httpx.BadGateway("TTS 上游失败/坏音频: "+fmt.Sprint(err)))
 		return
 	}
 	_ = h.store.PutAudio(r.Context(), key, audio)

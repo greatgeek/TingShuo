@@ -1,0 +1,194 @@
+[
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "あのう",
+  "text": "あのう、李由加です。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "李由加",
+  "text": "あのう、李由加です。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "さん",
+  "text": "ジョージさんはアメリカ人で、経済学部の三年生です。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "おはようございます",
+  "text": "おはようございます。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "ジョージ",
+  "text": "ジョージさんはアメリカ人で、経済学部の三年生です。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "アメリカ人",
+  "text": "ジョージさんはアメリカ人で、経済学部の三年生です。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "経済",
+  "text": "ジョージさんはアメリカ人で、経済学部の三年生です。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "三年生",
+  "text": "ジョージさんはアメリカ人で、経済学部の三年生です。",
+  "lesson": 5,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "弟",
+  "text": "そして、弟のハチです。",
+  "lesson": 7,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "弟",
+  "text": "弟さんは今おいくつですか。",
+  "lesson": 7,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "いくつ",
+  "text": "弟さんは今おいくつですか。",
+  "lesson": 7,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "そして",
+  "text": "そして、弟のハチです。",
+  "lesson": 7,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "パソコン",
+  "text": "このパソコンは私のです。",
+  "lesson": 7,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "アリペイ",
+  "text": "アリペイでお願いします。",
+  "lesson": 8,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "ビール",
+  "text": "ビールをください。",
+  "lesson": 8,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "カード",
+  "text": "カードでお願いします。",
+  "lesson": 8,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "一緒に",
+  "text": "映画の後、一緒にお茶をしましょうか。",
+  "lesson": 10,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "主人公",
+  "text": "映画の主人公は背が高くて、魅力的です。",
+  "lesson": 10,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "背",
+  "text": "映画の主人公は背が高くて、魅力的です。",
+  "lesson": 10,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "魅力的",
+  "text": "映画の主人公は背が高くて、魅力的です。",
+  "lesson": 10,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "dup",
+  "surface": "パソコン",
+  "text": "これは私のパソコンです。",
+  "lesson": 7,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "兄",
+  "text": "今、大学1年生、18歳です。",
+  "lesson": 7,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "百",
+  "text": "レシートと110円のお返しです。ありがとうございました。",
+  "lesson": 8,
+  "at": "2026-10-30"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "美容",
+  "text": "まあ、そうなんですけど、夜遅くまでの勉強は健康に悪いですよ。",
+  "lesson": 14,
+  "at": "2026-10-30"
+ }
+]

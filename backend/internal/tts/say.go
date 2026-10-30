@@ -4,12 +4,15 @@
 package tts
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 
+	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
+	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 )
 
 func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +35,14 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	if req.Rate == 0 {
 		req.Rate = 1.0
 	}
+	if len([]rune(req.Text)) > 200 {
+		httpx.Err(w, httpx.BadRequest("TEXT_TOO_LONG", "文本过长（>200 字）"))
+		return
+	}
+	if generate.HasSimplifiedChinese(req.Text) {
+		httpx.Err(w, httpx.BadRequest("TEXT_NOT_JA", "文本含中文，拒绝合成"))
+		return
+	}
 
 	ck := CacheKey(req.Text, Params{Voice: req.Voice, Rate: req.Rate, Style: "", EngineVer: "say-v1"})
 	key := "say-" + ck // OSS 对象 key 前缀，与句子音频/单词音频区分
@@ -48,13 +59,16 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Azure 偶发空体/连接失效：重试一次
+	// Azure 偶发空体/连接失效/坏流：重试一次；坏音频绝不落缓存
 	var audio []byte
 	var serr error
 	for i := 0; i < 2; i++ {
 		audio, serr = h.azure.Synthesize(r.Context(), req.Text, req.Voice, req.Rate)
-		if serr == nil {
+		if serr == nil && ttsclient.ValidMP3(audio) {
 			break
+		}
+		if serr == nil {
+			serr = fmt.Errorf("invalid mp3 (%d bytes)", len(audio))
 		}
 	}
 	if serr != nil {

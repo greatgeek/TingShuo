@@ -166,6 +166,10 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, s := range m.Sentences {
+			if !ValidSentence(s.Text, s.Translation) {
+				warnings = append(warnings, "sentence_rejected:"+s.ID)
+				continue
+			}
 			ruby := BuildRubyTokens(s.Text)
 			if ratio := KanaCrossCheck(ruby, s.Kana); ratio < 0.5 && s.Kana != "" {
 				warnings = append(warnings, "kana_mismatch:"+s.ID)

@@ -6,6 +6,13 @@ const UID = process.argv[3];
 const NB = 'nb-liangshuang';
 const esc = s => String(s ?? '').replace(/'/g, "''");
 
+// 隔离区（各 qa_* 关产出）：不合格句/词不落库
+const qf = require('path').join(__dirname, 'quarantine.json');
+const qlist = fs.existsSync(qf) ? JSON.parse(fs.readFileSync(qf, 'utf8')) : [];
+const SKIP_TEXT = new Set(qlist.filter(x => x.text && ['bind', 'dup', 'trans', 'trans-empty', 'grammar', 'truncated', 'mixed', 'typo', 'ruby-struct', 'audio-block'].includes(x.reason)).map(x => x.text));
+const SKIP_WORD = new Set(qlist.filter(x => x.surface && ['reading', 'hallucinate'].includes(x.reason)).map(x => x.surface));
+let skippedWords = 0, skippedSents = 0;
+
 // 词去重（surface|reading），保留首个非空 pos/meaning
 const words = new Map();
 const links = [];   // {dirId, surface, reading, sort}
@@ -16,6 +23,7 @@ for (const L of data.lessons) {
   L.categories.forEach((c, ci) => {
     const cdir = `${ldir}-c${ci}`;
     c.words.forEach((w, wi) => {
+      if (SKIP_WORD.has(w.surface)) { skippedWords++; return; }
       const reading = w.reading || '';
       const key = w.surface + '|' + reading;
       if (!words.has(key)) words.set(key, { surface: w.surface, reading, pos: w.pos || '', meaning: w.meaning || '' });
@@ -26,7 +34,10 @@ for (const L of data.lessons) {
       }
       const linkKey = `${cdir}::${key}`;
       links.push({ dirId: cdir, surface: w.surface, reading, sort: wi, linkKey });
-      (w.sentences || []).forEach((s, si) => sents.push({ linkKey, text: s.text, translation: s.translation || '', src: s.src || '', sort: si }));
+      (w.sentences || []).forEach((s, si) => {
+        if (SKIP_TEXT.has(s.text)) { skippedSents++; return; }
+        sents.push({ linkKey, text: s.text, translation: s.translation || '', src: s.src || '', sort: si });
+      });
     });
   });
 }
@@ -55,4 +66,4 @@ for (const s of sents) {
   out.push(`INSERT INTO notebook_sentence (id, notebook_word_id, text, translation, src, sort_order) VALUES ('nbs-' || substr(md5('${esc(s.linkKey + '|' + s.text)}'),1,24), '${linkId(s.linkKey)}', '${esc(s.text)}', '${esc(s.translation)}', '${esc(s.src)}', ${s.sort}) ON CONFLICT (notebook_word_id, text) DO NOTHING;`);
 }
 fs.writeFileSync(process.argv[4], out.join('\n') + '\n');
-console.log(`词=${words.size} 挂载=${links.length} 句子=${sents.length} SQL行=${out.length}`);
+console.log(`词=${words.size} 挂载=${links.length} 句子=${sents.length} SQL行=${out.length} 隔离跳过: 词=${skippedWords} 句=${skippedSents}`);
