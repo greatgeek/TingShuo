@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/greatgeek/TingShuo/backend/internal/aiask"
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/dev"
 	"github.com/greatgeek/TingShuo/backend/internal/favorite"
@@ -121,6 +122,7 @@ func run() error {
 			sec.Put("/me", userH.Update)
 
 			sec.Get("/words/library", wordH.Library)
+			sec.Post("/ai/ask", aiask.NewHandler(pool).Ask)
 			sec.Get("/words/{id}/usage", wordH.Usage)
 
 			wsH := wordstudy.NewHandler(pool, azureTTS, store)

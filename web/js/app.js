@@ -27,6 +27,7 @@ const NAV_PARENT = {
   home: null, login: null,
   create: 'home', learn: 'home', review: 'home',
   library: 'home', wordstudy: 'home', notebook: 'home',
+  aiask: 'notebook',
 };
 let CUR_SCREEN = 'login';
 let GEN_FROM = 'create';
@@ -2034,6 +2035,10 @@ function nbToggleWord(w, div) {
     const row = document.createElement('div');
     row.className = 'nb-sent';
     row.innerHTML = `<div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div></div>`;
+    const ask = document.createElement('button');
+    ask.className = 'ai-ask'; ask.textContent = '问AI'; ask.title = '就这句问 AI';
+    ask.onclick = (e) => { e.stopPropagation(); openAiAsk(s, w); };
+    row.appendChild(ask);
     const btn = document.createElement('button');
     btn.className = 'play'; btn.textContent = '▶'; btn.title = '点播';
     btn.onclick = (e) => { e.stopPropagation(); sayAudio(s.text, btn); };
@@ -2072,5 +2077,63 @@ async function sayAudio(text, btn) {
   }
 }
 
+// ============ 问AI（句子上下文对话，MiniMax M3 最高思考）============
+let AI_CTX = null;  // {text, ruby_tokens, translation, word}
+let AI_HIST = [];   // 最近 10 轮历史
+
+function openAiAsk(s, w) {
+  AI_CTX = {
+    text: s.text, ruby_tokens: s.ruby_tokens || [], translation: s.translation || '',
+    word: { surface: w.surface, reading: w.reading || '', meaning: w.meaning || '' },
+  };
+  AI_HIST = [];
+  $('ai-ctx').innerHTML = `
+    <div class="txt" style="font-size:15px">${rubyHTML(AI_CTX.ruby_tokens) || esc(AI_CTX.text)}</div>
+    <div class="zh">${esc(AI_CTX.translation)}</div>
+    <div class="zh lib-meta">生词：${esc(AI_CTX.word.surface)}${AI_CTX.word.reading ? '（' + esc(AI_CTX.word.reading) + '）' : ''} ${esc(AI_CTX.word.meaning)}</div>`;
+  $('ai-msgs').innerHTML = '<p class="hint">可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…</p>';
+  $('ai-q').value = '';
+  go('aiask');
+  setTimeout(() => $('ai-q').focus(), 50);
+}
+
+function aiBubble(role, html) {
+  const d = document.createElement('div');
+  d.className = 'ai-bub ' + role;
+  d.innerHTML = html;
+  $('ai-msgs').appendChild(d);
+  d.scrollIntoView({ block: 'end' });
+  return d;
+}
+
+async function aiSend() {
+  const q = $('ai-q').value.trim();
+  if (!q || !AI_CTX || $('ai-send').disabled) return;
+  $('ai-q').value = '';
+  aiBubble('user', esc(q));
+  const think = aiBubble('ai', '<span class="ai-thinking">思考中…</span>');
+  $('ai-send').disabled = true;
+  try {
+    const r = await fetch('/api/v1/ai/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+      body: JSON.stringify({ ...AI_CTX, history: AI_HIST, question: q }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error ? j.error.message : 'HTTP ' + r.status);
+    const reason = j.reasoning ? `<details class="ai-reason"><summary>思考过程</summary><pre>${esc(j.reasoning)}</pre></details>` : '';
+    think.innerHTML = reason + '<div class="ai-reply">' + esc(j.reply).replace(/\n/g, '<br>') + '</div>';
+    AI_HIST.push({ role: 'user', content: q }, { role: 'assistant', content: j.reply });
+    if (AI_HIST.length > 20) AI_HIST = AI_HIST.slice(-20);
+  } catch (e) {
+    think.innerHTML = '<span class="ai-err">请求失败：' + esc(e.message) + '</span>';
+  } finally {
+    $('ai-send').disabled = false;
+    think.scrollIntoView({ block: 'end' });
+  }
+}
+
 // ============ 启动 ============
+$('ai-send').onclick = aiSend;
+$('ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 if (TOKEN) afterLogin(); else { $('userchip').textContent = '未登录'; go('login'); }
