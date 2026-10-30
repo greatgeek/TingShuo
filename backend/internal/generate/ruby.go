@@ -17,6 +17,29 @@ var ipaDict = ipa.Dict()
 //（「この後」被拆成 この＋後(のち)，实读 このあと）。键为 [前一词元, 当前词元]。
 var readingFix = map[[2]string]string{
 	{"この", "後"}: "あと",
+	{"の", "後"}:  "あと",
+	{"の", "方"}:  "かた",
+	{"この", "方"}: "かた",
+	{"その", "方"}: "かた",
+	{"あの", "方"}: "かた",
+	{"の", "時"}:  "とき",
+	{"この", "時"}: "とき",
+	{"その", "時"}: "とき",
+	{"あの", "時"}: "とき",
+	{"何", "分"}:  "ぷん",
+}
+
+// singleFix 孤立词元读音纠正（无上下文歧义或语料中义项单一）。
+var singleFix = map[string]string{
+	"今":  "いま",
+	"時":  "じ",
+	"他人": "たにん",
+	"形":  "かたち",
+}
+
+// nextFix 由后一词元决定的读音（ okurigana 被拆出时）：[当前词元, 后一词元]。
+var nextFix = map[[2]string]string{
+	{"失", "くし"}: "な",
 }
 
 // BuildRubyTokens 对句子分词并输出振り仮名结构：
@@ -47,8 +70,20 @@ func BuildRubyTokens(text string) [][]any {
 			toks = append(toks, tok{surface, ""})
 		}
 	}
-	for i := 1; i < len(toks); i++ {
-		if r, ok := readingFix[[2]string{toks[i-1].surface, toks[i].surface}]; ok {
+	for i := 0; i < len(toks); i++ {
+		if i > 0 {
+			if r, ok := readingFix[[2]string{toks[i-1].surface, toks[i].surface}]; ok {
+				toks[i].reading = r
+				continue
+			}
+		}
+		if i+1 < len(toks) {
+			if r, ok := nextFix[[2]string{toks[i].surface, toks[i+1].surface}]; ok {
+				toks[i].reading = r
+				continue
+			}
+		}
+		if r, ok := singleFix[toks[i].surface]; ok && toks[i].reading != "" {
 			toks[i].reading = r
 		}
 	}
