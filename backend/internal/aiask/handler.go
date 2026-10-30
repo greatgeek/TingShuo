@@ -4,6 +4,7 @@
 package aiask
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"encoding/json"
@@ -91,6 +92,7 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{
 		"model":            os.Getenv("LLM_MODEL"),
 		"messages":         msgs,
+		"stream":           true,
 		"thinking":         map[string]any{"type": "adaptive"}, // M3 显式开启思考
 		"reasoning_effort": "max",                              // M3.1-Flash 生效；M3 忽略（无害透传）
 		"reasoning_split":  true,                               // 思考走 reasoning_content，不污染正文
@@ -111,22 +113,56 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	var out struct {
-		Choices []struct {
-			Message struct {
-				Content   string `json:"content"`
-				Reasoning string `json:"reasoning_content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil || resp.StatusCode != http.StatusOK || len(out.Choices) == 0 {
+	if resp.StatusCode != http.StatusOK {
 		httpx.Err(w, httpx.BadGateway("AI 上游异常"))
 		return
 	}
-	reply := strings.TrimSpace(out.Choices[0].Message.Content)
-	reasoning := strings.TrimSpace(out.Choices[0].Message.Reasoning)
-	if reply == "" {
-		httpx.Err(w, httpx.BadGateway("AI 返回空回复"))
+
+	// SSE 代理：think=思考增量（前端实时滚动），text=正文增量，done=收尾
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	fl, _ := w.(http.Flusher)
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 1024*1024), 1024*1024)
+	var reply, reasoning strings.Builder
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "[DONE]" {
+			break
+		}
+		var chunk struct {
+			Choices []struct {
+				Delta struct {
+					Content   *string `json:"content"`
+					Reasoning *string `json:"reasoning_content"`
+				} `json:"delta"`
+			} `json:"choices"`
+		}
+		if json.Unmarshal([]byte(payload), &chunk) != nil || len(chunk.Choices) == 0 {
+			continue
+		}
+		dl := chunk.Choices[0].Delta
+		if dl.Reasoning != nil && *dl.Reasoning != "" {
+			reasoning.WriteString(*dl.Reasoning)
+		 eb, _ := json.Marshal(*dl.Reasoning)
+			fmt.Fprintf(w, "event: think\ndata: %s\n\n", eb)
+			fl.Flush()
+		}
+		if dl.Content != nil && *dl.Content != "" {
+			reply.WriteString(*dl.Content)
+			cb, _ := json.Marshal(*dl.Content)
+			fmt.Fprintf(w, "event: text\ndata: %s\n\n", cb)
+			fl.Flush()
+		}
+	}
+	if reply.Len() == 0 {
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", mustJSON(map[string]any{"message": "AI 返回空回复"}))
+		fl.Flush()
 		return
 	}
 	userID := auth.FromContext(r.Context())
@@ -134,7 +170,12 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 		INSERT INTO llm_call_log (id, user_id, lesson_id, model, prompt_tokens, output_tokens, duration_ms)
 		VALUES ($1, $2, NULL, $3, $4, $5, $6)`,
 		ulid.MustNew(), userID, os.Getenv("LLM_MODEL"),
-		len([]rune(system+req.Question)), len([]rune(reply)), time.Since(start).Milliseconds())
+		len([]rune(system+req.Question)), len([]rune(reply.String())), time.Since(start).Milliseconds())
+	fmt.Fprintf(w, "event: done\ndata: %s\n\n", mustJSON(map[string]any{"reply": reply.String(), "reasoning": reasoning.String()}))
+	fl.Flush()
+}
 
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"reply": reply, "reasoning": reasoning})
+func mustJSON(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }

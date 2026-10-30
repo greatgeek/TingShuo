@@ -284,3 +284,9 @@ body.no-rt rt { display: none; }
 .ai-inputfoot{display:flex;justify-content:flex-end;align-items:center;margin-top:6px}
 .ai-sendbtn{width:34px;height:34px;border-radius:50%;border:none;background:#2f6bff;color:#fff;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ai-sendbtn:disabled{opacity:.45;cursor:default}
+
+/* 思考中实时滚动 + 动效 */
+.ai-thinklive{max-height:110px;overflow:auto;font-size:12px;color:#98a0a8;white-space:pre-wrap;margin:4px 0;font-family:inherit}
+.ai-reply{white-space:pre-wrap}
+.ai-thinking .dots::after{content:'';animation:aidots 1.2s steps(4,end) infinite}
+@keyframes aidots{0%{content:''}25%{content:'·'}50%{content:'··'}75%{content:'···'}}

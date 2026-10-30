@@ -2111,25 +2111,83 @@ async function aiSend() {
   if (!q || !AI_CTX || $('ai-send').disabled) return;
   $('ai-q').value = '';
   aiBubble('user', esc(q));
-  const think = aiBubble('ai', '<span class="ai-thinking">思考中…</span>');
+  const bub = aiBubble('ai',
+    '<div class="ai-thinking">思考中<span class="dots"></span></div>' +
+    '<pre class="ai-thinklive" hidden></pre>' +
+    '<div class="ai-reply"></div>');
+  const thk = bub.querySelector('.ai-thinking');
+  const live = bub.querySelector('.ai-thinklive');
+  const rep = bub.querySelector('.ai-reply');
   $('ai-send').disabled = true;
+  let reply = '', reasoning = '';
   try {
     const r = await fetch('/api/v1/ai/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
       body: JSON.stringify({ ...AI_CTX, history: AI_HIST, question: q }),
     });
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error ? j.error.message : 'HTTP ' + r.status);
-    const reason = j.reasoning ? `<details class="ai-reason"><summary>思考过程</summary><pre>${esc(j.reasoning)}</pre></details>` : '';
-    think.innerHTML = reason + '<div class="ai-reply">' + esc(j.reply).replace(/\n/g, '<br>') + '</div>';
-    AI_HIST.push({ role: 'user', content: q }, { role: 'assistant', content: j.reply });
+    if (!r.ok) {
+      const j = await r.json().catch(() => null);
+      throw new Error(j && j.error ? j.error.message : 'HTTP ' + r.status);
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let ev = '', data = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event:')) ev = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        if (ev === 'think') {
+          reasoning += JSON.parse(data);
+          live.hidden = false;
+          live.textContent = reasoning.length > 20000 ? '…' + reasoning.slice(-20000) : reasoning;
+          live.scrollTop = live.scrollHeight;
+        } else if (ev === 'text') {
+          reply += JSON.parse(data);
+          if (!rep.dataset.on) { rep.dataset.on = '1'; thk.style.display = 'none'; live.hidden = true; }
+          rep.textContent = reply;
+          bub.scrollIntoView({ block: 'end' });
+        } else if (ev === 'done') {
+          const j = JSON.parse(data);
+          reply = j.reply || reply;
+          reasoning = j.reasoning || reasoning;
+        } else if (ev === 'error') {
+          throw new Error(JSON.parse(data).message || 'AI 异常');
+        }
+      }
+    }
+    if (!reply) throw new Error('AI 返回空回复');
+    thk.style.display = 'none';
+    live.remove();
+    if (reasoning) {
+      const det = document.createElement('details');
+      det.className = 'ai-reason';
+      det.innerHTML = '<summary>思考过程</summary>';
+      const pre = document.createElement('pre');
+      pre.textContent = reasoning;
+      det.appendChild(pre);
+      bub.insertBefore(det, rep);
+    }
+    rep.textContent = reply;
+    AI_HIST.push({ role: 'user', content: q }, { role: 'assistant', content: reply });
     if (AI_HIST.length > 20) AI_HIST = AI_HIST.slice(-20);
   } catch (e) {
-    think.innerHTML = '<span class="ai-err">请求失败：' + esc(e.message) + '</span>';
+    thk.style.display = 'none';
+    live.remove();
+    rep.innerHTML = '<span class="ai-err">请求失败：' + esc(e.message) + '</span>';
   } finally {
     $('ai-send').disabled = false;
-    think.scrollIntoView({ block: 'end' });
+    bub.scrollIntoView({ block: 'end' });
   }
 }
 
