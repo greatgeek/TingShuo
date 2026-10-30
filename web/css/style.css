@@ -279,5 +279,8 @@ body.no-rt rt { display: none; }
 .ai-reason{margin-bottom:6px}
 .ai-reason summary{cursor:pointer;color:#888;font-size:12px}
 .ai-reason pre{white-space:pre-wrap;font-size:12px;color:#888;max-height:240px;overflow:auto;margin:6px 0 0}
-.ai-inputrow{display:flex;gap:8px;margin-top:8px}
-.ai-inputrow input{flex:1;padding:10px 12px;border:1px solid #ddd;border-radius:10px;font-size:14px}
+.ai-inputcard{background:#f7f8fa;border:1px solid #e8eaed;border-radius:14px;padding:10px 12px 8px;margin-top:10px}
+.ai-inputcard input{width:100%;border:none;background:transparent;outline:none;font-size:14px;padding:2px 0}
+.ai-inputfoot{display:flex;justify-content:flex-end;align-items:center;margin-top:6px}
+.ai-sendbtn{width:34px;height:34px;border-radius:50%;border:none;background:#2f6bff;color:#fff;font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.ai-sendbtn:disabled{opacity:.45;cursor:default}

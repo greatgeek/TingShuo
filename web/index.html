@@ -160,9 +160,11 @@
   <section class="screen" id="sc-aiask">
     <div class="card" style="padding:10px 12px" id="ai-ctx"></div>
     <div id="ai-msgs"></div>
-    <div class="ai-inputrow">
-      <input id="ai-q" maxlength="500" placeholder="关于这句想问什么？例如：这里的 は 和 が 有什么区别？" />
-      <button class="btn accent" id="ai-send">发送</button>
+    <div class="ai-inputcard">
+      <input id="ai-q" maxlength="500" placeholder="关于这句想问什么？" />
+      <div class="ai-inputfoot">
+        <button id="ai-send" class="ai-sendbtn" title="发送">↑</button>
+      </div>
     </div>
   </section>
 
