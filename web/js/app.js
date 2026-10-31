@@ -2106,6 +2106,57 @@ function aiBubble(role, html) {
   return d;
 }
 
+// mdRender 轻量 Markdown 渲染：先整体转义（防 XSS）再套标签；
+// 支持 围栏代码/行内代码/表格/标题/分割线/引用/有序无序列表/加粗/斜体/链接/段落换行。
+function mdRender(src) {
+  const codes = [];
+  let s = String(src).replace(/```([\s\S]*?)```/g, (m, c) => {
+    codes.push(esc(c));
+    return '\u0000' + (codes.length - 1) + '\u0000';
+  });
+  s = esc(s);
+  // 表格：连续的 | 行
+  s = s.replace(/(^|\n)((?:\|[^\n]*\|(?:\n|$))+)/g, (m, pre, block) => {
+    const rows = block.trim().split('\n');
+    const isSep = r => /^[\s|:-]+$/.test(r) && r.includes('-');
+    const cells = r => r.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+    let html = '<table>', head = true;
+    for (const r of rows) {
+      if (isSep(r)) continue;
+      const tag = head ? 'th' : 'td';
+      head = false;
+      html += '<tr>' + cells(r).map(c => '<' + tag + '>' + c + '</' + tag + '>').join('') + '</tr>';
+    }
+    return pre + html + '</table>';
+  });
+  // 标题 / 分割线 / 引用 / 列表
+  s = s.replace(/^#### (.+)$/gm, '<h6>$1</h6>')
+    .replace(/^### (.+)$/gm, '<h5>$1</h5>')
+    .replace(/^## (.+)$/gm, '<h4>$1</h4>')
+    .replace(/^# (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^---+$/gm, '<hr>')
+    .replace(/^&gt; ?(.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/(^|\n)((?:[ \t]*[-*][ \t].+(?:\n|$))+)/g, (m, pre, block) =>
+      pre + '<ul>' + block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*[-*][ \t]/, '') + '</li>').join('') + '</ul>')
+    .replace(/(^|\n)((?:[ \t]*\d+\.[ \t].+(?:\n|$))+)/g, (m, pre, block) =>
+      pre + '<ol>' + block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*\d+\.[ \t]/, '') + '</li>').join('') + '</ol>');
+  // 行内：代码 / 加粗 / 斜体 / 链接
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*<])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // 段落：空行分段，段内换行 <br>；块级与代码占位不包 <p>
+  s = s.split(/\n{2,}/).map(blk => {
+    blk = blk.trim();
+    if (!blk || /^\u0000\d+\u0000$/.test(blk)) return blk;
+    if (/^<(h\d|ul|ol|table|blockquote|hr|pre)/.test(blk)) return blk;
+    return '<p>' + blk.replace(/\n/g, '<br>') + '</p>';
+  }).join('');
+  // 还原围栏代码（内容已转义）
+  s = s.replace(/\u0000(\d+)\u0000/g, (m, i) => '<pre><code>' + codes[+i].trim() + '</code></pre>');
+  return s;
+}
+
 async function aiSend() {
   const q = $('ai-q').value.trim();
   if (!q || !AI_CTX || $('ai-send').disabled) return;
@@ -2155,7 +2206,7 @@ async function aiSend() {
         } else if (ev === 'text') {
           reply += JSON.parse(data);
           if (!rep.dataset.on) { rep.dataset.on = '1'; thk.style.display = 'none'; live.hidden = true; }
-          rep.textContent = reply;
+          rep.innerHTML = mdRender(reply);
           bub.scrollIntoView({ block: 'end' });
         } else if (ev === 'done') {
           const j = JSON.parse(data);
@@ -2178,7 +2229,7 @@ async function aiSend() {
       det.appendChild(pre);
       bub.insertBefore(det, rep);
     }
-    rep.textContent = reply;
+    rep.innerHTML = mdRender(reply);
     AI_HIST.push({ role: 'user', content: q }, { role: 'assistant', content: reply });
     if (AI_HIST.length > 20) AI_HIST = AI_HIST.slice(-20);
   } catch (e) {
