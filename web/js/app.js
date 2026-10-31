@@ -55,6 +55,42 @@ function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.displa
 function hideErr(id) { $(id).style.display = 'none'; }
 function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+// toast 底部提示：播放/请求失败可见，不再静默
+function toast(msg) {
+  let t = $('ts-toast');
+  if (!t) { t = document.createElement('div'); t.id = 'ts-toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('on'), 4000);
+}
+
+// fetchAuth：401 自动刷新 token 重试一次（音频等裸 fetch 与 api() 同待遇）
+async function fetchAuth(url, opts = {}) {
+  opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers);
+  let r = await fetch(url, opts);
+  if (r.status === 401 && (await doRefresh())) {
+    opts.headers.Authorization = 'Bearer ' + TOKEN;
+    r = await fetch(url, opts);
+  }
+  return r;
+}
+
+// playUnlock：移动端浏览器可能拒绝手势外的 play()——先静音解锁播放再恢复音量
+async function playUnlock(a) {
+  try {
+    await a.play();
+  } catch (e) {
+    if (e && e.name === 'NotAllowedError') {
+      a.muted = true;
+      await a.play();
+      a.addEventListener('playing', () => { a.muted = false; }, { once: true });
+    } else {
+      throw e;
+    }
+  }
+}
+
 // doRefresh 用 refresh_token 换新 access_token（并发 401 共享同一次刷新）
 let refreshing = null;
 async function doRefresh() {
@@ -1311,7 +1347,7 @@ async function idbStats() {
 async function audioBlobURL(audioId) {
   const hit = await idbGet(audioId);
   if (hit && hit.blob) { idbPut(audioId, hit.blob); return URL.createObjectURL(hit.blob); }
-  const r = await fetch('/api/v1/audio/' + audioId + '/file', { headers: { Authorization: 'Bearer ' + TOKEN } });
+  const r = await fetchAuth('/api/v1/audio/' + audioId + '/file');
   if (!r.ok) throw new Error('音频获取失败 HTTP ' + r.status);
   const blob = await r.blob();
   idbPut(audioId, blob);
@@ -1322,7 +1358,7 @@ async function wordAudioBlobURL(wordId) {
   const key = 'w:' + wordId;
   const hit = await idbGet(key);
   if (hit && hit.blob) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
-  const r = await fetch('/api/v1/word-study/' + wordId + '/audio', { headers: { Authorization: 'Bearer ' + TOKEN } });
+  const r = await fetchAuth('/api/v1/word-study/' + wordId + '/audio');
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const blob = await r.blob();
   idbPut(key, blob);
@@ -1776,10 +1812,12 @@ function wsSpeakWord(wordId, btn) {
       const url = await wordAudioBlobURL(wordId);
       wsStopAudio();
       WS_AUDIO = new Audio(url);
-      WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🔊'; resolve(); };
-      await WS_AUDIO.play();
+      WS_AUDIO.onended = () => { if (btn) btn.textContent = '🔊'; resolve(); };
+      WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🔊'; toast('播放失败：音频解码错误'); resolve(); };
+      await playUnlock(WS_AUDIO);
     } catch (e) {
       if (btn) btn.textContent = '🔊';
+      toast('词音失败：' + e.message);
       resolve();
     }
   });
@@ -2058,9 +2096,9 @@ async function sayAudio(text, btn) {
     if (hit && hit.blob) {
       url = URL.createObjectURL(hit.blob);
     } else {
-      const r = await fetch('/api/v1/audio/say', {
+      const r = await fetchAuth('/api/v1/audio/say', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -2070,10 +2108,12 @@ async function sayAudio(text, btn) {
     }
     wsStopAudio();
     WS_AUDIO = new Audio(url);
-    WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; };
-    await WS_AUDIO.play();
+    WS_AUDIO.onended = () => { if (btn) btn.textContent = '▶'; };
+    WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; toast('播放失败：音频解码错误'); };
+    await playUnlock(WS_AUDIO);
   } catch (e) {
     if (btn) btn.textContent = '▶';
+    toast('点播失败：' + e.message);
   }
 }
 
