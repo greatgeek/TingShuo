@@ -122,7 +122,10 @@ func run() error {
 			sec.Put("/me", userH.Update)
 
 			sec.Get("/words/library", wordH.Library)
-			sec.Post("/ai/ask", aiask.NewHandler(pool).Ask)
+			aiH := aiask.NewHandler(pool)
+			sec.Post("/ai/ask", aiH.Ask)
+			sec.Get("/ai/chat", aiH.Chat)
+			sec.Delete("/ai/chat", aiH.ChatClear)
 			sec.Get("/words/{id}/usage", wordH.Usage)
 
 			wsH := wordstudy.NewHandler(pool, azureTTS, store)

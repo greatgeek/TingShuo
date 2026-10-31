@@ -2119,21 +2119,39 @@ async function sayAudio(text, btn) {
 
 // ============ 问AI（句子上下文对话，MiniMax M3 最高思考）============
 let AI_CTX = null;  // {text, ruby_tokens, translation, word}
-let AI_HIST = [];   // 最近 10 轮历史
 
-function openAiAsk(s, w) {
+async function openAiAsk(s, w) {
   AI_CTX = {
     text: s.text, ruby_tokens: s.ruby_tokens || [], translation: s.translation || '',
     word: { surface: w.surface, reading: w.reading || '', meaning: w.meaning || '' },
   };
-  AI_HIST = [];
   $('ai-ctx').innerHTML = `
+    <button class="ai-clear" id="ai-clear" title="清空这句的聊天记录">清空记录</button>
     <div class="txt" style="font-size:15px">${rubyHTML(AI_CTX.ruby_tokens) || esc(AI_CTX.text)}</div>
     <div class="zh">${esc(AI_CTX.translation)}</div>
     <div class="zh lib-meta">生词：${esc(AI_CTX.word.surface)}${AI_CTX.word.reading ? '（' + esc(AI_CTX.word.reading) + '）' : ''} ${esc(AI_CTX.word.meaning)}</div>`;
-  $('ai-msgs').innerHTML = '<p class="hint">可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…</p>';
+  $('ai-msgs').innerHTML = '<p class="hint">载入聊天记录…</p>';
   $('ai-q').value = '';
   go('aiask');
+  $('ai-clear').onclick = async () => {
+    try {
+      await api('/ai/chat?text=' + encodeURIComponent(AI_CTX.text), { method: 'DELETE' });
+    } catch (e) { toast('清空失败：' + e.message); return; }
+    $('ai-msgs').innerHTML = '<p class="hint">可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…</p>';
+    toast('已清空这句的聊天记录');
+  };
+  const HINT = '<p class="hint">可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…</p>';
+  try {
+    const r = await api('/ai/chat?text=' + encodeURIComponent(AI_CTX.text));
+    const items = r.items || [];
+    $('ai-msgs').innerHTML = items.length ? '' : HINT;
+    for (const m of items) {
+      if (m.role === 'user') aiBubble('user', esc(m.content));
+      else aiBubble('ai', '<div class="ai-reply">' + mdRender(m.content) + '</div>');
+    }
+  } catch {
+    $('ai-msgs').innerHTML = HINT;
+  }
   setTimeout(() => $('ai-q').focus(), 50);
 }
 
@@ -2215,7 +2233,7 @@ async function aiSend() {
     const r = await fetch('/api/v1/ai/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN },
-      body: JSON.stringify({ ...AI_CTX, history: AI_HIST, question: q }),
+      body: JSON.stringify({ ...AI_CTX, question: q }),
     });
     if (!r.ok) {
       const j = await r.json().catch(() => null);
@@ -2270,8 +2288,6 @@ async function aiSend() {
       bub.insertBefore(det, rep);
     }
     rep.innerHTML = mdRender(reply);
-    AI_HIST.push({ role: 'user', content: q }, { role: 'assistant', content: reply });
-    if (AI_HIST.length > 20) AI_HIST = AI_HIST.slice(-20);
   } catch (e) {
     thk.style.display = 'none';
     live.remove();

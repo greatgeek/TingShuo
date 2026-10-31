@@ -310,3 +310,8 @@ body.no-rt rt { display: none; }
 /* 底部 toast 提示 */
 #ts-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:rgba(30,34,40,.92);color:#fff;font-size:13px;padding:8px 16px;border-radius:20px;opacity:0;pointer-events:none;transition:all .25s;z-index:99;max-width:80vw}
 #ts-toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* 问AI 清空记录按钮 */
+#ai-ctx{position:relative}
+.ai-clear{position:absolute;top:8px;right:10px;font-size:11px;color:#98a0a8;background:none;border:none;cursor:pointer;padding:2px 4px}
+.ai-clear:hover{color:#c33}

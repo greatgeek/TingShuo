@@ -55,7 +55,7 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 			Reading string `json:"reading"`
 			Meaning string `json:"meaning"`
 		} `json:"word"`
-		History  []msg  `json:"history"`
+		History  []msg  `json:"history"` // 兼容旧客户端：服务端以 DB 历史为准
 		Question string `json:"question"`
 	}
 	if e := httpx.Decode(r, &req); e != nil {
@@ -77,15 +77,22 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 	}
 	system := fmt.Sprintf(systemTpl, req.Text, ruby, req.Translation, req.Word.Surface, req.Word.Reading, req.Word.Meaning)
 
+	userID := auth.FromContext(r.Context())
 	msgs := []map[string]any{{"role": "system", "content": system}}
-	n := len(req.History)
-	if n > 20 {
-		req.History = req.History[n-20:]
-	}
-	for _, m := range req.History {
-		if (m.Role == "user" || m.Role == "assistant") && m.Content != "" && len([]rune(m.Content)) <= 4000 {
-			msgs = append(msgs, map[string]any{"role": m.Role, "content": m.Content})
+	// 历史以 DB 为准（跨设备留痕）：最近 20 条作上下文
+	if rows, err := h.pool.Query(r.Context(), `
+		SELECT role, content FROM (
+			SELECT role, content, created_at FROM ai_chat
+			WHERE user_id = $1 AND sentence_text = $2
+			ORDER BY created_at DESC LIMIT 20
+		) t ORDER BY created_at`, userID, req.Text); err == nil {
+		for rows.Next() {
+			var role, content string
+			if rows.Scan(&role, &content) == nil && content != "" {
+				msgs = append(msgs, map[string]any{"role": role, "content": content})
+			}
 		}
+		rows.Close()
 	}
 	msgs = append(msgs, map[string]any{"role": "user", "content": req.Question})
 
@@ -165,7 +172,15 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 		fl.Flush()
 		return
 	}
-	userID := auth.FromContext(r.Context())
+	// 对话留痕：问与答各落一行（跨设备可回看）
+	_, _ = h.pool.Exec(r.Context(), `
+		INSERT INTO ai_chat (id, user_id, sentence_text, role, content)
+		VALUES ($1, $2, $3, 'user', $4)`,
+		ulid.MustNew(), userID, req.Text, req.Question)
+	_, _ = h.pool.Exec(r.Context(), `
+		INSERT INTO ai_chat (id, user_id, sentence_text, role, content)
+		VALUES ($1, $2, $3, 'assistant', $4)`,
+		ulid.MustNew(), userID, req.Text, reply.String())
 	_, _ = h.pool.Exec(r.Context(), `
 		INSERT INTO llm_call_log (id, user_id, lesson_id, model, prompt_tokens, output_tokens, duration_ms)
 		VALUES ($1, $2, NULL, $3, $4, $5, $6)`,
@@ -178,4 +193,41 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// Chat GET /api/v1/ai/chat?text= ：某句的聊天记录（升序，最近 100 条）
+func (h *Handler) Chat(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	text := r.URL.Query().Get("text")
+	rows, err := h.pool.Query(r.Context(), `
+		SELECT role, content, created_at FROM ai_chat
+		WHERE user_id = $1 AND sentence_text = $2
+		ORDER BY created_at LIMIT 100`, userID, text)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var role, content string
+		var at time.Time
+		if err := rows.Scan(&role, &content, &at); err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+		items = append(items, map[string]any{"role": role, "content": content, "at": at.Format(time.RFC3339)})
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// ChatClear DELETE /api/v1/ai/chat?text= ：清空某句的聊天记录
+func (h *Handler) ChatClear(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	text := r.URL.Query().Get("text")
+	if _, err := h.pool.Exec(r.Context(), `DELETE FROM ai_chat WHERE user_id = $1 AND sentence_text = $2`, userID, text); err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
