@@ -1984,14 +1984,19 @@ async function goNotebook() {
   stopPlay();
   try { NB_LIST = (await api('/notebooks')).items || []; } catch (e) { alert(e.message); return; }
   if (!NB_LIST.length) { alert('还没有生词本。'); return; }
-  if (!NB_CUR || !NB_LIST.find(x => x.id === NB_CUR)) NB_CUR = NB_LIST[0].id;
+  const savedNb = localStorage.getItem('ts_nb_cur');
+  if (!NB_CUR || !NB_LIST.find(x => x.id === NB_CUR)) NB_CUR = (savedNb && NB_LIST.find(x => x.id === savedNb)) ? savedNb : NB_LIST[0].id;
   await nbLoadTree();
   go('notebook');
-  if (!NB_CURDIR) openNbPicker();
+  const savedDir = localStorage.getItem('ts_nb_dir');
+  if (savedDir && NB_DIRS.find(d => d.id === savedDir)) await nbOpenDir(savedDir);
+  else if (!NB_CURDIR) openNbPicker();
 }
 
 async function nbSwitchTo(id) {
   NB_CUR = id; NB_WORDS = {}; NB_CURDIR = null;
+  localStorage.setItem('ts_nb_cur', id);
+  localStorage.removeItem('ts_nb_dir');
   await nbLoadTree();
 }
 
@@ -2021,7 +2026,7 @@ function renderNbStrip() {
     : `<b>${esc(nb ? nb.name : '生词本')}</b><span class="nb-strip-path">未选目录 · 点我选择</span>`;
 }
 
-// 目录选择弹窗：本切换 + 紧凑折叠树，点叶子目录即选中
+// 目录选择面板：横条正下方就地展开/收起（不再底部弹窗）
 let NBP_OPEN = new Set();
 function openNbPicker() {
   const sel = $('nbp-nb'); sel.innerHTML = '';
@@ -2038,9 +2043,16 @@ function openNbPicker() {
     while (d) { NBP_OPEN.add(d.id); d = NB_DIRS.find(x => x.id === (d.parent_id || '')); }
   }
   renderNbPickerList();
-  $('nbp-mask').style.display = 'flex';
+  $('nbp-panel').hidden = false;
 }
-function closeNbPicker() { $('nbp-mask').style.display = 'none'; }
+function closeNbPicker() { $('nbp-panel').hidden = true; }
+// 点面板与横条之外收起
+document.addEventListener('click', e => {
+  const p = $('nbp-panel');
+  if (!p || p.hidden) return;
+  if (p.contains(e.target) || $('nb-strip').contains(e.target)) return;
+  closeNbPicker();
+});
 function renderNbPickerList() {
   const box = $('nbp-list'); box.innerHTML = '';
   const walk = (pid, depth) => {
@@ -2069,6 +2081,7 @@ function renderNbPickerList() {
 
 async function nbOpenDir(dirId) {
   NB_CURDIR = dirId;
+  localStorage.setItem('ts_nb_dir', dirId);
   renderNbStrip();
   const box = $('nb-words'); box.innerHTML = '<p class="hint">加载…</p>';
   let r;
