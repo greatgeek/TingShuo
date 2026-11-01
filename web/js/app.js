@@ -2193,7 +2193,8 @@ function mdRender(src) {
     .replace(/^## (.+)$/gm, '<h4>$1</h4>')
     .replace(/^# (.+)$/gm, '<h3>$1</h3>')
     .replace(/^---+$/gm, '<hr>')
-    .replace(/^&gt; ?(.+)$/gm, '<blockquote>$1</blockquote>')
+    .replace(/(^|\n)((?:&gt; ?.*(?:\n|$))+)/g, (m, pre, block) =>
+      pre + '<blockquote>' + block.trim().split('\n').map(l => l.replace(/^&gt; ?/, '').trimEnd()).join('<br>') + '</blockquote>')
     .replace(/(^|\n)((?:[ \t]*[-*][ \t].+(?:\n|$))+)/g, (m, pre, block) =>
       pre + '<ul>' + block.trim().split('\n').map(l => '<li>' + l.replace(/^[ \t]*[-*][ \t]/, '') + '</li>').join('') + '</ul>')
     .replace(/(^|\n)((?:[ \t]*\d+\.[ \t].+(?:\n|$))+)/g, (m, pre, block) =>
