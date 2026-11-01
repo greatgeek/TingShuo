@@ -315,3 +315,6 @@ body.no-rt rt { display: none; }
 #ai-ctx{position:relative}
 .ai-clear{position:absolute;top:8px;right:10px;font-size:11px;color:#98a0a8;background:none;border:none;cursor:pointer;padding:2px 4px}
 .ai-clear:hover{color:#c33}
+
+/* AI 回复占满行宽，右侧不留空白 */
+.ai-bub.ai{max-width:100%;align-self:stretch}
