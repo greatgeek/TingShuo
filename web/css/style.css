@@ -321,7 +321,7 @@ body.no-rt rt { display: none; }
 
 /* 生词本目录横条 */
 .nb-strip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 12px;cursor:pointer}
-.nb-strip-main{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:14px;min-width:0}
+.nb-strip-main{flex:1 1 auto;display:flex;align-items:baseline;gap:6px 8px;flex-wrap:wrap;font-size:14px;min-width:0}
 .nb-strip-path{color:#445}
 .nb-strip-ct{color:#0a8f6a;font-size:12px;border:1px solid #cfe8de;border-radius:10px;padding:1px 8px;white-space:nowrap}
-.nb-strip .btn{flex:none;padding:6px 14px;font-size:13px}
+.nb-strip .btn{flex:0 0 auto;width:auto;margin-top:0;padding:6px 14px;font-size:13px}
