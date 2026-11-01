@@ -2063,7 +2063,8 @@ function renderNbPickerList() {
       row.style.paddingLeft = (6 + depth * 16) + 'px';
       row.innerHTML = `<span class="tw">${kids.length ? (NBP_OPEN.has(d.id) ? '▾' : '▸') : '·'}</span>` +
         `<span class="nm">${esc(d.name)}</span><span class="ct">${d.word_count || ''}</span>`;
-      row.onclick = () => {
+      row.onclick = (e) => {
+        e.stopPropagation(); // 重渲染后 target 脱离 DOM，否则会被外部点击收起逻辑误关
         if (kids.length) {
           NBP_OPEN.has(d.id) ? NBP_OPEN.delete(d.id) : NBP_OPEN.add(d.id);
           renderNbPickerList();
