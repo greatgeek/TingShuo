@@ -1967,7 +1967,7 @@ function renderWordStudyDone() {
 }
 
 // ============ 生词本浏览 ============
-let NB_LIST = [], NB_CUR = null, NB_DIRS = [], NB_OPEN = new Set(), NB_WORDS = {}, NB_CURDIR = null;
+let NB_LIST = [], NB_CUR = null, NB_DIRS = [], NB_WORDS = {}, NB_CURDIR = null;
 
 async function loadNbCount() {
   try {
@@ -1984,49 +1984,84 @@ async function goNotebook() {
   stopPlay();
   try { NB_LIST = (await api('/notebooks')).items || []; } catch (e) { alert(e.message); return; }
   if (!NB_LIST.length) { alert('还没有生词本。'); return; }
-  const sel = $('nb-select'); sel.innerHTML = '';
-  NB_LIST.forEach(n => {
-    const o = document.createElement('option');
-    o.value = n.id; o.textContent = `${n.name}（${n.word_count} 词）`;
-    sel.appendChild(o);
-  });
   if (!NB_CUR || !NB_LIST.find(x => x.id === NB_CUR)) NB_CUR = NB_LIST[0].id;
-  sel.value = NB_CUR;
   await nbLoadTree();
   go('notebook');
+  if (!NB_CURDIR) openNbPicker();
 }
 
-async function nbSwitch(id) { NB_CUR = id; NB_WORDS = {}; NB_CURDIR = null; await nbLoadTree(); }
+async function nbSwitchTo(id) {
+  NB_CUR = id; NB_WORDS = {}; NB_CURDIR = null;
+  await nbLoadTree();
+}
 
 async function nbLoadTree() {
   try { NB_DIRS = (await api('/notebooks/' + NB_CUR + '/tree')).dirs || []; } catch (e) { alert(e.message); return; }
-  NB_OPEN = new Set(NB_DIRS.filter(d => !d.parent_id).map(d => d.id)); // 默认展开一级
-  $('nb-title').textContent = (NB_LIST.find(x => x.id === NB_CUR) || {}).name || '生词本';
-  renderNbTree();
+  renderNbStrip();
   $('nb-words').innerHTML = '';
-  $('nb-hint').textContent = '点目录查看该目录下的生词与例句';
+  $('nb-hint').textContent = '点上方横条选择目录';
 }
 
 function nbChildren(pid) {
   return NB_DIRS.filter(d => (d.parent_id || '') === (pid || '')).sort((a, b) => a.sort_order - b.sort_order);
 }
 
-function renderNbTree() {
-  const box = $('nb-tree'); box.innerHTML = '';
+// 横条：展示关键信息（本名 · 目录路径 · 词数）
+function nbDirPath(id) {
+  const parts = [];
+  let d = NB_DIRS.find(x => x.id === id);
+  while (d) { parts.unshift(d.name); d = NB_DIRS.find(x => x.id === (d.parent_id || '')); }
+  return parts.join(' · ');
+}
+function renderNbStrip() {
+  const nb = NB_LIST.find(x => x.id === NB_CUR);
+  const dir = NB_DIRS.find(x => x.id === NB_CURDIR);
+  $('nb-strip-text').innerHTML = dir
+    ? `<b>${esc(nb ? nb.name : '生词本')}</b><span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span>`
+    : `<b>${esc(nb ? nb.name : '生词本')}</b><span class="nb-strip-path">未选目录 · 点我选择</span>`;
+}
+
+// 目录选择弹窗：本切换 + 紧凑折叠树，点叶子目录即选中
+let NBP_OPEN = new Set();
+function openNbPicker() {
+  const sel = $('nbp-nb'); sel.innerHTML = '';
+  NB_LIST.forEach(n => {
+    const o = document.createElement('option');
+    o.value = n.id; o.textContent = `${n.name}（${n.word_count} 词）`;
+    sel.appendChild(o);
+  });
+  sel.value = NB_CUR;
+  sel.onchange = async () => { await nbSwitchTo(sel.value); renderNbPickerList(); };
+  NBP_OPEN = new Set(nbChildren('').map(d => d.id));
+  if (NB_CURDIR) {
+    let d = NB_DIRS.find(x => x.id === NB_CURDIR);
+    while (d) { NBP_OPEN.add(d.id); d = NB_DIRS.find(x => x.id === (d.parent_id || '')); }
+  }
+  renderNbPickerList();
+  $('nbp-mask').style.display = 'flex';
+}
+function closeNbPicker() { $('nbp-mask').style.display = 'none'; }
+function renderNbPickerList() {
+  const box = $('nbp-list'); box.innerHTML = '';
   const walk = (pid, depth) => {
     nbChildren(pid).forEach(d => {
       const kids = nbChildren(d.id);
       const row = document.createElement('div');
       row.className = 'nb-dir' + (NB_CURDIR === d.id ? ' on' : '');
       row.style.paddingLeft = (6 + depth * 16) + 'px';
-      row.innerHTML = `<span class="tw">${kids.length ? (NB_OPEN.has(d.id) ? '▾' : '▸') : '·'}</span>` +
+      row.innerHTML = `<span class="tw">${kids.length ? (NBP_OPEN.has(d.id) ? '▾' : '▸') : '·'}</span>` +
         `<span class="nm">${esc(d.name)}</span><span class="ct">${d.word_count || ''}</span>`;
       row.onclick = () => {
-        if (kids.length) { NB_OPEN.has(d.id) ? NB_OPEN.delete(d.id) : NB_OPEN.add(d.id); }
-        nbOpenDir(d.id);
+        if (kids.length) {
+          NBP_OPEN.has(d.id) ? NBP_OPEN.delete(d.id) : NBP_OPEN.add(d.id);
+          renderNbPickerList();
+        } else {
+          closeNbPicker();
+          nbOpenDir(d.id);
+        }
       };
       box.appendChild(row);
-      if (kids.length && NB_OPEN.has(d.id)) walk(d.id, depth + 1);
+      if (kids.length && NBP_OPEN.has(d.id)) walk(d.id, depth + 1);
     });
   };
   walk('', 0);
@@ -2034,7 +2069,7 @@ function renderNbTree() {
 
 async function nbOpenDir(dirId) {
   NB_CURDIR = dirId;
-  renderNbTree();
+  renderNbStrip();
   const box = $('nb-words'); box.innerHTML = '<p class="hint">加载…</p>';
   let r;
   try { r = await api('/notebooks/dir/' + dirId + '/words'); }
@@ -2301,5 +2336,6 @@ async function aiSend() {
 
 // ============ 启动 ============
 $('ai-send').onclick = aiSend;
+$('nb-strip').onclick = openNbPicker;
 $('ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 if (TOKEN) afterLogin(); else { $('userchip').textContent = '未登录'; go('login'); }
