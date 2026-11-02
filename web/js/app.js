@@ -2383,6 +2383,7 @@ function nbPlayItems() {
 
 async function nbPlayStart() {
   nbPlayStop();
+  closeNbPicker();
   const items = nbPlayItems();
   if (!items.length) { toast('本目录没有可播放内容'); return; }
   PL = { items, i: 0, loop: 0, audio: new Audio() };
@@ -2460,8 +2461,8 @@ function saveNbCfg() {
 // ============ 启动 ============
 $('ai-send').onclick = aiSend;
 $('nb-strip').onclick = openNbPicker;
-$('nb-play-all').onclick = nbPlayStart;
-$('nb-play-cfg').onclick = openNbCfg;
+$('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
+$('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('cfg-save').onclick = saveNbCfg;
 $('cfg-cancel').onclick = () => { $('nb-cfg-mask').style.display = 'none'; };
