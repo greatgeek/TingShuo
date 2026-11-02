@@ -3,6 +3,8 @@ package httpx
 
 import (
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 )
 
@@ -35,19 +37,33 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// Err 输出统一错误体。
+// Err 输出统一错误体。5xx 一律脱敏：细节只进服务端日志，防信息泄漏。
 func Err(w http.ResponseWriter, e *APIError) {
+	if e.Status >= 500 {
+		log.Printf("httpx %d %s: %s", e.Status, e.Code, e.Message)
+		e = NewError(e.Status, e.Code, "服务器内部错误，请稍后重试")
+	}
 	WriteJSON(w, e.Status, map[string]any{
 		"error": map[string]string{"code": e.Code, "message": e.Message},
 	})
 }
 
+const maxBodyBytes = 1 << 20 // 1MB：防超大请求体耗尽内存
+
+func truncated(err error) string {
+	m := err.Error()
+	if len([]rune(m)) > 120 {
+		m = string([]rune(m)[:120]) + "…"
+	}
+	return m
+}
+
 // Decode 严格解析请求体（禁止未知字段，防参数走私）。
 func Decode(r *http.Request, v any) *APIError {
-	dec := json.NewDecoder(r.Body)
+	dec := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return BadRequest("BAD_REQUEST", "请求体解析失败: "+err.Error())
+		return BadRequest("BAD_REQUEST", "请求体解析失败: "+truncated(err))
 	}
 	return nil
 }
@@ -55,8 +71,8 @@ func Decode(r *http.Request, v any) *APIError {
 // DecodeLoose 宽松解析（忽略未知字段）——用于接收 LLM 原始输出的端点：
 // 模型会自作主张附加 schema 外字段（如 "topic"），显式校验由各 handler 自行完成。
 func DecodeLoose(r *http.Request, v any) *APIError {
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		return BadRequest("BAD_REQUEST", "请求体解析失败: "+err.Error())
+	if err := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes)).Decode(v); err != nil {
+		return BadRequest("BAD_REQUEST", "请求体解析失败: "+truncated(err))
 	}
 	return nil
 }

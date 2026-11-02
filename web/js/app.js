@@ -2474,6 +2474,40 @@ function saveNbCfg() {
 }
 
 // ============ 启动 ============
+// 原内联 onclick/oninput 全部改为绑定（CSP 禁内联脚本）
+$('nav-back').onclick = goBack;
+$('nav-home').onclick = goHome;
+$('logout-btn').onclick = doLogout;
+$('login-btn').onclick = doLogin;
+$('home-main-btn').onclick = () => go('create');
+$('home-new-btn').onclick = () => go('create');
+$('review-btn').onclick = goReview;
+$('ws-due-btn').onclick = () => goWordStudy('due');
+$('ws-new-btn').onclick = () => goWordStudy('new');
+$('lib-link').onclick = (e) => { e.preventDefault(); goLibrary(); };
+$('home-nb-btn').onclick = goNotebook;
+$('cache-clear-btn').onclick = clearAudioCache;
+$('mode-full').onclick = () => pickGenMode('full');
+$('mode-phrases').onclick = () => pickGenMode('phrases');
+$('submit-words-btn').onclick = submitWords;
+$('open-picker-btn').onclick = openWordPicker;
+$('fill-sample-btn').onclick = fillSample;
+$('gen-retry').onclick = submitWords;
+$('gen-back').onclick = () => go('create');
+$('md-normal').onclick = () => { switchView('material'); setMode('normal'); };
+$('md-blind').onclick = () => setMode('blind');
+$('md-zh').onclick = () => setMode('zh');
+$('md-rt').onclick = toggleRT;
+$('md-fav').onclick = () => switchView('fav');
+$('vw-words').onclick = () => switchView('words');
+$('vw-phrases').onclick = () => switchView('phrases');
+$('vw-full').onclick = () => switchView('material');
+$('play-all-btn').onclick = playAll;
+$('tts-btn').onclick = genAllAudio;
+$('lib-search').oninput = e => libSearch(e.target.value);
+$('picker-search').oninput = e => pickerSearch(e.target.value);
+$('picker-ok').onclick = pickerConfirm;
+$('picker-cancel-btn').onclick = closePicker;
 $('ai-send').onclick = aiSend;
 $('nb-strip').onclick = openNbPicker;
 $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };

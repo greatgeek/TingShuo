@@ -103,6 +103,8 @@ func run() error {
 	})
 
 	r.Route("/api/v1", func(api chi.Router) {
+		// 全 API 每 IP 限流（300/分钟，突发 120）：防扫描与滥用
+		api.Use(httpx.Limit(httpx.NewLimiter(300, 120), httpx.ClientIP))
 		// API 响应一律禁缓存：避免浏览器启发式缓存把旧数据（如修复前的句子）留给页面
 		api.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -110,10 +112,13 @@ func run() error {
 				next.ServeHTTP(w, req)
 			})
 		})
-		// 公开端点
-		api.Post("/auth/register", authH.Register)
-		api.Post("/auth/login", authH.Login)
-		api.Post("/auth/refresh", authH.Refresh)
+		// 公开端点：认证类单独更严限流（防暴力破解）
+		api.Group(func(pub chi.Router) {
+			pub.Use(httpx.Limit(httpx.NewLimiter(10, 15), httpx.ClientIP))
+			pub.Post("/auth/register", authH.Register)
+			pub.Post("/auth/login", authH.Login)
+			pub.Post("/auth/refresh", authH.Refresh)
+		})
 
 		// 鉴权端点
 		api.Group(func(sec chi.Router) {

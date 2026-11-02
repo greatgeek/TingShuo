@@ -9,10 +9,16 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
+)
+
+var (
+	sayLim   = httpx.NewLimiter(30, 60)  // 每用户 30/分钟
+	sayDaily = httpx.NewDailyQuota(500) // 每用户 500/天（TTS 成本护栏）
 )
 
 func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +47,12 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	}
 	if generate.HasSimplifiedChinese(req.Text) {
 		httpx.Err(w, httpx.BadRequest("TEXT_NOT_JA", "文本含中文，拒绝合成"))
+		return
+	}
+
+	userID := auth.FromContext(r.Context())
+	if !sayLim.Allow(userID) || !sayDaily.Allow(userID) {
+		httpx.Err(w, httpx.NewError(http.StatusTooManyRequests, "QUOTA", "合成请求过于频繁，请稍后再试（每日上限 500 次）"))
 		return
 	}
 

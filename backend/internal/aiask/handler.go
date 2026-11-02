@@ -19,6 +19,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var (
+	askLim   = httpx.NewLimiter(6, 10)  // 每用户 6/分钟
+	askDaily = httpx.NewDailyQuota(100) // 每用户 100/天（LLM 成本护栏）
+)
+
 type Handler struct {
 	pool   *pgxpool.Pool
 	client *http.Client
@@ -78,6 +83,10 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 	system := fmt.Sprintf(systemTpl, req.Text, ruby, req.Translation, req.Word.Surface, req.Word.Reading, req.Word.Meaning)
 
 	userID := auth.FromContext(r.Context())
+	if !askLim.Allow(userID) || !askDaily.Allow(userID) {
+		httpx.Err(w, httpx.NewError(http.StatusTooManyRequests, "QUOTA", "提问过于频繁，请稍后再试（每日上限 100 问）"))
+		return
+	}
 	msgs := []map[string]any{{"role": "system", "content": system}}
 	// 历史以 DB 为准（跨设备留痕）：最近 20 条作上下文
 	if rows, err := h.pool.Query(r.Context(), `

@@ -9,11 +9,11 @@
 <body>
 <div class="frame">
   <header>
-    <button class="nav-home" id="nav-back" onclick="goBack()" style="display:none">‹ 返回</button>
-    <button class="nav-home" id="nav-home" onclick="goHome()">⌂ 首页</button>
+    <button class="nav-home" id="nav-back" style="display:none">‹ 返回</button>
+    <button class="nav-home" id="nav-home">⌂ 首页</button>
     <span class="t">听说 <em>TingShuo</em></span>
     <span class="s" id="userchip">桌面前端（开发版）</span>
-    <button class="nav-home" id="logout-btn" onclick="doLogout()" style="display:none">登出</button>
+    <button class="nav-home" id="logout-btn" style="display:none">登出</button>
   </header>
 
   <!-- 登录 -->
@@ -23,7 +23,7 @@
       <p class="hint">邮箱 + 密码。新邮箱自动注册，老邮箱直接登录。</p>
       <div style="margin-top:10px"><input id="login-email" placeholder="邮箱，如 test@dev" autocomplete="off"></div>
       <div style="margin-top:8px"><input id="login-pass" type="password" placeholder="密码（≥6 位）"></div>
-      <button class="btn accent" onclick="doLogin()">进入</button>
+      <button class="btn accent" id="login-btn">进入</button>
       <div class="err" id="login-err"></div>
     </div>
   </section>
@@ -40,24 +40,24 @@
       <span class="status-chip" id="lesson-chip">未创建</span>
       <div class="bignum" id="lesson-date">—</div>
       <p class="hint" id="lesson-desc">还没有今天的课程。1 个词也可以生成一课。</p>
-      <button class="btn accent" id="home-main-btn" onclick="go('create')">创建今日课程</button>
-      <button class="btn ghost" id="home-new-btn" onclick="go('create')" style="display:none">✎ 新建词单（重做今日）</button>
+      <button class="btn accent" id="home-main-btn">创建今日课程</button>
+      <button class="btn ghost" id="home-new-btn" style="display:none">✎ 新建词单（重做今日）</button>
       <div class="err" id="home-err"></div>
     </div>
     <div class="card" id="review-card" style="display:none">
       <h2>复习</h2>
       <p class="hint" id="review-desc">有句子需要复习</p>
-      <button class="btn accent" id="review-btn" onclick="goReview()">开始复习</button>
+      <button class="btn accent" id="review-btn">开始复习</button>
     </div>
     <div class="card">
       <h2>背词</h2>
       <p class="hint" id="wordstudy-desc">提交过的词单会自动累积到这里。</p>
       <div class="row2" style="margin-top:12px">
-        <button class="btn ghost" id="ws-due-btn" onclick="goWordStudy('due')" style="margin-top:0">复习</button>
-        <button class="btn accent" id="ws-new-btn" onclick="goWordStudy('new')" style="margin-top:0">新学</button>
+        <button class="btn ghost" id="ws-due-btn" style="margin-top:0">复习</button>
+        <button class="btn accent" id="ws-new-btn" style="margin-top:0">新学</button>
       </div>
       <p class="hint" style="margin-top:10px">
-        <a href="javascript:void(0)" onclick="goLibrary()" style="color:var(--accent)">进入生词库 →</a>
+        <a href="#" id="lib-link" style="color:var(--accent)">进入生词库 →</a>
       </p>
     </div>
     <div class="card">
@@ -67,12 +67,12 @@
     <div class="card">
       <h2>生词本</h2>
       <p class="hint" id="nb-desc">按目录浏览导入的生词与例句。</p>
-      <button class="btn ghost" onclick="goNotebook()">浏览生词本</button>
+      <button class="btn ghost" id="home-nb-btn">浏览生词本</button>
     </div>
     <div class="card">
       <h2>本地音频缓存</h2>
       <p class="hint" id="cache-desc">尚未缓存音频，播放过的句子会自动存到本地。</p>
-      <button class="btn ghost" onclick="clearAudioCache()">清理缓存</button>
+      <button class="btn ghost" id="cache-clear-btn">清理缓存</button>
     </div>
     <div class="card">
       <h2>使用流程</h2>
@@ -90,17 +90,17 @@
       <div style="margin-top:8px" class="hint" id="words-count">0 词</div>
       <div style="margin-top:12px" class="hint">生成模式：</div>
       <div class="modebar" style="margin-top:6px">
-        <button id="mode-full" class="on" onclick="pickGenMode('full')">句子模式</button>
-        <button id="mode-phrases" onclick="pickGenMode('phrases')">短语模式</button>
+        <button id="mode-full" class="on">句子模式</button>
+        <button id="mode-phrases">短语模式</button>
       </div>
       <p class="hint" id="mode-desc" style="margin:6px 0 0">对话 + 短文：每个词自然出现在有场景的完整句子里（约 3—5 分钟）</p>
       <div class="row2" style="margin-top:10px">
         <select id="sel-level"><option>N5</option><option selected>N4</option><option>N3</option></select>
         <select id="sel-voice"><option value="Nanami" selected>Nanami（女声）</option><option value="Keita">Keita（男声）</option></select>
       </div>
-      <button class="btn accent" onclick="submitWords()">提交并生成材料</button>
-      <button class="btn ghost" onclick="openWordPicker()">从生词库选词</button>
-      <button class="btn ghost" onclick="fillSample()">填入示例 20 词</button>
+      <button class="btn accent" id="submit-words-btn">提交并生成材料</button>
+      <button class="btn ghost" id="open-picker-btn">从生词库选词</button>
+      <button class="btn ghost" id="fill-sample-btn">填入示例 20 词</button>
       <div class="err" id="create-err"></div>
     </div>
   </section>
@@ -115,29 +115,29 @@
       <div class="preview" id="gen-preview"></div>
       <div class="log" id="gen-log"></div>
       <div class="err" id="gen-err"></div>
-      <button class="btn accent" style="display:none" id="gen-retry" onclick="submitWords()">↻ 重新生成</button>
-      <button class="btn ghost" style="display:none" id="gen-back" onclick="go('create')">返回修改词单</button>
+      <button class="btn accent" style="display:none" id="gen-retry">↻ 重新生成</button>
+      <button class="btn ghost" style="display:none" id="gen-back">返回修改词单</button>
     </div>
   </section>
 
   <!-- 学习 -->
   <section class="screen" id="sc-learn">
     <div class="modebar">
-      <button id="md-normal" class="on" onclick="switchView('material'); setMode('normal')">跟读</button>
-      <button id="md-blind" onclick="setMode('blind')">盲听</button>
-      <button id="md-zh" onclick="setMode('zh')">译文</button>
-      <button id="md-rt" class="on" onclick="toggleRT()">假名</button>
-      <button id="md-fav" onclick="switchView('fav')">★ 收藏</button>
+      <button id="md-normal" class="on">跟读</button>
+      <button id="md-blind">盲听</button>
+      <button id="md-zh">译文</button>
+      <button id="md-rt" class="on">假名</button>
+      <button id="md-fav">★ 收藏</button>
     </div>
     <div class="viewbar">
-      <button id="vw-words" onclick="switchView('words')">生词模式</button>
-      <button id="vw-phrases" onclick="switchView('phrases')">短语模式</button>
-      <button id="vw-full" class="on" onclick="switchView('material')">句子模式</button>
+      <button id="vw-words">生词模式</button>
+      <button id="vw-phrases">短语模式</button>
+      <button id="vw-full" class="on">句子模式</button>
     </div>
     <div class="tabs" id="mat-tabs"></div>
     <div class="row2" style="margin-bottom:10px">
-      <button class="btn ghost" onclick="playAll()">▶ 整段连播</button>
-      <button class="btn accent" id="tts-btn" onclick="genAllAudio()">为全部句子配音</button>
+      <button class="btn ghost" id="play-all-btn">▶ 整段连播</button>
+      <button class="btn accent" id="tts-btn">为全部句子配音</button>
     </div>
     <div class="sents" id="sents"></div>
     <p class="hint" id="learn-hint" style="margin-top:12px"></p>
@@ -148,7 +148,7 @@
   </section>
   <!-- 生词库 -->
   <section class="screen" id="sc-library">
-    <input id="lib-search" placeholder="搜索单词 / 读音 / 含义" oninput="libSearch(this.value)">
+    <input id="lib-search" placeholder="搜索单词 / 读音 / 含义">
     <div class="sents" id="lib-list" style="margin-top:10px"></div>
     <p class="hint" id="lib-hint" style="margin-top:12px"></p>
   </section>
@@ -191,10 +191,10 @@
 <div class="picker-mask" id="picker-mask" style="display:none">
   <div class="picker card">
     <h2>从生词库选词</h2>
-    <input id="picker-search" placeholder="搜索单词 / 读音 / 含义" oninput="pickerSearch(this.value)">
+    <input id="picker-search" placeholder="搜索单词 / 读音 / 含义">
     <div class="picker-list" id="picker-list"></div>
-    <button class="btn accent" id="picker-ok" onclick="pickerConfirm()">加入词单</button>
-    <button class="btn ghost" onclick="closePicker()">取消</button>
+    <button class="btn accent" id="picker-ok">加入词单</button>
+    <button class="btn ghost" id="picker-cancel-btn">取消</button>
   </div>
 </div>
 <div class="picker-mask nb-cfg-mask" id="nb-cfg-mask" style="display:none">

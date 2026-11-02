@@ -35,6 +35,7 @@ func Enabled() bool { return os.Getenv("DEV_PROXY") != "false" }
 // Cors 是本地开发 CORS 中间件（试用页与 API 同源时其实不触发，保留给分离开发场景）。
 func Cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !Enabled() { next.ServeHTTP(w, r); return } // 生产同源部署不需要 CORS；仅开发分离场景放开
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-LLM-Api-Key, X-Azure-Key")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
