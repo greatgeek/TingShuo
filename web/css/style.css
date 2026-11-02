@@ -351,3 +351,5 @@ body.no-rt rt { display: none; }
 .nb-now-btns{display:flex;gap:6px;flex:none}
 .nb-nowbar .btn{padding:5px 12px;font-size:12px}
 #nb-now-text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 连播时给列表底部留出控制条高度（条高46+距底12+余量），否则最后一条会被压住且无法真正居中 */
+body.nb-playing #sc-notebook{padding-bottom:80px}

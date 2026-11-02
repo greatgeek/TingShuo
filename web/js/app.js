@@ -2397,6 +2397,7 @@ async function nbPlayStart() {
   PL.audio.addEventListener('error', () => { toast('音频播放出错，跳下一条'); nbPlayNext(); });
   $('nb-now-pause').textContent = '⏸ 暂停';
   $('nb-nowbar').hidden = false;
+  document.body.classList.add('nb-playing');
   await nbPlayStep();
 }
 
@@ -2405,6 +2406,7 @@ function nbPlayStop() {
   document.querySelectorAll('#nb-words .playing').forEach(x => x.classList.remove('playing'));
   const bar = $('nb-nowbar');
   if (bar) bar.hidden = true;
+  document.body.classList.remove('nb-playing');
 }
 
 async function nbPlayNext() {
