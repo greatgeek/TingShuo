@@ -2114,10 +2114,7 @@ function renderNbWords() {
   $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 点词展开例句（▶ 点播）`;
 }
 
-function nbToggleWord(w, div) {
-  const ex = div.querySelector('.nb-sents');
-  if (ex) { ex.remove(); return; }
-  document.querySelectorAll('.nb-sents').forEach(x => x.remove());
+function nbBuildSents(w) {
   const wrap = document.createElement('div');
   wrap.className = 'nb-sents';
   if (!w.sentences.length) wrap.innerHTML = '<p class="hint" style="margin-left:26px">暂无例句</p>';
@@ -2135,7 +2132,14 @@ function nbToggleWord(w, div) {
     row.appendChild(btn);
     wrap.appendChild(row);
   });
-  div.appendChild(wrap);
+  return wrap;
+}
+
+function nbToggleWord(w, div) {
+  const ex = div.querySelector('.nb-sents');
+  if (ex) { ex.remove(); return; }
+  document.querySelectorAll('.nb-sents').forEach(x => x.remove());
+  div.appendChild(nbBuildSents(w));
 }
 
 // sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
@@ -2413,18 +2417,27 @@ async function nbPlayNext() {
   await nbPlayStep();
 }
 
+// 仅当目标不在视口内才滚动，且平滑——避免连播时页面上下跳
+function nbScrollIfNeeded(el) {
+  const r = el.getBoundingClientRect();
+  if (r.top < 70 || r.bottom > window.innerHeight - 24) {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
 function nbPlayHighlight(it) {
   document.querySelectorAll('#nb-words .playing').forEach(x => x.classList.remove('playing'));
   const words = NB_WORDS[NB_CURDIR] || [];
   const row = document.querySelectorAll('#nb-words .wordrow')[words.indexOf(it.w)];
   if (!row) return;
   row.classList.add('playing');
-  if (!row.querySelector('.nb-sents')) nbToggleWord(it.w, row); // 自动展开当前词的例句
+  // 播放期只展开不折叠：向下增长不拉动视口，折叠上方内容才会造成跳动
+  if (!row.querySelector('.nb-sents')) row.appendChild(nbBuildSents(it.w));
   if (it.kind === 'sent') {
     const sr = row.querySelectorAll('.nb-sent')[it.si];
-    if (sr) { sr.classList.add('playing'); sr.scrollIntoView({ block: 'center' }); }
+    if (sr) { sr.classList.add('playing'); nbScrollIfNeeded(sr); }
   } else {
-    row.scrollIntoView({ block: 'center' });
+    nbScrollIfNeeded(row);
   }
   const wi = words.indexOf(it.w) + 1;
   const sent = it.kind === 'sent' ? ` · 句 ${it.si + 1}/${(it.w.sentences || []).length}：${it.s.text.slice(0, 18)}` : ' · 单词';
