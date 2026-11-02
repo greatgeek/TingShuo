@@ -345,3 +345,9 @@ body.no-rt rt { display: none; }
 .nb-strip-row2{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .nb-strip-row2 .nb-strip-path{font-size:13px}
 .nb-nowbar[hidden]{display:none}
+
+/* 连播控制条：固定底部，暂停/停止随手可及 */
+.nb-nowbar{position:fixed;left:12px;right:12px;bottom:12px;z-index:40;margin-top:0;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+.nb-now-btns{display:flex;gap:6px;flex:none}
+.nb-nowbar .btn{padding:5px 12px;font-size:12px}
+#nb-now-text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

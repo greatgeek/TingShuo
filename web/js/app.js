@@ -2108,7 +2108,7 @@ function renderNbWords() {
       <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开例句">▾</button>`;
     div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.word_id, e.currentTarget); };
-    div.onclick = () => nbToggleWord(w, div);
+    div.onclick = () => { if (PL && nbPlayJumpTo(w)) return; nbToggleWord(w, div); };
     box.appendChild(div);
   });
   $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 点词展开例句（▶ 点播）`;
@@ -2392,9 +2392,10 @@ async function nbPlayStart() {
   closeNbPicker();
   const items = nbPlayItems();
   if (!items.length) { toast('本目录没有可播放内容'); return; }
-  PL = { items, i: 0, loop: 0, audio: new Audio() };
+  PL = { items, i: 0, loop: 0, audio: new Audio(), follow: true, autoScrolling: false, paused: false };
   PL.audio.addEventListener('ended', () => nbPlayNext());
   PL.audio.addEventListener('error', () => { toast('音频播放出错，跳下一条'); nbPlayNext(); });
+  $('nb-now-pause').textContent = '⏸ 暂停';
   $('nb-nowbar').hidden = false;
   await nbPlayStep();
 }
@@ -2417,11 +2418,43 @@ async function nbPlayNext() {
   await nbPlayStep();
 }
 
-// 仅当目标不在视口内才滚动，且平滑——避免连播时页面上下跳
+// 仅当目标不在视口内才滚动，且平滑——避免连播时页面上下跳；
+// 用户手动滚动过（PL.follow=false）后不再自动跟随，免得往回拉
 function nbScrollIfNeeded(el) {
+  if (!PL || !PL.follow) return;
   const r = el.getBoundingClientRect();
   if (r.top < 70 || r.bottom > window.innerHeight - 24) {
+    PL.autoScrolling = true;
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setTimeout(() => { if (PL) PL.autoScrolling = false; }, 800);
+  }
+}
+
+// 播放中点词跳转：从该词第一条音频开始继续往后播
+function nbPlayJumpTo(w) {
+  if (!PL) return false;
+  const idx = PL.items.findIndex(it => it.w === w);
+  if (idx < 0) return false;
+  PL.i = idx;
+  PL.follow = true;
+  PL.paused = false;
+  $('nb-now-pause').textContent = '⏸ 暂停';
+  try { PL.audio.pause(); } catch (e) {}
+  nbPlayStep();
+  return true;
+}
+
+// 暂停/继续：同一 Audio 元素 pause/play，续播即从暂停处继续
+function nbPlayPause() {
+  if (!PL) return;
+  if (PL.paused) {
+    PL.paused = false;
+    $('nb-now-pause').textContent = '⏸ 暂停';
+    playUnlock(PL.audio).catch(() => nbPlayNext());
+  } else {
+    PL.paused = true;
+    $('nb-now-pause').textContent = '▶ 继续';
+    try { PL.audio.pause(); } catch (e) {}
   }
 }
 
@@ -2513,6 +2546,11 @@ $('nb-strip').onclick = openNbPicker;
 $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
 $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-now-stop').onclick = () => nbPlayStop();
+$('nb-now-pause').onclick = nbPlayPause;
+// 用户主动滚动/触摸滑动后停止自动跟随（程序滚动 autoScrolling 期间除外）
+addEventListener('wheel', () => { if (PL) PL.follow = false; }, { passive: true });
+addEventListener('touchmove', () => { if (PL) PL.follow = false; }, { passive: true });
+addEventListener('scroll', () => { if (PL && !PL.autoScrolling) PL.follow = false; }, { passive: true });
 $('cfg-save').onclick = saveNbCfg;
 $('cfg-cancel').onclick = () => { $('nb-cfg-mask').style.display = 'none'; };
 $('ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
