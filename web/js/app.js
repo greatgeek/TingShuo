@@ -2418,8 +2418,6 @@ async function nbPlayNext() {
   await nbPlayStep();
 }
 
-// 仅当目标不在视口内才滚动，且平滑——避免连播时页面上下跳；
-// 用户手动滚动过（PL.follow=false）后不再自动跟随，免得往回拉。
 // 程序滚动窗口按"静默期"续期而非定时长：smooth 滚动实测可达 ~1s，
 // 固定窗口会把动画尾部的 scroll 事件误判成用户滚动，导致跟随一次就永久失效。
 let autoScrollTimer = 0, autoScrollDeadline = 0;
@@ -2439,13 +2437,11 @@ function userScrolled() {
   PL.autoScrolling = false;
   PL.follow = false;
 }
-function nbScrollIfNeeded(el) {
+// 跟随时把正在播放的词/句平滑滚到屏幕中央；用户手动滚动过（follow=false）就完全不动
+function nbScrollToPlaying(el) {
   if (!PL || !PL.follow) return;
-  const r = el.getBoundingClientRect();
-  if (r.top < 70 || r.bottom > window.innerHeight - 24) {
-    beginAutoScroll();
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
+  beginAutoScroll();
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 // 播放中点词跳转：从该词第一条音频开始继续往后播
@@ -2486,9 +2482,9 @@ function nbPlayHighlight(it) {
   if (!row.querySelector('.nb-sents')) row.appendChild(nbBuildSents(it.w));
   if (it.kind === 'sent') {
     const sr = row.querySelectorAll('.nb-sent')[it.si];
-    if (sr) { sr.classList.add('playing'); nbScrollIfNeeded(sr); }
+    if (sr) { sr.classList.add('playing'); nbScrollToPlaying(sr); }
   } else {
-    nbScrollIfNeeded(row);
+    nbScrollToPlaying(row);
   }
   const wi = words.indexOf(it.w) + 1;
   const sent = it.kind === 'sent' ? ` · 句 ${it.si + 1}/${(it.w.sentences || []).length}：${it.s.text.slice(0, 18)}` : ' · 单词';
