@@ -2419,14 +2419,32 @@ async function nbPlayNext() {
 }
 
 // 仅当目标不在视口内才滚动，且平滑——避免连播时页面上下跳；
-// 用户手动滚动过（PL.follow=false）后不再自动跟随，免得往回拉
+// 用户手动滚动过（PL.follow=false）后不再自动跟随，免得往回拉。
+// 程序滚动窗口按"静默期"续期而非定时长：smooth 滚动实测可达 ~1s，
+// 固定窗口会把动画尾部的 scroll 事件误判成用户滚动，导致跟随一次就永久失效。
+let autoScrollTimer = 0, autoScrollDeadline = 0;
+function beginAutoScroll() {
+  PL.autoScrolling = true;
+  autoScrollDeadline = Date.now() + 2500;
+  armAutoScrollEnd();
+}
+function armAutoScrollEnd() {
+  clearTimeout(autoScrollTimer);
+  autoScrollTimer = setTimeout(() => { if (PL) PL.autoScrolling = false; }, 200);
+}
+// 用户明确手势：立刻结束程序滚动窗口并停止跟随
+function userScrolled() {
+  if (!PL) return;
+  clearTimeout(autoScrollTimer);
+  PL.autoScrolling = false;
+  PL.follow = false;
+}
 function nbScrollIfNeeded(el) {
   if (!PL || !PL.follow) return;
   const r = el.getBoundingClientRect();
   if (r.top < 70 || r.bottom > window.innerHeight - 24) {
-    PL.autoScrolling = true;
+    beginAutoScroll();
     el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    setTimeout(() => { if (PL) PL.autoScrolling = false; }, 800);
   }
 }
 
@@ -2547,10 +2565,17 @@ $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
 $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
-// 用户主动滚动/触摸滑动后停止自动跟随（程序滚动 autoScrolling 期间除外）
-addEventListener('wheel', () => { if (PL) PL.follow = false; }, { passive: true });
-addEventListener('touchmove', () => { if (PL) PL.follow = false; }, { passive: true });
-addEventListener('scroll', () => { if (PL && !PL.autoScrolling) PL.follow = false; }, { passive: true });
+// 用户主动滚动/触摸滑动后停止自动跟随；程序滚动期间（autoScrolling）续期静默窗口，不误判
+addEventListener('wheel', userScrolled, { passive: true });
+addEventListener('touchmove', userScrolled, { passive: true });
+addEventListener('scroll', () => {
+  if (!PL) return;
+  if (PL.autoScrolling) {
+    if (Date.now() < autoScrollDeadline) { armAutoScrollEnd(); return; }
+    PL.autoScrolling = false;
+  }
+  PL.follow = false;
+}, { passive: true });
 $('cfg-save').onclick = saveNbCfg;
 $('cfg-cancel').onclick = () => { $('nb-cfg-mask').style.display = 'none'; };
 $('ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
