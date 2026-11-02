@@ -2016,14 +2016,16 @@ function nbDirPath(id) {
   const parts = [];
   let d = NB_DIRS.find(x => x.id === id);
   while (d) { parts.unshift(d.name); d = NB_DIRS.find(x => x.id === (d.parent_id || '')); }
-  return parts.join(' · ');
+  return parts.join('/');
 }
 function renderNbStrip() {
   const nb = NB_LIST.find(x => x.id === NB_CUR);
   const dir = NB_DIRS.find(x => x.id === NB_CURDIR);
   $('nb-strip-text').innerHTML = dir
-    ? `<b>${esc(nb ? nb.name : '生词本')}</b><span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span>`
-    : `<b>${esc(nb ? nb.name : '生词本')}</b><span class="nb-strip-path">未选目录 · 点我选择</span>`;
+    ? `<div class="nb-strip-row1"><b>${esc(nb ? nb.name : '生词本')}</b></div>` +
+      `<div class="nb-strip-row2"><span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span></div>`
+    : `<div class="nb-strip-row1"><b>${esc(nb ? nb.name : '生词本')}</b></div>` +
+      `<div class="nb-strip-row2"><span class="nb-strip-path">未选目录 · 点我选择</span></div>`;
 }
 
 // 目录选择面板：横条正下方就地展开/收起（不再底部弹窗）
