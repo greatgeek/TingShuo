@@ -2081,6 +2081,7 @@ function renderNbPickerList() {
 }
 
 async function nbOpenDir(dirId) {
+  nbPlayStop();
   NB_CURDIR = dirId;
   localStorage.setItem('ts_nb_dir', dirId);
   renderNbStrip();
@@ -2348,8 +2349,121 @@ async function aiSend() {
   }
 }
 
+// ============ 列表连播（▶ 全播）============
+// 顺序：每词读 word 次 → 其例句逐句各读 sent 次；整表循环 loop 次。仅日语音频。
+let PL_CFG = (() => {
+  try { return Object.assign({ word: 2, sent: 1, loop: 1 }, JSON.parse(localStorage.getItem('ts_nb_play_cfg') || '{}')); }
+  catch { return { word: 2, sent: 1, loop: 1 }; }
+})();
+let PL = null;
+
+async function sayBlobURL(text) {
+  const key = 'say:' + text;
+  const hit = await idbGet(key);
+  if (hit && hit.blob) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
+  const r = await fetchAuth('/api/v1/audio/say', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+  });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const blob = await r.blob();
+  idbPut(key, blob);
+  return URL.createObjectURL(blob);
+}
+
+function nbPlayItems() {
+  const items = [];
+  (NB_WORDS[NB_CURDIR] || []).forEach(w => {
+    for (let k = 0; k < PL_CFG.word; k++) items.push({ kind: 'word', w });
+    (w.sentences || []).forEach((s, si) => {
+      for (let k = 0; k < PL_CFG.sent; k++) items.push({ kind: 'sent', w, s, si });
+    });
+  });
+  return items;
+}
+
+async function nbPlayStart() {
+  nbPlayStop();
+  const items = nbPlayItems();
+  if (!items.length) { toast('本目录没有可播放内容'); return; }
+  PL = { items, i: 0, loop: 0, audio: new Audio() };
+  PL.audio.addEventListener('ended', () => nbPlayNext());
+  PL.audio.addEventListener('error', () => { toast('音频播放出错，跳下一条'); nbPlayNext(); });
+  $('nb-nowbar').hidden = false;
+  await nbPlayStep();
+}
+
+function nbPlayStop() {
+  if (PL) { try { PL.audio.pause(); } catch (e) {} PL = null; }
+  document.querySelectorAll('#nb-words .playing').forEach(x => x.classList.remove('playing'));
+  const bar = $('nb-nowbar');
+  if (bar) bar.hidden = true;
+}
+
+async function nbPlayNext() {
+  if (!PL) return;
+  PL.i++;
+  if (PL.i >= PL.items.length) {
+    PL.loop++;
+    if (PL.loop >= PL_CFG.loop) { nbPlayStop(); toast('播放完成'); return; }
+    PL.i = 0;
+  }
+  await nbPlayStep();
+}
+
+function nbPlayHighlight(it) {
+  document.querySelectorAll('#nb-words .playing').forEach(x => x.classList.remove('playing'));
+  const words = NB_WORDS[NB_CURDIR] || [];
+  const row = document.querySelectorAll('#nb-words .wordrow')[words.indexOf(it.w)];
+  if (!row) return;
+  row.classList.add('playing');
+  if (!row.querySelector('.nb-sents')) nbToggleWord(it.w, row); // 自动展开当前词的例句
+  if (it.kind === 'sent') {
+    const sr = row.querySelectorAll('.nb-sent')[it.si];
+    if (sr) { sr.classList.add('playing'); sr.scrollIntoView({ block: 'center' }); }
+  } else {
+    row.scrollIntoView({ block: 'center' });
+  }
+  const wi = words.indexOf(it.w) + 1;
+  const sent = it.kind === 'sent' ? ` · 句 ${it.si + 1}/${(it.w.sentences || []).length}：${it.s.text.slice(0, 18)}` : ' · 单词';
+  $('nb-now-text').textContent = `遍 ${PL.loop + 1}/${PL_CFG.loop} · 词 ${wi}/${words.length} ${it.w.surface}${sent}`;
+}
+
+async function nbPlayStep() {
+  if (!PL) return;
+  const it = PL.items[PL.i];
+  nbPlayHighlight(it);
+  try {
+    const url = it.kind === 'word' ? await wordAudioBlobURL(it.w.word_id) : await sayBlobURL(it.s.text);
+    if (!PL) return;
+    PL.audio.src = url;
+    await playUnlock(PL.audio);
+  } catch (e) {
+    toast('获取音频失败，跳过：' + e.message);
+    nbPlayNext();
+  }
+}
+
+function openNbCfg() {
+  $('cfg-word').value = PL_CFG.word;
+  $('cfg-sent').value = PL_CFG.sent;
+  $('cfg-loop').value = PL_CFG.loop;
+  $('nb-cfg-mask').style.display = 'flex';
+}
+function saveNbCfg() {
+  const c = v => Math.min(9, Math.max(1, parseInt(v, 10) || 1));
+  PL_CFG = { word: c($('cfg-word').value), sent: c($('cfg-sent').value), loop: c($('cfg-loop').value) };
+  localStorage.setItem('ts_nb_play_cfg', JSON.stringify(PL_CFG));
+  $('nb-cfg-mask').style.display = 'none';
+  toast(`已保存：词 ×${PL_CFG.word} · 句 ×${PL_CFG.sent} · 循环 ×${PL_CFG.loop}`);
+}
+
 // ============ 启动 ============
 $('ai-send').onclick = aiSend;
 $('nb-strip').onclick = openNbPicker;
+$('nb-play-all').onclick = nbPlayStart;
+$('nb-play-cfg').onclick = openNbCfg;
+$('nb-now-stop').onclick = () => nbPlayStop();
+$('cfg-save').onclick = saveNbCfg;
+$('cfg-cancel').onclick = () => { $('nb-cfg-mask').style.display = 'none'; };
 $('ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 if (TOKEN) afterLogin(); else { $('userchip').textContent = '未登录'; go('login'); }

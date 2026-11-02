@@ -172,6 +172,12 @@
     <div class="card nb-strip" id="nb-strip">
       <div class="nb-strip-main" id="nb-strip-text">生词本</div>
       <button class="btn ghost" id="nb-strip-btn">更换</button>
+      <button class="btn ghost" id="nb-play-cfg" title="播放设置">⚙</button>
+      <button class="btn accent" id="nb-play-all" title="按设置连播本目录全部词与例句">▶ 全播</button>
+    </div>
+    <div class="card nb-nowbar" id="nb-nowbar" hidden>
+      <span id="nb-now-text"></span>
+      <button class="btn ghost" id="nb-now-stop">■ 停止</button>
     </div>
     <div class="card nb-pickpanel" id="nbp-panel" hidden>
       <select id="nbp-nb"></select>
@@ -189,6 +195,19 @@
     <div class="picker-list" id="picker-list"></div>
     <button class="btn accent" id="picker-ok" onclick="pickerConfirm()">加入词单</button>
     <button class="btn ghost" onclick="closePicker()">取消</button>
+  </div>
+</div>
+<div class="picker-mask nb-cfg-mask" id="nb-cfg-mask" style="display:none">
+  <div class="picker card nb-cfg">
+    <h2>播放设置</h2>
+    <label>单词播放次数<input type="number" id="cfg-word" min="1" max="9" value="2"></label>
+    <label>句子播放次数<input type="number" id="cfg-sent" min="1" max="9" value="1"></label>
+    <label>本列表循环次数<input type="number" id="cfg-loop" min="1" max="9" value="1"></label>
+    <p class="hint">仅播放日语音频：单词按读音读、例句按原文读。设置自动保存。</p>
+    <div class="row2">
+      <button class="btn accent" id="cfg-save">保存</button>
+      <button class="btn ghost" id="cfg-cancel">取消</button>
+    </div>
   </div>
 </div>
 <script src="js/app.js"></script>
