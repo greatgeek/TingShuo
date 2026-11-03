@@ -137,7 +137,28 @@
     <div class="tabs" id="mat-tabs"></div>
     <div class="row2" style="margin-bottom:10px">
       <button class="btn ghost" id="play-all-btn">▶ 整段连播</button>
+      <button class="btn ghost" id="pod-btn" title="本课中日双语播客">🎙 播客</button>
       <button class="btn accent" id="tts-btn">为全部句子配音</button>
+    </div>
+    <div class="card pod-panel" id="pod-panel" hidden>
+      <div class="pod-head">
+        <span class="pod-title">本课播客 · 思思 & xudong</span>
+        <span class="pod-state" id="pod-state"></span>
+        <span style="flex:1"></span>
+        <button class="btn ghost" id="pod-gen">生成播客</button>
+        <button class="btn ghost" id="pod-close">收起</button>
+      </div>
+      <div class="pod-bar">
+        <button class="btn ghost" id="pod-play">▶</button>
+        <select id="pod-rate" title="倍速">
+          <option value="0.8">0.8x</option>
+          <option value="1" selected>1.0x</option>
+          <option value="1.2">1.2x</option>
+        </select>
+        <span id="pod-time">0:00 / 0:00</span>
+      </div>
+      <div class="pod-sub" id="pod-sub"></div>
+      <div class="pod-list" id="pod-list"></div>
     </div>
     <div class="sents" id="sents"></div>
     <p class="hint" id="learn-hint" style="margin-top:12px"></p>

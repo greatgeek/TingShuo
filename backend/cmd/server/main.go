@@ -22,6 +22,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/internal/lesson"
 	"github.com/greatgeek/TingShuo/backend/internal/notebook"
+	"github.com/greatgeek/TingShuo/backend/internal/podcast"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
@@ -29,6 +30,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/wordstudy"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
+	"github.com/greatgeek/TingShuo/backend/pkg/doubaopod"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
 	"github.com/greatgeek/TingShuo/backend/pkg/envcfg"
 	"github.com/greatgeek/TingShuo/backend/pkg/jwtw"
@@ -86,6 +88,7 @@ func run() error {
 	genH := generate.NewHandler(pool)
 	jobH := generate.NewJobHandler(pool)
 	ttsH := tts.NewHandler(pool, store, azureTTS)
+	podH := podcast.NewHandler(pool, doubaopod.New(os.Getenv("DOUBAO_TTS_API_KEY")), store)
 	favH := favorite.NewHandler(pool)
 	wordH := word.NewHandler(pool)
 
@@ -147,6 +150,10 @@ func run() error {
 			sec.Get("/notebooks/dir/{dir_id}/words", nbH.DirWords)
 
 			sec.Post("/audio/say", ttsH.Say)
+			sec.Post("/podcast/generate", podH.Generate)
+			sec.Post("/podcast/script", podH.Script)
+			sec.Get("/podcast/by-lesson/{lesson_id}", podH.Latest)
+			sec.Get("/podcast/{id}/file", podH.File)
 
 			sec.Post("/favorites", favH.AddSentence)
 			sec.Delete("/favorites/sentences/{sentence_id}", favH.RemoveSentence)

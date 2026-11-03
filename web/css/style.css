@@ -353,3 +353,25 @@ body.no-rt rt { display: none; }
 #nb-now-text{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* 连播时给列表底部留出控制条高度（条高46+距底12+余量），否则最后一条会被压住且无法真正居中 */
 body.nb-playing #sc-notebook{padding-bottom:80px}
+
+/* 本课播客播放器（就地展开、占满宽度） */
+.pod-panel{margin-bottom:12px;padding:10px 12px}
+.pod-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pod-title{font-weight:600;font-size:14px}
+.pod-state{font-size:12px;color:#888}
+.pod-head .btn{padding:4px 10px;font-size:12px;width:auto;flex:0 0 auto}
+.pod-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
+.pod-bar .btn{padding:4px 12px;font-size:13px;width:auto;flex:0 0 auto}
+.pod-bar select{padding:3px 6px;font-size:12px;border:1px solid #ddd;border-radius:6px;background:#fff}
+#pod-time{font-size:12px;color:#666;font-variant-numeric:tabular-nums}
+.pod-sub{margin-top:8px;padding:8px 10px;background:#f6f8fa;border-radius:8px;font-size:14px;min-height:20px}
+.pod-list{margin-top:8px;max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.pod-row{display:flex;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px;line-height:1.5}
+.pod-row:hover{background:#f2f4f6}
+.pod-row.on{background:#e8f1fb}
+.pod-row .who{flex:0 0 auto;font-size:11px;color:#fff;border-radius:4px;padding:1px 5px;height:fit-content;margin-top:2px}
+.pod-row .who.a{background:#5b8def}
+.pod-row .who.b{background:#e8833a}
+.pod-row .tx{min-width:0}
+.pod-row.ja .tx{color:#0a6b52}
+#pod-gen[hidden]{display:none}

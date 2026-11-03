@@ -2522,6 +2522,108 @@ function saveNbCfg() {
   toast(`已保存：词 ×${PL_CFG.word} · 句 ×${PL_CFG.sent} · 循环 ×${PL_CFG.loop}`);
 }
 
+// ============ 本课播客（v13：思思+xudong 单场双语） ============
+let POD = null; // {id, timeline, duration_ms, audio, url, cur}
+function podFmt(ms) { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+async function podOpen() {
+  $('pod-panel').hidden = false;
+  const lid = LESSON && LESSON.lesson && LESSON.lesson.id;
+  if (!lid) { $('pod-state').textContent = '未打开课程'; return; }
+  $('pod-state').textContent = '载入中…';
+  try {
+    const meta = await api('/podcast/by-lesson/' + lid);
+    await podLoad(meta);
+  } catch (e) {
+    podReset();
+  }
+}
+function podReset() {
+  podStopAudio();
+  $('pod-state').textContent = '本课还没有播客';
+  $('pod-list').innerHTML = '';
+  $('pod-sub').textContent = '';
+  $('pod-time').textContent = '0:00 / 0:00';
+  $('pod-gen').hidden = false;
+}
+async function podLoad(meta) {
+  podStopAudio();
+  POD = { id: meta.episode_id, timeline: meta.timeline, duration_ms: meta.duration_ms, cur: -1 };
+  $('pod-gen').hidden = true;
+  $('pod-state').textContent = '已生成 · ' + meta.rounds + ' 轮';
+  const r = await fetchAuth('/api/v1/podcast/' + meta.episode_id + '/file');
+  if (!r.ok) throw new Error('音频加载失败 HTTP ' + r.status);
+  POD.url = URL.createObjectURL(await r.blob());
+  const a = new Audio(POD.url);
+  POD.audio = a;
+  a.playbackRate = parseFloat(localStorage.getItem('ts_pod_rate') || '1');
+  $('pod-rate').value = String(a.playbackRate);
+  a.addEventListener('timeupdate', podTick);
+  a.addEventListener('ended', () => { $('pod-play').textContent = '▶'; });
+  a.addEventListener('loadedmetadata', () => {
+    const pos = parseFloat(localStorage.getItem('ts_pod_pos_' + POD.id) || '0'); // 记住上次位置（毫秒）
+    if (pos > 1000 && pos < meta.duration_ms - 3000) a.currentTime = pos / 1000;
+  });
+  podRenderList();
+  podTick();
+}
+function podRenderList() {
+  const box = $('pod-list'); box.innerHTML = '';
+  POD.timeline.forEach((s) => {
+    const row = document.createElement('div');
+    row.className = 'pod-row' + (HasJa(s.text) ? ' ja' : '');
+    row.innerHTML = `<span class="who ${s.role}">${s.role === 'a' ? '思' : 'xu'}</span><span class="tx"></span>`;
+    row.querySelector('.tx').textContent = s.text;
+    row.onclick = () => { POD.audio.currentTime = s.start_ms / 1000; podPlay(true); };
+    box.appendChild(row);
+  });
+}
+function HasJa(s) { return /[\u3040-\u30FF\uFF66-\uFF9F]/.test(s); }
+function podTick() {
+  if (!POD || !POD.audio) return;
+  const t = POD.audio.currentTime * 1000;
+  $('pod-time').textContent = podFmt(t) + ' / ' + podFmt(POD.duration_ms);
+  let idx = -1;
+  for (let i = 0; i < POD.timeline.length; i++) {
+    if (t >= POD.timeline[i].start_ms && t < POD.timeline[i].end_ms) { idx = i; break; }
+  }
+  if (idx !== POD.cur) {
+    POD.cur = idx;
+    const rows = $('pod-list').children;
+    for (let i = 0; i < rows.length; i++) rows[i].classList.toggle('on', i === idx);
+    $('pod-sub').textContent = idx >= 0 ? POD.timeline[idx].text : '';
+    if (idx >= 0) {
+      const list = $('pod-list'), row = rows[idx];
+      const rt = row.offsetTop, lh = row.offsetHeight, vt = list.scrollTop, vh = list.clientHeight;
+      if (rt < vt + 4 || rt + lh > vt + vh - 4) list.scrollTo({ top: Math.max(0, rt - vh / 2 + lh / 2), behavior: 'smooth' });
+    }
+  }
+  if (POD.audio.currentTime > 0.5) localStorage.setItem('ts_pod_pos_' + POD.id, String(Math.floor(t))); // 记住上次位置（加载瞬间的 0 不覆写）
+}
+function podPlay(on) {
+  if (!POD || !POD.audio) return;
+  if (on) { POD.audio.play(); $('pod-play').textContent = '⏸'; }
+  else { POD.audio.pause(); $('pod-play').textContent = '▶'; }
+}
+function podStopAudio() {
+  if (POD && POD.audio) { try { POD.audio.pause(); } catch (e) {} if (POD.url) URL.revokeObjectURL(POD.url); }
+  POD = null;
+}
+async function podGenerate() {
+  const lid = LESSON && LESSON.lesson && LESSON.lesson.id;
+  if (!lid) return;
+  $('pod-gen').disabled = true;
+  $('pod-state').textContent = '生成中：写稿 → 合成 → 装配（约 30—60 秒）…';
+  try {
+    const meta = await api('/podcast/generate', { method: 'POST', body: JSON.stringify({ lesson_id: lid }) });
+    await podLoad(meta);
+    podPlay(true);
+  } catch (e) {
+    $('pod-state').textContent = '生成失败：' + e.message;
+  } finally {
+    $('pod-gen').disabled = false;
+  }
+}
+
 // ============ 启动 ============
 // 原内联 onclick/oninput 全部改为绑定（CSP 禁内联脚本）
 $('nav-back').onclick = goBack;
@@ -2563,6 +2665,15 @@ $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
 $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
+$('pod-btn').onclick = podOpen;
+$('pod-close').onclick = () => { podStopAudio(); $('pod-panel').hidden = true; };
+$('pod-gen').onclick = podGenerate;
+$('pod-play').onclick = () => { if (POD) podPlay(POD.audio.paused); };
+$('pod-rate').onchange = e => {
+  const v = parseFloat(e.target.value);
+  localStorage.setItem('ts_pod_rate', String(v));
+  if (POD && POD.audio) POD.audio.playbackRate = v;
+};
 // 用户主动滚动/触摸滑动后停止自动跟随；程序滚动期间（autoScrolling）续期静默窗口，不误判
 addEventListener('wheel', userScrolled, { passive: true });
 addEventListener('touchmove', userScrolled, { passive: true });
