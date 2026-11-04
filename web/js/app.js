@@ -2539,6 +2539,7 @@ async function podOpen(kind, id, slot) {
   POD_SRC = { kind, id };
   podMount(slot);
   $('pod-panel').hidden = false;
+  $('pod-log').hidden = true;
   $('pod-title').textContent = (kind === 'dir' ? '本单元播客' : '本课播客') + ' · 思思 & xudong';
   $('pod-state').textContent = '载入中…';
   try {
@@ -2622,15 +2623,67 @@ function podStopAudio() {
 async function podGenerate() {
   if (!POD_SRC) return;
   $('pod-gen').disabled = true;
-  $('pod-state').textContent = '生成中：写稿 → 合成 → 装配（约 30—60 秒）…';
+  const log = $('pod-log');
+  log.hidden = false; log.innerHTML = '';
+  const t0 = Date.now();
+  const stamp = () => podFmt(Date.now() - t0);
+  const podLog = (msg, isCur) => {
+    const d = document.createElement('div');
+    if (isCur) d.className = 'cur';
+    d.textContent = stamp() + '  ' + msg;
+    log.appendChild(d);
+    log.scrollTop = log.scrollHeight; // 日志框内自动滚到底（页面不动）
+    return d;
+  };
+  const ticker = setInterval(() => { $('pod-state').textContent = '生成中 ' + Math.round((Date.now() - t0) / 1000) + 's'; }, 500);
   try {
     const body = POD_SRC.kind === 'dir' ? { dir_id: POD_SRC.id } : { lesson_id: POD_SRC.id };
-    const meta = await api('/podcast/generate', { method: 'POST', body: JSON.stringify(body) });
+    const r = await fetchAuth('/api/v1/podcast/generate/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+    }
+    const reader = r.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', ev = '', meta = null, errMsg = null, roundEl = null, scriptEl = null;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const ls = buf.split('\n'); buf = ls.pop() || '';
+      for (const line of ls) {
+        if (line.startsWith('event:')) { ev = line.slice(6).trim(); continue; }
+        if (!line.startsWith('data:')) continue;
+        let d = {}; try { d = JSON.parse(line.slice(5)); } catch (e) { continue; }
+        if (ev === 'stage') { roundEl = null; scriptEl = null; podLog(d.msg, true); }
+        else if (ev === 'script') {
+          if (scriptEl) scriptEl.remove(); // 写稿字数原地刷新
+          scriptEl = podLog(d.msg, true);
+        }
+        else if (ev === 'round') {
+          if (roundEl) roundEl.remove(); // 轮次行原地刷新，不刷屏
+          roundEl = podLog(d.msg, true);
+        }
+        else if (ev === 'done') meta = d;
+        else if (ev === 'error') errMsg = d.message;
+      }
+    }
+    if (errMsg) throw new Error(errMsg);
+    if (!meta) throw new Error('流结束但未收到 done 事件');
+    podLog(meta.cached ? '命中缓存，直接载入' : '完成，开始播放');
+    await new Promise(res => setTimeout(res, 400));
+    log.hidden = true;
     await podLoad(meta);
     podPlay(true);
   } catch (e) {
+    podLog('失败：' + e.message);
     $('pod-state').textContent = '生成失败：' + e.message;
   } finally {
+    clearInterval(ticker);
     $('pod-gen').disabled = false;
   }
 }

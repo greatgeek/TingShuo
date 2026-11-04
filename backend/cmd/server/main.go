@@ -151,6 +151,7 @@ func run() error {
 
 			sec.Post("/audio/say", ttsH.Say)
 			sec.Post("/podcast/generate", podH.Generate)
+			sec.Post("/podcast/generate/stream", podH.Stream)
 			sec.Post("/podcast/script", podH.Script)
 			sec.Get("/podcast/by-lesson/{lesson_id}", podH.Latest)
 			sec.Get("/podcast/by-dir/{dir_id}", podH.LatestDir)

@@ -9,6 +9,7 @@
 package podcast
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -49,17 +50,6 @@ type Handler struct {
 
 func NewHandler(pool *pgxpool.Pool, pod *doubaopod.Client, store *storage.Client) *Handler {
 	return &Handler{pool: pool, pod: pod, store: store}
-}
-
-// HasJapanese 判断文本是否含假名（平/片/半角）。
-// 注意：纯汉字日语词（如「食費」）无法与中文区分，v1 依赖生成端 prompt 将其归入日语行。
-func HasJapanese(s string) bool {
-	for _, r := range s {
-		if (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F) {
-			return true
-		}
-	}
-	return false
 }
 
 // Line 为脚本一行：role 决定音色，文本语言（中/日）由内容决定。
@@ -146,74 +136,83 @@ func cacheKey(lessonID, dirID string, lines []Line) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// Generate POST /podcast/generate {lesson_id?, lines?}：生成一集 v13 播客并落库。
-// lines 缺省时由 LLM 从 lesson_id 出稿；cache_key 命中直接返回既有集（cached=true）。
-// 音频不经 JSON 返回：前端凭 episode_id 走 GET /podcast/{id}/file 流式播放。
-func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
-	userID := auth.FromContext(r.Context())
-	if !genLim.Allow(userID) || !genDaily.Allow(userID) {
-		httpx.Err(w, httpx.NewError(http.StatusTooManyRequests, "QUOTA", "播客生成过于频繁（每日上限 20 集）"))
-		return
-	}
-	var req struct {
-		LessonID string `json:"lesson_id"`
-		DirID    string `json:"dir_id"`
-		Lines    []Line `json:"lines"`
-	}
-	if e := httpx.Decode(r, &req); e != nil {
-		httpx.Err(w, e)
-		return
+type genReq struct {
+	LessonID string `json:"lesson_id"`
+	DirID    string `json:"dir_id"`
+	Lines    []Line `json:"lines"`
+}
+
+// Meta 为一集的返回元数据（JSON 与 SSE done 事件共用）。
+type Meta struct {
+	EpisodeID  string    `json:"episode_id"`
+	Cached     bool      `json:"cached"`
+	Timeline   []Segment `json:"timeline"`
+	SRT        string    `json:"srt"`
+	DurationMS int64     `json:"duration_ms"`
+	Rounds     int       `json:"rounds"`
+}
+
+// generateCore 生成或取缓存一集；emit 非 nil 时推送进度事件（事件名, data）。
+func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, emit func(string, map[string]any)) (*Meta, *httpx.APIError) {
+	stage := func(msg string) {
+		if emit != nil {
+			emit("stage", map[string]any{"msg": msg})
+		}
 	}
 	lines := req.Lines
 	llmModel := ""
 	if len(lines) == 0 {
 		if req.LessonID == "" && req.DirID == "" {
-			httpx.Err(w, httpx.BadRequest("PARAMS_INVALID", "lesson_id / dir_id / lines 至少给一个"))
-			return
+			return nil, httpx.BadRequest("PARAMS_INVALID", "lesson_id / dir_id / lines 至少给一个")
 		}
+		stage("读取原料…")
 		var (
 			in  Input
 			err error
 		)
 		if req.DirID != "" {
-			in, err = LoadDirInput(r.Context(), h.pool, userID, req.DirID)
+			in, err = LoadDirInput(ctx, h.pool, userID, req.DirID)
 		} else {
-			in, err = LoadLessonInput(r.Context(), h.pool, userID, req.LessonID)
+			in, err = LoadLessonInput(ctx, h.pool, userID, req.LessonID)
 		}
 		if err != nil {
-			httpx.Err(w, httpx.NotFound(err.Error()))
-			return
+			return nil, httpx.NotFound(err.Error())
 		}
 		if len(in.Words) == 0 {
-			httpx.Err(w, httpx.BadRequest("SOURCE_EMPTY", "该来源没有可用于播客的词"))
-			return
+			return nil, httpx.BadRequest("SOURCE_EMPTY", "该来源没有可用于播客的词")
 		}
-		lines, err = BuildScript(r.Context(), in)
+		stage(fmt.Sprintf("LLM 写稿中（%d 词 %d 句入料）…", len(in.Words), len(in.Sentences)))
+		lines, err = BuildScript(ctx, in, func(think, content int) {
+			if emit == nil {
+				return
+			}
+			if content == 0 {
+				emit("script", map[string]any{"chars": content, "msg": fmt.Sprintf("构思中… 已思考 %d 字", think)})
+			} else {
+				emit("script", map[string]any{"chars": content, "msg": fmt.Sprintf("写稿中… 已生成 %d 字", content)})
+			}
+		})
 		if err != nil {
-			httpx.Err(w, httpx.NewError(http.StatusBadGateway, "SCRIPT_LLM", err.Error()))
-			return
+			return nil, httpx.NewError(http.StatusBadGateway, "SCRIPT_LLM", err.Error())
 		}
 		llmModel = os.Getenv("LLM_MODEL")
+		stage(fmt.Sprintf("写稿完成：%d 行对话", len(lines)))
 	} else if req.DirID != "" {
-		if _, err := LoadDirInput(r.Context(), h.pool, userID, req.DirID); err != nil {
-			httpx.Err(w, httpx.NotFound(err.Error()))
-			return
+		if _, err := LoadDirInput(ctx, h.pool, userID, req.DirID); err != nil {
+			return nil, httpx.NotFound(err.Error())
 		}
 	} else if req.LessonID != "" {
 		var n int
-		if err := h.pool.QueryRow(r.Context(), `SELECT count(1) FROM daily_lesson WHERE id=$1 AND user_id=$2`, req.LessonID, userID).Scan(&n); err != nil || n == 0 {
-			httpx.Err(w, httpx.NotFound("课程不存在或不属于当前用户"))
-			return
+		if err := h.pool.QueryRow(ctx, `SELECT count(1) FROM daily_lesson WHERE id=$1 AND user_id=$2`, req.LessonID, userID).Scan(&n); err != nil || n == 0 {
+			return nil, httpx.NotFound("课程不存在或不属于当前用户")
 		}
 	}
 	if len(lines) < 2 {
-		httpx.Err(w, httpx.BadRequest("SCRIPT_TOO_SHORT", "脚本至少 2 行"))
-		return
+		return nil, httpx.BadRequest("SCRIPT_TOO_SHORT", "脚本至少 2 行")
 	}
 	sessionLines, err := SessionLines(lines)
 	if err != nil {
-		httpx.Err(w, httpx.BadRequest("SCRIPT_INVALID", err.Error()))
-		return
+		return nil, httpx.BadRequest("SCRIPT_INVALID", err.Error())
 	}
 
 	ck := cacheKey(req.LessonID, req.DirID, lines)
@@ -224,33 +223,34 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 		tlJSON     []byte
 		srt        string
 	)
-	if err := h.pool.QueryRow(r.Context(),
+	if err := h.pool.QueryRow(ctx,
 		`SELECT id, duration_ms, rounds, timeline, srt FROM podcast_episode WHERE cache_key=$1`, ck).
 		Scan(&epID, &durationMS, &rounds, &tlJSON, &srt); err == nil {
 		var tl []Segment
 		json.Unmarshal(tlJSON, &tl)
-		httpx.WriteJSON(w, http.StatusOK, map[string]any{
-			"episode_id": epID, "cached": true, "timeline": tl, "srt": srt,
-			"duration_ms": durationMS, "rounds": rounds,
-		})
-		return
+		return &Meta{EpisodeID: epID, Cached: true, Timeline: tl, SRT: srt, DurationMS: int64(durationMS), Rounds: rounds}, nil
 	}
 
 	t0 := time.Now()
-	roundBufs, err := h.pod.Session(r.Context(), [2]string{doubaopod.VoiceSisi, doubaopod.VoiceXudong}, sessionLines, nil)
+	n := len(sessionLines)
+	stage(fmt.Sprintf("合成中 0/%d 轮…", n))
+	roundBufs, err := h.pod.Session(ctx, [2]string{doubaopod.VoiceSisi, doubaopod.VoiceXudong}, sessionLines, nil, func(i int) {
+		if emit != nil {
+			emit("round", map[string]any{"i": i + 1, "n": n, "msg": fmt.Sprintf("合成中 %d/%d 轮…", i+1, n)})
+		}
+	})
 	if err != nil {
-		httpx.Err(w, httpx.NewError(http.StatusBadGateway, "PODCAST_UPSTREAM", err.Error()))
-		return
+		return nil, httpx.NewError(http.StatusBadGateway, "PODCAST_UPSTREAM", err.Error())
 	}
+	stage("装配音频与时间轴…")
 	audio, tl, err := AssembleRounds(roundBufs, lines)
 	if err != nil {
-		httpx.Err(w, httpx.BadRequest("ASSEMBLE_INVALID", err.Error()))
-		return
+		return nil, httpx.BadRequest("ASSEMBLE_INVALID", err.Error())
 	}
+	stage("落库与缓存…")
 	epID = ulid.MustNew()
-	if err := h.store.PutAudio(r.Context(), "podcast-"+epID, audio); err != nil {
-		httpx.Err(w, httpx.BadGateway("对象存储写入失败: "+err.Error()))
-		return
+	if err := h.store.PutAudio(ctx, "podcast-"+epID, audio); err != nil {
+		return nil, httpx.BadGateway("对象存储写入失败: " + err.Error())
 	}
 	tlJSON, _ = json.Marshal(tl)
 	srt = SRT(tl)
@@ -258,24 +258,77 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	for _, l := range lines {
 		chars += len([]rune(l.Text))
 	}
-	_, err = h.pool.Exec(r.Context(), `
+	_, err = h.pool.Exec(ctx, `
 		INSERT INTO podcast_episode (id, user_id, lesson_id, dir_id, cache_key, script, timeline, srt, storage_key, duration_ms, rounds, llm_model)
 		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,NULLIF($12,''))`,
 		epID, userID, req.LessonID, req.DirID, ck, mustJSON(lines), tlJSON, srt, storage.AudioKey("podcast-"+epID),
 		tl[len(tl)-1].EndMS, len(roundBufs), llmModel)
 	if err != nil {
-		httpx.Err(w, httpx.BadGateway("落库失败: "+err.Error()))
-		return
+		return nil, httpx.BadGateway("落库失败: " + err.Error())
 	}
-	h.pool.Exec(r.Context(), `
+	h.pool.Exec(ctx, `
 		INSERT INTO tts_call_log (id, user_id, voice, chars, duration_ms, cache_hit)
 		VALUES ($1,$2,'doubao-podcast-v13',$3,$4,false)`,
 		ulid.MustNew(), userID, chars, time.Since(t0).Milliseconds())
+	return &Meta{EpisodeID: epID, Cached: false, Timeline: tl, SRT: srt, DurationMS: tl[len(tl)-1].EndMS, Rounds: len(roundBufs)}, nil
+}
 
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"episode_id": epID, "cached": false, "timeline": tl, "srt": srt,
-		"duration_ms": tl[len(tl)-1].EndMS, "rounds": len(roundBufs),
-	})
+// Generate POST /podcast/generate：一次性 JSON 返回（脚本/工具用）。
+func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	if !genLim.Allow(userID) || !genDaily.Allow(userID) {
+		httpx.Err(w, httpx.NewError(http.StatusTooManyRequests, "QUOTA", "播客生成过于频繁（每日上限 20 集）"))
+		return
+	}
+	var req genReq
+	if e := httpx.Decode(r, &req); e != nil {
+		httpx.Err(w, e)
+		return
+	}
+	meta, aerr := h.generateCore(r.Context(), userID, req, nil)
+	if aerr != nil {
+		httpx.Err(w, aerr)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, meta)
+}
+
+// Stream POST /podcast/generate/stream：SSE 进度流（前端滚动日志用）。
+// 事件：stage{msg} / round{i,n,msg} / done{Meta} / error{message} / end{}
+func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	if !genLim.Allow(userID) || !genDaily.Allow(userID) {
+		httpx.Err(w, httpx.NewError(http.StatusTooManyRequests, "QUOTA", "播客生成过于频繁（每日上限 20 集）"))
+		return
+	}
+	var req genReq
+	if e := httpx.Decode(r, &req); e != nil {
+		httpx.Err(w, e)
+		return
+	}
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		httpx.Err(w, httpx.NewError(http.StatusInternalServerError, "NO_STREAM", "不支持流式响应"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no") // nginx 不缓冲，进度实时到端
+	emit := func(ev string, data map[string]any) {
+		b, _ := json.Marshal(data)
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev, b)
+		fl.Flush()
+	}
+	meta, aerr := h.generateCore(r.Context(), userID, req, emit)
+	if aerr != nil {
+		emit("error", map[string]any{"message": aerr.Message})
+	} else {
+		emit("done", map[string]any{
+			"episode_id": meta.EpisodeID, "cached": meta.Cached, "timeline": meta.Timeline,
+			"srt": meta.SRT, "duration_ms": meta.DurationMS, "rounds": meta.Rounds,
+		})
+	}
+	emit("end", map[string]any{})
 }
 
 // Latest GET /podcast/by-lesson/{lesson_id}：该课最新一集元数据（无则 404）。
@@ -389,7 +442,7 @@ func (h *Handler) Script(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.BadRequest("LESSON_EMPTY", "该课没有可用于播客的词"))
 		return
 	}
-	lines, err := BuildScript(r.Context(), in)
+	lines, err := BuildScript(r.Context(), in, nil)
 	if err != nil {
 		httpx.Err(w, httpx.NewError(http.StatusBadGateway, "SCRIPT_LLM", err.Error()))
 		return

@@ -383,3 +383,9 @@ body.nb-playing #sc-notebook{padding-bottom:80px}
 .nb-strip #nb-strip-btn{padding:5px 10px;font-size:12px;width:auto}
 .nb-strip #nb-play-all{padding:5px 12px;font-size:12px;width:auto}
 #pod-slot-nb .pod-panel{margin-top:8px}
+
+/* 播客生成滚动进度日志 */
+.pod-log{margin-top:8px;max-height:132px;overflow-y:auto;background:#101418;color:#c9d4e0;border-radius:8px;padding:8px 10px;font:12px/1.7 ui-monospace,Consolas,monospace;white-space:pre-wrap}
+.pod-log div{animation:podlog-in .25s ease}
+.pod-log .cur{color:#7fd1a8}
+@keyframes podlog-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}

@@ -67,7 +67,8 @@ type sessionReq struct {
 
 // Session 跑一场播客会话，返回按轮（360→362）切分的 MP3 缓冲。
 // rounds[i] 对应 lines[i]（action=3 保持脚本顺序，样片验证 8/8、3/3 对齐）。
-func (c *Client) Session(ctx context.Context, speakers [2]string, lines []Line, additions map[string]string) ([][]byte, error) {
+// onRound 非 nil 时每完成一轮回调轮下标（进度流用）。
+func (c *Client) Session(ctx context.Context, speakers [2]string, lines []Line, additions map[string]string, onRound func(int)) ([][]byte, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("DOUBAO_TTS_API_KEY 未配置")
 	}
@@ -119,6 +120,9 @@ func (c *Client) Session(ctx context.Context, speakers [2]string, lines []Line, 
 				cur = &bytes.Buffer{}
 				bufs = append(bufs, cur)
 			case "362":
+				if onRound != nil && len(bufs) > 0 {
+					onRound(len(bufs) - 1)
+				}
 				cur = nil
 			}
 			continue

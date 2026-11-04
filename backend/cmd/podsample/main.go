@@ -57,7 +57,7 @@ func main() {
 	script := fixedScript
 	if os.Getenv("POD_SCRIPT_LLM") == "1" {
 		ctx0 := context.Background()
-		lines, err := podcast.BuildScript(ctx0, demoInput)
+		lines, err := podcast.BuildScript(ctx0, demoInput, nil)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "LLM 脚本失败:", err)
 			os.Exit(1)
@@ -76,7 +76,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	rounds, err := client.Session(ctx, [2]string{doubaopod.VoiceSisi, doubaopod.VoiceXudong}, lines, nil)
+	rounds, err := client.Session(ctx, [2]string{doubaopod.VoiceSisi, doubaopod.VoiceXudong}, lines, nil, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "会话失败:", err)
 		os.Exit(1)
