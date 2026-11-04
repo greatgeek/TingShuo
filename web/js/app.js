@@ -2615,7 +2615,7 @@ function podShowEstimate() {
 }
 async function podLoad(meta) {
   podStopAudio();
-  POD = { id: meta.episode_id, timeline: meta.timeline, duration_ms: meta.duration_ms, cur: -1 };
+  POD = { id: meta.episode_id, timeline: meta.timeline, duration_ms: meta.duration_ms, cur: -1, follow: true, autoScrolling: false };
   $('pod-gen').hidden = true;
   $('pod-state').textContent = '已生成 · ' + meta.rounds + ' 轮 · ' + podFmt(meta.duration_ms);
   podRenderList(); // 列表与时间轴先出来：长集音频 15—25MB，不能等整包下载（手机上打不开，2026-11-04 实测）
@@ -2655,7 +2655,7 @@ function podRenderList() {
     row.className = 'pod-row' + (HasJa(s.text) ? ' ja' : '');
     row.innerHTML = `<span class="who ${s.role}">${s.role === 'a' ? '思' : 'xu'}</span><span class="tx"></span>`;
     row.querySelector('.tx').textContent = s.text;
-    row.onclick = () => { POD.audio.currentTime = s.start_ms / 1000; podPlay(true); };
+    row.onclick = () => { POD.follow = true; POD.audio.currentTime = s.start_ms / 1000; podPlay(true); };
     box.appendChild(row);
   });
 }
@@ -2673,17 +2673,36 @@ function podTick() {
     const rows = $('pod-list').children;
     for (let i = 0; i < rows.length; i++) rows[i].classList.toggle('on', i === idx);
     $('pod-sub').textContent = idx >= 0 ? POD.timeline[idx].text : '';
-    if (idx >= 0) {
-      const list = $('pod-list'), row = rows[idx];
-      const rt = row.offsetTop, lh = row.offsetHeight, vt = list.scrollTop, vh = list.clientHeight;
-      if (rt < vt + 4 || rt + lh > vt + vh - 4) list.scrollTo({ top: Math.max(0, rt - vh / 2 + lh / 2), behavior: 'smooth' });
-    }
+    if (idx >= 0 && POD.follow) podScrollToRow(rows[idx]);
   }
   if (POD.audio.currentTime > 0.5) localStorage.setItem('ts_pod_pos_' + POD.id, String(Math.floor(t))); // 记住上次位置（加载瞬间的 0 不覆写）
 }
+// 跟随时把当前行平滑滚到列表中央；用户手动滚过（POD.follow=false）就完全不动，
+// 与连播列表同一套静默期逻辑：程序滚动期间的 scroll 事件不误判为用户滚动
+let podAutoTimer = 0, podAutoDeadline = 0;
+function podBeginAutoScroll() {
+  POD.autoScrolling = true;
+  podAutoDeadline = Date.now() + 2500;
+  clearTimeout(podAutoTimer);
+  podAutoTimer = setTimeout(() => { if (POD) POD.autoScrolling = false; }, 200);
+}
+function podUserScrolled() {
+  if (!POD) return;
+  clearTimeout(podAutoTimer);
+  POD.autoScrolling = false;
+  POD.follow = false;
+}
+function podScrollToRow(row) {
+  const list = $('pod-list');
+  const rt = row.offsetTop, lh = row.offsetHeight, vt = list.scrollTop, vh = list.clientHeight;
+  if (rt < vt + 4 || rt + lh > vt + vh - 4) {
+    podBeginAutoScroll();
+    list.scrollTo({ top: Math.max(0, rt - vh / 2 + lh / 2), behavior: 'smooth' });
+  }
+}
 function podPlay(on) {
   if (!POD || !POD.audio) return;
-  if (on) { POD.audio.play(); $('pod-play').textContent = '⏸'; }
+  if (on) { POD.follow = true; POD.audio.play(); $('pod-play').textContent = '⏸'; }
   else { POD.audio.pause(); $('pod-play').textContent = '▶'; }
 }
 function podStopAudio() {
@@ -2811,8 +2830,8 @@ $('pod-rate').onchange = e => {
   if (POD && POD.audio) POD.audio.playbackRate = v;
 };
 // 用户主动滚动/触摸滑动后停止自动跟随；程序滚动期间（autoScrolling）续期静默窗口，不误判
-addEventListener('wheel', userScrolled, { passive: true });
-addEventListener('touchmove', userScrolled, { passive: true });
+addEventListener('wheel', () => { userScrolled(); podUserScrolled(); }, { passive: true });
+addEventListener('touchmove', () => { userScrolled(); podUserScrolled(); }, { passive: true });
 addEventListener('scroll', () => {
   if (!PL) return;
   if (PL.autoScrolling) {
@@ -2820,6 +2839,15 @@ addEventListener('scroll', () => {
     PL.autoScrolling = false;
   }
   PL.follow = false;
+}, { passive: true });
+// 播客字幕列表是内层滚动容器（scroll 不冒泡到 window），单独挂
+$('pod-list').addEventListener('scroll', () => {
+  if (!POD) return;
+  if (POD.autoScrolling) {
+    if (Date.now() < podAutoDeadline) { podBeginAutoScroll(); return; }
+    POD.autoScrolling = false;
+  }
+  POD.follow = false;
 }, { passive: true });
 $('cfg-save').onclick = saveNbCfg;
 $('cfg-cancel').onclick = () => { $('nb-cfg-mask').style.display = 'none'; };
