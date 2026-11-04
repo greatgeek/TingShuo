@@ -29,16 +29,19 @@ var fixedScript = []podcast.Line{
 	{Role: podcast.RoleA, Text: "下期见！"},
 }
 
-// demoInput 为 LLM 出稿模式的演示原料（一课的典型词+句）。
+// demoInput 为 LLM 出稿模式的演示原料（一个目录的典型词，每词带自己的例句）。
 var demoInput = podcast.Input{
+	Title: "钱和生活",
 	Words: []podcast.WordBrief{
-		{Surface: "食費", Reading: "しょくひ", Meaning: "伙食费，吃饭花的钱"},
-		{Surface: "外食", Reading: "がいしょく", Meaning: "在外吃饭，下馆子"},
-		{Surface: "財布", Reading: "さいふ", Meaning: "钱包"},
-	},
-	Sentences: []podcast.SentenceBrief{
-		{Text: "今月は外食が多かったので、食費が増えました。", Translation: "这个月在外吃饭比较多，所以伙食费增加了。"},
-		{Text: "財布の中に千円しか残っていません。", Translation: "钱包里只剩一千日元了。"},
+		{Surface: "食費", Reading: "しょくひ", Meaning: "伙食费，吃饭花的钱", Sentences: []podcast.SentenceBrief{
+			{Text: "今月は外食が多かったので、食費が増えました。", Translation: "这个月在外吃饭比较多，所以伙食费增加了。"},
+		}},
+		{Surface: "外食", Reading: "がいしょく", Meaning: "在外吃饭，下馆子", Sentences: []podcast.SentenceBrief{
+			{Text: "週末は家族と外食します。", Translation: "周末和家人出去吃饭。"},
+		}},
+		{Surface: "財布", Reading: "さいふ", Meaning: "钱包", Sentences: []podcast.SentenceBrief{
+			{Text: "財布の中に千円しか残っていません。", Translation: "钱包里只剩一千日元了。"},
+		}},
 	},
 }
 
@@ -57,14 +60,28 @@ func main() {
 	script := fixedScript
 	if os.Getenv("POD_SCRIPT_LLM") == "1" {
 		ctx0 := context.Background()
-		lines, err := podcast.BuildScript(ctx0, demoInput, nil)
+		t0 := time.Now()
+		lines, err := podcast.BuildScript(ctx0, demoInput, func(p podcast.Progress) {
+			fmt.Printf("  [%s] 写稿 %d/%d 段完成（刚写完 %s）\n",
+				time.Since(t0).Round(time.Second), p.Seg, p.Total, p.Label)
+		})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "LLM 脚本失败:", err)
 			os.Exit(1)
 		}
 		script = lines
-		tj, _ := json.MarshalIndent(lines, "", "  ")
-		fmt.Println(string(tj))
+		chars := 0
+		for _, l := range script {
+			chars += len([]rune(l.Text))
+		}
+		fmt.Printf("脚本 %d 行 %d 字 约 %d 分钟（按实测 309 字/分）耗时 %s\n",
+			len(script), chars, chars/309, time.Since(t0).Round(time.Second))
+		for i, l := range script {
+			fmt.Printf("%3d %s %s\n", i+1, l.Role, l.Text)
+		}
+		if os.Getenv("POD_SCRIPT_ONLY") == "1" {
+			return
+		}
 	}
 
 	for i := range script {
@@ -78,7 +95,7 @@ func main() {
 		os.Exit(1)
 	}
 	client := doubaopod.New(key)
-	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1800*time.Second)
 	defer cancel()
 
 	for i, l := range lines {

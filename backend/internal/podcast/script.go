@@ -9,18 +9,34 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// 脚本生成（v13 内容层）：LLM 出「行级脚本」，语言分配在本层决定（服务端持 LLM key，
-// 与 internal/generate/job.go 同模式：env LLM_BASE_URL / LLM_API_KEY / LLM_MODEL）。
+// 脚本生成（v0.4.0 长片）：分段写稿——开场导览 / 每 3 词一段深度讲解 / 收尾复习。
+// 一次让 LLM 吐几百行 JSON 必被输出上限截断，分段还顺带给出「第 n/N 段」的真实进度，
+// 以及段级重试（某段校验失败只重写那一段，不废掉整集）。
+// 防重复做法：每段带「已讲词 + 已用例句」清单和上一段末尾两行，而不是把前文全文塞回去
+// （podcastfy 用全文拼接，长集会把上下文撑爆）。
+// 服务端持 LLM key（env LLM_BASE_URL / LLM_API_KEY / LLM_MODEL），与 internal/generate/job.go 同模式。
+
+const (
+	wordsPerSeg     = 3    // 每段讲几个词
+	maxSentPerWord  = 2    // 每词最多带几句例句入料（多了会摊薄讲解）
+	minLinesPerWord = 9    // 每词最少行数：少于这个数说明讲解被压缩成"一句带过"
+	maxLinesPerWord = 28   // 每词最多行数：M3 关思考后稳定写到 22 行/词，留出余量但挡住失控
+	maxTotalLines   = 1500 // 整集行数上限（42 词大目录也能装下）
+	maxJaLineRunes  = 24   // 日语单行上限（用户实测：再长就听不懂）
+	maxZhLineRunes  = 40   // 中文单行上限（解析要篇幅，但一口气念不完就得拆）
+)
 
 type WordBrief struct {
-	Surface string `json:"surface"`
-	Reading string `json:"reading"`
-	Meaning string `json:"meaning"`
+	Surface   string          `json:"surface"`
+	Reading   string          `json:"reading"`
+	Meaning   string          `json:"meaning"`
+	Sentences []SentenceBrief `json:"sentences,omitempty"`
 }
 
 type SentenceBrief struct {
@@ -28,118 +44,251 @@ type SentenceBrief struct {
 	Translation string `json:"translation"`
 }
 
-// Input 为一集播客的内容原料（来自一课）。
+// Input 为一集播客的内容原料：一个目录（或一课）的全部词，每词带自己的例句。
 type Input struct {
-	Words     []WordBrief     `json:"words"`
-	Sentences []SentenceBrief `json:"sentences"`
+	Title string      `json:"title"`
+	Words []WordBrief `json:"words"`
 }
 
-// LoadLessonInput 取一课的关键词与例句作为播客原料（归属校验：课必须属于该用户）。
+// LoadLessonInput 取一课的全部词与每词例句（归属校验：课必须属于该用户）。
 func LoadLessonInput(ctx context.Context, pool *pgxpool.Pool, userID, lessonID string) (Input, error) {
-	var n int
-	if err := pool.QueryRow(ctx, `SELECT count(1) FROM daily_lesson WHERE id=$1 AND user_id=$2`, lessonID, userID).Scan(&n); err != nil || n == 0 {
+	var title string
+	err := pool.QueryRow(ctx,
+		`SELECT to_char(lesson_date,'YYYY年MM月DD日') FROM daily_lesson WHERE id=$1 AND user_id=$2`,
+		lessonID, userID).Scan(&title)
+	if err != nil {
 		return Input{}, fmt.Errorf("课程不存在或不属于当前用户")
 	}
-	var in Input
-	rows, err := pool.Query(ctx, `
-		SELECT w.surface, coalesce(w.reading,''), coalesce(w.meaning,'')
+	var (
+		in  = Input{Title: title + " 这一课"}
+		ids []string
+	)
+	rs, err := pool.Query(ctx, `
+		SELECT w.id, w.surface, coalesce(w.reading,''), coalesce(w.meaning,'')
 		FROM lesson_word lw JOIN word w ON w.id = lw.word_id
-		WHERE lw.lesson_id = $1
-		ORDER BY (w.mastery = 'key') DESC, w.surface
-		LIMIT 8`, lessonID)
+		WHERE lw.lesson_id = $1 AND NOT lw.skipped
+		ORDER BY lw.is_key DESC, w.surface`, lessonID)
 	if err != nil {
 		return Input{}, err
 	}
-	defer rows.Close()
-	for rows.Next() {
+	for rs.Next() {
+		var id string
 		var w WordBrief
-		if err := rows.Scan(&w.Surface, &w.Reading, &w.Meaning); err != nil {
+		if err := rs.Scan(&id, &w.Surface, &w.Reading, &w.Meaning); err != nil {
+			rs.Close()
 			return Input{}, err
 		}
+		ids = append(ids, id)
 		in.Words = append(in.Words, w)
 	}
-	if err := rows.Err(); err != nil {
-		return Input{}, err
-	}
-	srows, err := pool.Query(ctx, `
-		SELECT text, coalesce(translation,'') FROM sentence
-		WHERE lesson_id = $1 ORDER BY sort_order LIMIT 6`, lessonID)
+	err = rs.Err()
+	rs.Close()
 	if err != nil {
 		return Input{}, err
 	}
-	defer srows.Close()
-	for srows.Next() {
-		var s SentenceBrief
-		if err := srows.Scan(&s.Text, &s.Translation); err != nil {
-			return Input{}, err
-		}
-		in.Sentences = append(in.Sentences, s)
+	sents, err := sentencesByOwner(ctx, pool, `
+		SELECT ws.word_id, s.text, coalesce(s.translation,'')
+		FROM word_sentence ws JOIN sentence s ON s.id = ws.sentence_id
+		WHERE ws.lesson_id = $1 ORDER BY s.sort_order`, lessonID)
+	if err != nil {
+		return Input{}, err
 	}
-	return in, srows.Err()
+	attach(&in, ids, sents)
+	return in, nil
 }
 
-// LoadDirInput 取生词本目录（单元）的词与例句作为播客原料（v0.3.1：生词本横条入口）。
+// LoadDirInput 取生词本目录（单元）的全部词与每词例句。
 func LoadDirInput(ctx context.Context, pool *pgxpool.Pool, userID, dirID string) (Input, error) {
-	var n int
-	if err := pool.QueryRow(ctx, `
-		SELECT count(1) FROM notebook_dir d
+	var title string
+	err := pool.QueryRow(ctx, `
+		SELECT d.name FROM notebook_dir d
 		JOIN notebook nb ON nb.id = d.notebook_id
-		WHERE d.id = $1 AND nb.user_id = $2`, dirID, userID).Scan(&n); err != nil || n == 0 {
+		WHERE d.id = $1 AND nb.user_id = $2`, dirID, userID).Scan(&title)
+	if err != nil {
 		return Input{}, fmt.Errorf("目录不存在或不属于当前用户")
 	}
-	var in Input
-	rows, err := pool.Query(ctx, `
-		SELECT w.surface, coalesce(w.reading,''), coalesce(w.meaning,'')
+	var (
+		in  = Input{Title: title}
+		ids []string
+	)
+	rs, err := pool.Query(ctx, `
+		SELECT nw.id, w.surface, coalesce(w.reading,''), coalesce(w.meaning,'')
 		FROM notebook_word nw JOIN word w ON w.id = nw.word_id
-		WHERE nw.dir_id = $1 ORDER BY nw.sort_order LIMIT 8`, dirID)
+		WHERE nw.dir_id = $1 ORDER BY nw.sort_order`, dirID)
 	if err != nil {
 		return Input{}, err
 	}
-	defer rows.Close()
-	for rows.Next() {
+	for rs.Next() {
+		var id string
 		var w WordBrief
-		if err := rows.Scan(&w.Surface, &w.Reading, &w.Meaning); err != nil {
+		if err := rs.Scan(&id, &w.Surface, &w.Reading, &w.Meaning); err != nil {
+			rs.Close()
 			return Input{}, err
 		}
+		ids = append(ids, id)
 		in.Words = append(in.Words, w)
 	}
-	if err := rows.Err(); err != nil {
-		return Input{}, err
-	}
-	srows, err := pool.Query(ctx, `
-		SELECT ns.text, coalesce(ns.translation,'')
-		FROM notebook_sentence ns JOIN notebook_word nw ON nw.id = ns.notebook_word_id
-		WHERE nw.dir_id = $1 ORDER BY nw.sort_order, ns.sort_order LIMIT 6`, dirID)
+	err = rs.Err()
+	rs.Close()
 	if err != nil {
 		return Input{}, err
 	}
-	defer srows.Close()
-	for srows.Next() {
-		var s SentenceBrief
-		if err := srows.Scan(&s.Text, &s.Translation); err != nil {
-			return Input{}, err
-		}
-		in.Sentences = append(in.Sentences, s)
+	sents, err := sentencesByOwner(ctx, pool, `
+		SELECT ns.notebook_word_id, ns.text, coalesce(ns.translation,'')
+		FROM notebook_sentence ns JOIN notebook_word nw ON nw.id = ns.notebook_word_id
+		WHERE nw.dir_id = $1 ORDER BY nw.sort_order, ns.sort_order`, dirID)
+	if err != nil {
+		return Input{}, err
 	}
-	return in, srows.Err()
+	attach(&in, ids, sents)
+	return in, nil
 }
 
-const scriptSystem = `你是日语教学播客《通勤日语电台》的脚本作者。两位主持：思思（女，role=a）、xudong（男，role=b），两人均能自然地说中文与日语。
-硬约束：
-1. 只输出 JSON：{"lines":[{"role":"a","text":"..."}]}，行数 8—24。
-2. 中文行面向中国学习者讲解；日语行是示范/跟读/场景原声，必须短（不超过 24 个字符，超长就拆成两行）。
-3. 每个日语行前后必须有中文行包裹（cue 句，如"听——""跟我念一遍——""意思是……"）。
-4. 捧哏节奏以 a/b 交替为主；同一 role 连续不超过 2 行。
-5. 覆盖输入关键词：每个词至少一次日语示范 + 一次中文释义；例句可拆成短引用，不整句照读。
-6. 日语用です・ます体或自然口语短句；text 内不写假名注音、不写角色名。
-7. 首行 role=a 中文开场；末行中文收尾（如"下期见！"）。`
+// sentencesByOwner 按 owner id 收集例句，每个 owner 最多 maxSentPerWord 句。
+// owner 在课程路径是 word_id，在目录路径是 notebook_word_id。
+func sentencesByOwner(ctx context.Context, pool *pgxpool.Pool, query string, args ...any) (map[string][]SentenceBrief, error) {
+	rows, err := pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]SentenceBrief{}
+	for rows.Next() {
+		var key, text, tr string
+		if err := rows.Scan(&key, &text, &tr); err != nil {
+			return nil, err
+		}
+		if len(out[key]) >= maxSentPerWord {
+			continue
+		}
+		out[key] = append(out[key], SentenceBrief{Text: text, Translation: tr})
+	}
+	return out, rows.Err()
+}
 
-// BuildScript 调 LLM 生成脚本；schema 不通过自动重试 1 次（仓库既有模式）。
-// onProg 非 nil 时流式回调（思考字数, 正文字数）（进度流用）。
-func BuildScript(ctx context.Context, in Input, onProg func(think, content int)) ([]Line, error) {
+// attach 把例句挂回同序的词上（ids 与 in.Words 一一对应）。
+func attach(in *Input, ids []string, sents map[string][]SentenceBrief) {
+	for i, id := range ids {
+		in.Words[i].Sentences = sents[id]
+	}
+}
+
+// Progress 为写稿进度（job 状态与前端轮询共用）。
+type Progress struct {
+	Seg   int    // 已完成段数（段是并行写的，不按序）
+	Total int    // 总段数
+	Label string // 刚写完那段的标签：开场导览 / 词 4-6 / 收尾复习
+}
+
+// segment 为一个写稿段。上下文（已讲词/已用例句/上一个词）在排段时就算好，
+// 段与段之间没有数据依赖 → 可以并行写稿（42 词 16 段串行要 16 分钟，并行 3 路约 5 分钟）。
+type segment struct {
+	kind      string // open / words / close
+	words     []WordBrief
+	from      int // 本段第一个词在整集里的序号（1 起）
+	doneWords []string
+	doneSents []string
+	prevWord  string // 上一段最后讲的那个词，用来写过渡句
+}
+
+func (s segment) label() string {
+	switch s.kind {
+	case "open":
+		return "开场导览"
+	case "close":
+		return "收尾复习"
+	default:
+		to := s.from + len(s.words) - 1
+		if s.from == to {
+			return fmt.Sprintf("词 %d", s.from)
+		}
+		return fmt.Sprintf("词 %d-%d", s.from, to)
+	}
+}
+
+// planSegments 排出整集的写稿段：开场 + 每 wordsPerSeg 词一段 + 收尾。
+// 每段的上下文（已讲词/已用例句/上一个词）在这里就算好，段间无数据依赖 → 可并行写稿。
+func planSegments(words []WordBrief) []segment {
+	n := len(words)
+	segs := make([]segment, 0, n/wordsPerSeg+2)
+	segs = append(segs, segment{kind: "open"})
+	var doneW, doneS []string
+	prev := ""
+	for i := 0; i < n; i += wordsPerSeg {
+		end := min(i+wordsPerSeg, n)
+		chunk := words[i:end]
+		segs = append(segs, segment{
+			kind: "words", words: chunk, from: i + 1,
+			doneWords: append([]string(nil), doneW...),
+			doneSents: append([]string(nil), doneS...),
+			prevWord:  prev,
+		})
+		for _, w := range chunk {
+			doneW = append(doneW, w.Surface)
+			for _, s := range w.Sentences {
+				doneS = append(doneS, s.Text)
+			}
+		}
+		prev = chunk[len(chunk)-1].Surface
+	}
+	return append(segs, segment{kind: "close", doneWords: doneW, doneSents: doneS, prevWord: prev})
+}
+
+// writeConcurrency 并行写稿路数：MiniMax 未见明确 QPS 限制，3 路实测稳定，
+// 再多容易撞限流反而更慢（42 词 16 段：串行 16 分钟 → 3 路约 6 分钟）。
+const writeConcurrency = 3
+
+// BuildScript 并行分段写稿、按序拼接为整集脚本；onProg 可为 nil（报告已完成段数）。
+func BuildScript(ctx context.Context, in Input, onProg func(Progress)) ([]Line, error) {
+	segs := planSegments(in.Words)
+	type result struct {
+		lines []Line
+		err   error
+	}
+	results := make([]result, len(segs))
+	var (
+		mu   sync.Mutex
+		done int
+		sem  = make(chan struct{}, writeConcurrency)
+		wg   sync.WaitGroup
+	)
+	for i, s := range segs {
+		wg.Add(1)
+		go func(i int, s segment) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			lines, err := writeSegmentRetry(ctx, in, s)
+			results[i] = result{lines, err}
+			if onProg != nil {
+				mu.Lock()
+				done++
+				n := done
+				mu.Unlock()
+				onProg(Progress{Seg: n, Total: len(segs), Label: s.label()})
+			}
+		}(i, s)
+	}
+	wg.Wait()
+
+	var all []Line
+	for i, r := range results {
+		if r.err != nil {
+			return nil, fmt.Errorf("第 %d/%d 段（%s）写稿失败: %w", i+1, len(segs), segs[i].label(), r.err)
+		}
+		all = append(all, stitch(all, r.lines)...)
+	}
+	if err := ValidateScript(all); err != nil {
+		return nil, err
+	}
+	return all, nil
+}
+
+// writeSegmentRetry 写一段，校验不过带错误原文重试（最多 4 次）。
+func writeSegmentRetry(ctx context.Context, in Input, s segment) ([]Line, error) {
 	var lastErr error
-	for attempt := 0; attempt < 2; attempt++ {
-		lines, err := buildOnce(ctx, in, lastErr, onProg)
+	for attempt := 0; attempt < 4; attempt++ {
+		lines, err := writeSegment(ctx, in, s, lastErr)
 		if err == nil {
 			return lines, nil
 		}
@@ -148,61 +297,205 @@ func BuildScript(ctx context.Context, in Input, onProg func(think, content int))
 	return nil, lastErr
 }
 
-func buildOnce(ctx context.Context, in Input, prev error, onProg func(think, content int)) ([]Line, error) {
+// stitch 处理段接缝：若接上上一段会让同一 role 连排 3 行，翻转新段首行的 role。
+// 两位主持都双语，翻角色不伤内容，比让 LLM 重写一段便宜得多。
+func stitch(prev, next []Line) []Line {
+	if len(prev) == 0 || len(next) == 0 {
+		return next
+	}
+	run := 1
+	for i := len(prev) - 2; i >= 0 && prev[i].Role == prev[len(prev)-1].Role; i-- {
+		run++
+	}
+	if run >= 2 && next[0].Role == prev[len(prev)-1].Role {
+		next[0].Role = flipRole(next[0].Role)
+	}
+	return next
+}
+
+func flipRole(r string) string {
+	if r == RoleA {
+		return RoleB
+	}
+	return RoleA
+}
+
+const scriptSystem = `你是日语教学播客《通勤日语电台》的脚本作者。两位主持：思思（女，role=a，中国人，日语流利）、xudong（男，role=b，日本人，中文流利）。两人都能自然地说中文和日语，任何一行由谁说都合理。
+听众是通勤路上的中国日语学习者，只用耳朵听，看不到任何文字。
+硬约束：
+1. 只输出 JSON：{"lines":[{"role":"a","text":"..."}]}，不要任何解释文字或代码围栏。
+2. 日语行必须短，不超过 24 个字符，超了就拆成两行；中文行不超过 40 字。
+3. 每个日语行前后都要有中文行包裹（cue 句，如"听——""跟我念一遍——""意思是……"）。中文行里不要夹整句日语，要引用日语就单独成行。
+4. a/b 交替为主，同一 role 不连续超过 2 行。
+5. text 里不写假名注音、不写角色名（不许出现"思思""xudong"）、不写音效或停顿提示；日语词直接写汉字（服务端会按词表转成日语读音）。
+6. text 只能是中文或日语，绝不许出现英文单词或字母。
+7. 口语化：可以有"嗯……""诶？""说白了""你猜怎么着"，但不要每行都塞语气词。
+8. 绝不赶进度：讲透一个词比多讲一个词重要。禁止"这个词是XX意思"一句带过。`
+
+// wordSteps 是每个词的固定讲解模板——用户反馈「像赶时间把词说完」的直接解法：
+// 把"要讲什么"写死成 7 步，LLM 就没有压缩空间。
+const wordSteps = `每个词写 11—15 行，按下面 7 步展开，一步都不许省：
+1) 场景引入（中文 1—2 行）：这个词在什么真实场合会听到、会用到，给一个具体画面。
+2) 首次示范（日语 1 行 + 中文 1 行）：一句含该词的短句，然后中文说清它到底什么意思。
+3) 词义与用法拆解（中文 2—3 行）：词性、常搭的助词或搭配、和中文对应词的差别、中国人常犯的误用。
+4) 变形或搭配示范（日语 1 行 + 中文 1 行）：如动词ます形/て形、常见固定搭配。
+5) 易混对比（中文 1—2 行）：和一个近义词或形近词比，说清什么时候用哪个；实在没有就讲一个使用限制。
+6) 例句精讲（日语原句，超 24 字拆两行 + 中文逐成分拆解 2—3 行 + 整句再听一遍）：把时间、主语、宾语、动词形逐个说清。
+7) 记忆钩子（中文 1 行）：一句场景化联想或口语提示，让听众记住它。
+严格按上面给出的词序讲，一个词讲完再讲下一个；每个词只用自己名下的例句，不要提前用后面词的例句，也不要重复用同一个例句。
+词与词之间要有过渡句，不要像报清单。`
+
+// writeSegment 拼一段的 user prompt 并调 LLM。
+func writeSegment(ctx context.Context, in Input, s segment, prevErr error) ([]Line, error) {
 	var sb strings.Builder
-	sb.WriteString("关键词：\n")
-	for _, w := range in.Words {
-		sb.WriteString(fmt.Sprintf("- %s（%s）%s\n", w.Surface, w.Reading, w.Meaning))
+	sb.WriteString(fmt.Sprintf("本集原料：%s，共 %d 个词。\n", in.Title, len(in.Words)))
+	sb.WriteString("整集词表（只为让你知道全局，本段绝不讲解不属于你的词）：\n")
+	for i, w := range in.Words {
+		sb.WriteString(fmt.Sprintf("%d. %s（%s）%s\n", i+1, w.Surface, w.Reading, w.Meaning))
 	}
-	sb.WriteString("例句：\n")
-	for _, s := range in.Sentences {
-		sb.WriteString(fmt.Sprintf("- %s / %s\n", s.Text, s.Translation))
+	if len(s.doneWords) > 0 {
+		sb.WriteString("\n已讲过的词（不要重复讲解，可自然提及）：" + strings.Join(s.doneWords, "、") + "\n")
 	}
-	if prev != nil {
-		sb.WriteString("\n上一次输出未通过校验：" + prev.Error() + "。请修正后重新输出。")
+	if len(s.doneSents) > 0 {
+		sb.WriteString("已用过的例句（不要重复）：" + strings.Join(s.doneSents, " / ") + "\n")
+	}
+	if s.prevWord != "" {
+		sb.WriteString("\n上一段最后讲的是「" + s.prevWord + "」：本段开头用一句自然过渡承接它，但不要重复讲解它。\n")
 	}
 
+	sb.WriteString("\n")
+	switch s.kind {
+	case "open":
+		sb.WriteString(fmt.Sprintf(`任务：写开场导览，4—6 行。
+- 第一行可以是简短的日语问候（不超过 10 字，如"こんにちは。"），也可以直接中文问好。
+- a 点明今天这一集来自「%s」，一共 %d 个词，并用一句话勾出这批词共同的生活场景。
+- b 接话，给听众一个「听完能干什么」的预期（例如点餐、聊钱、约人不再卡壳）。
+- 中文行里不要夹整句日语（要引用日语就单独成行）；开场不要讲解任何具体词义，也不要逐个报词。`, in.Title, len(in.Words)))
+	case "close":
+		sb.WriteString(fmt.Sprintf(`任务：写收尾复习，8—14 行。
+- 从本集 %d 个词里挑最容易忘的 3—5 个做快速回顾：每个词一行日语示范 + 一行中文提示，两位主持可以抢答式一人一半过。
+- 最后 a/b 各一句中文道别收尾（如"下期见"）。
+- 不要引入新词，不要展开新讲解。`, len(in.Words)))
+	default:
+		sb.WriteString(fmt.Sprintf("任务：只讲第 %d—%d 个词，共 %d 个：\n", s.from, s.from+len(s.words)-1, len(s.words)))
+		for _, w := range s.words {
+			sb.WriteString(fmt.Sprintf("- %s（%s）%s\n", w.Surface, w.Reading, w.Meaning))
+			for _, sn := range w.Sentences {
+				sb.WriteString(fmt.Sprintf("  例句：%s / %s\n", sn.Text, sn.Translation))
+			}
+		}
+		sb.WriteString("\n" + wordSteps)
+		sb.WriteString(fmt.Sprintf("\n本段总行数控制在 %d—%d 行之间（含过渡句）。",
+			len(s.words)*12, len(s.words)*20))
+	}
+	if prevErr != nil {
+		sb.WriteString("\n\n上一次输出未通过校验：" + prevErr.Error() + "。请修正后重新输出。")
+	}
+
+	content, err := chatStream(ctx, sb.String())
+	if err != nil {
+		return nil, err
+	}
+	lines, err := parseLines(content)
+	if err != nil {
+		return nil, err
+	}
+	// 模型偶发漏出英文或罗马字碎片（M3 实测 "weekdays"/"entails"，Flash 实测 "家賃atta"），
+	// 整段重写要 20—90 秒且可能再漏——直接丢掉这些行划算得多；丢完若段级校验不过
+	// （行数不够或某个词没了踪影）才重试。
+	lines = sanitize(lines)
+	// 先按行数校验「讲解有没有被压缩」，再自动拆超长行——拆开会让行数虚增，
+	// 顺序反了就会把正常的段判成啰嗦。
+	if err := validateSegment(s, lines); err != nil {
+		return nil, err
+	}
+	fixed := repair(lines)
+	return fixed, checkLines(fixed)
+}
+
+// sanitize 丢掉漏出拉丁字母或角色名的行。宁可少一句，也不要让主持人念出 "weekdays"。
+func sanitize(lines []Line) []Line {
+	out := make([]Line, 0, len(lines))
+	for _, l := range lines {
+		if foreignToken(l.Text) == "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// scriptModel 写稿模型：M3 关思考后会在正文里漏英文碎片（实测 "weekdays"/"entails"/"delimitate"，
+// 同一段 4 次重试全败），开思考又要 5 分钟/段；M3.1-Flash 低思考档 10—30 秒/段，
+// 偶发漏罗马字（"家賃atta"）由 sanitize 丢行兜住 → 定为写稿默认
+// （课程生成那条线仍用 env LLM_MODEL，互不影响）。
+// POD_LLM_MODEL / POD_LLM_THINK 可覆盖：think=low 低档思考 / off 关思考 / none 两个参数都不传。
+const scriptModel = "MiniMax-M3.1-Flash"
+
+// chatStream 流式收稿（长输出走流式，避免网关空闲超时）。
+// 写稿默认用 scriptModel；若该模型在当前 key 上不可用（404），回退到 env LLM_MODEL 再试一次，
+// 避免生产 key 权限与本地不一致时整集生成直接失败。
+func chatStream(ctx context.Context, user string) (string, error) {
+	first := os.Getenv("POD_LLM_MODEL")
+	if first == "" {
+		first = scriptModel
+	}
+	content, err := chatOnce(ctx, user, first, thinkMode())
+	if err != nil && strings.Contains(err.Error(), "LLM 返回 404") {
+		if fb := os.Getenv("LLM_MODEL"); fb != "" && fb != first {
+			return chatOnce(ctx, user, fb, "off")
+		}
+	}
+	return content, err
+}
+
+func thinkMode() string {
+	if t := os.Getenv("POD_LLM_THINK"); t != "" {
+		return t
+	}
+	return "low"
+}
+
+func chatOnce(ctx context.Context, user, model, think string) (string, error) {
 	payload := map[string]any{
-		"model": os.Getenv("LLM_MODEL"),
+		"model": model,
 		"messages": []map[string]any{
 			{"role": "system", "content": scriptSystem},
-			{"role": "user", "content": sb.String()},
+			{"role": "user", "content": user},
 		},
-		"temperature":     0.7,
-		"reasoning_split": true, // M3 思考内容独立字段，避免混入 content 污染 JSON
-		"stream":          true, // 流式收稿：写稿阶段也有真实进度
+		"reasoning_split": true,
+		"stream":          true,
+	}
+	switch think {
+	case "low":
+		payload["thinking"] = map[string]any{"type": "adaptive"}
+		payload["reasoning_effort"] = "low"
+	case "off":
+		payload["thinking"] = map[string]any{"type": "disabled"}
+	case "none":
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	target := strings.TrimSuffix(os.Getenv("LLM_BASE_URL"), "/") + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+os.Getenv("LLM_API_KEY"))
-	cli := &http.Client{Timeout: 180 * time.Second}
+	cli := &http.Client{Timeout: 300 * time.Second}
 	resp, err := cli.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("LLM 请求失败: %w", err)
+		return "", fmt.Errorf("LLM 请求失败: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("LLM 返回 %d", resp.StatusCode)
+		return "", fmt.Errorf("LLM 返回 %d", resp.StatusCode)
 	}
 	var cb strings.Builder
-	var think int
 	sc := bufio.NewScanner(resp.Body)
-	sc.Buffer(make([]byte, 256*1024), 2*1024*1024)
-	lastEmit := time.Now()
-	emitProg := func() {
-		if onProg != nil && time.Since(lastEmit) > 500*time.Millisecond {
-			lastEmit = time.Now()
-			onProg(think, len([]rune(cb.String())))
-		}
-	}
+	sc.Buffer(make([]byte, 256*1024), 4*1024*1024)
 	for sc.Scan() {
 		line := sc.Text()
 		if !strings.HasPrefix(line, "data:") {
@@ -215,74 +508,134 @@ func buildOnce(ctx context.Context, in Input, prev error, onProg func(think, con
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
-					Content   string `json:"content"`
-					Reasoning string `json:"reasoning_content"`
+					Content string `json:"content"`
 				} `json:"delta"`
 			} `json:"choices"`
 		}
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil || len(chunk.Choices) == 0 {
 			continue
 		}
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-		d := chunk.Choices[0].Delta
-		if d.Reasoning != "" {
-			think += len([]rune(d.Reasoning))
-			emitProg()
-		}
-		if d.Content != "" {
-			cb.WriteString(d.Content)
-			emitProg()
-		}
+		cb.WriteString(chunk.Choices[0].Delta.Content)
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
-	}
-	if onProg != nil {
-		onProg(think, len([]rune(cb.String())))
+		return "", err
 	}
 	content := strings.TrimSpace(cb.String())
 	if content == "" {
-		return nil, fmt.Errorf("LLM 无输出")
+		return "", fmt.Errorf("LLM 无输出")
 	}
-	// 兜底：剥掉代码围栏与可能残留的思考标签，只取最外层 JSON 对象
-	if i := strings.Index(content, "{"); i >= 0 {
-		if j := strings.LastIndex(content, "}"); j > i {
-			content = content[i : j+1]
-		}
-	}
-	var parsed struct {
-		Lines []Line `json:"lines"`
-	}
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return nil, fmt.Errorf("脚本 JSON 解析失败: %w", err)
-	}
-	if err := ValidateScript(parsed.Lines); err != nil {
-		return nil, err
-	}
-	return parsed.Lines, nil
+	return content, nil
 }
 
-// kanaCount 统计假名字符数。
-// 日语行判定用「假名数 ≥ 4」而非「含假名」：中文讲解行常内嵌短引用（如"多い"2 假名），
-// 若按含假名判定会把 28 字中文行误判为日语行并触发长度上限（2026-11-04 实测踩坑）。
-func kanaCount(s string) int {
-	n := 0
-	for _, r := range s {
-		if (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F) {
-			n++
+// parseLines 从模型输出里提取行级脚本。
+// 关思考后模型偶发把脚本拆成多个 JSON 对象、或尾随附加说明，只取首尾花括号会得到非法 JSON
+// （2026-11-04 实测 "invalid character ',' after top-level value"），因此逐个扫描平衡的
+// 顶层 {...} / [...]，能解析出 lines 的就合并。
+func parseLines(content string) ([]Line, error) {
+	var out []Line
+	for _, chunk := range topLevelJSON(content) {
+		var wrap struct {
+			Lines []Line `json:"lines"`
+		}
+		if err := json.Unmarshal([]byte(chunk), &wrap); err == nil && len(wrap.Lines) > 0 {
+			out = append(out, wrap.Lines...)
+			continue
+		}
+		var arr []Line
+		if err := json.Unmarshal([]byte(chunk), &arr); err == nil && len(arr) > 0 {
+			out = append(out, arr...)
 		}
 	}
-	return n
+	if len(out) == 0 {
+		snip := []rune(content)
+		if len(snip) > 200 {
+			snip = snip[:200]
+		}
+		return nil, fmt.Errorf("脚本 JSON 解析失败（未找到 lines），原文开头：%s", string(snip))
+	}
+	return out, nil
 }
 
-// ValidateScript 内容层校验（v13）：行数/角色/日语行长度与占比/首末行语言。
-func ValidateScript(lines []Line) error {
-	if len(lines) < 8 || len(lines) > 24 {
-		return fmt.Errorf("行数 %d 不在 8—24 范围", len(lines))
+// topLevelJSON 扫描出所有平衡的顶层 JSON 对象/数组，忽略字符串内的花括号与转义。
+func topLevelJSON(s string) []string {
+	var (
+		out   []string
+		depth int
+		start = -1
+		inStr bool
+		esc   bool
+	)
+	for i, r := range s {
+		switch {
+		case inStr:
+			switch {
+			case esc:
+				esc = false
+			case r == '\\':
+				esc = true
+			case r == '"':
+				inStr = false
+			}
+		case r == '"':
+			inStr = true
+		case r == '{' || r == '[':
+			if depth == 0 {
+				start = i
+			}
+			depth++
+		case r == '}' || r == ']':
+			if depth > 0 {
+				depth--
+				if depth == 0 && start >= 0 {
+					out = append(out, s[start:i+1])
+					start = -1
+				}
+			}
+		}
 	}
-	ja := 0
+	return out
+}
+
+// validateSegment 段级校验：行数区间 + 本段每个词都要真的出现。
+func validateSegment(s segment, lines []Line) error {
+	switch s.kind {
+	case "open":
+		if len(lines) < 3 || len(lines) > 8 {
+			return fmt.Errorf("开场行数 %d 不在 3—8", len(lines))
+		}
+	case "close":
+		if len(lines) < 5 || len(lines) > 20 {
+			return fmt.Errorf("收尾行数 %d 不在 5—20", len(lines))
+		}
+	default:
+		if min := len(s.words) * minLinesPerWord; len(lines) < min {
+			return fmt.Errorf("本段行数 %d 少于 %d（每词至少 %d 行，讲解被压缩了）", len(lines), min, minLinesPerWord)
+		}
+		if mx := len(s.words) * maxLinesPerWord; len(lines) > mx {
+			return fmt.Errorf("本段行数 %d 超过 %d（每词最多 %d 行，讲得太啰嗦或步骤重复了）", len(lines), mx, maxLinesPerWord)
+		}
+		for _, w := range s.words {
+			if !mentions(lines, w.Surface) {
+				return fmt.Errorf("词「%s」没有在本段出现", w.Surface)
+			}
+		}
+	}
+	return nil // 行级规则（长度/连排/重复）在 repair 之后由 checkLines 查
+}
+
+func mentions(lines []Line, surface string) bool {
+	for _, l := range lines {
+		if strings.Contains(l.Text, surface) {
+			return true
+		}
+	}
+	return false
+}
+
+// checkLines 通用行规则：role 合法、非空、纯中日文、长度上限、同 role 不连排超过 2 行、长行不重复。
+func checkLines(lines []Line) error {
+	run, last := 0, ""
+	seen := map[string]int{}
 	for i, l := range lines {
 		if l.Role != RoleA && l.Role != RoleB {
 			return fmt.Errorf("第 %d 行 role 非法", i)
@@ -290,21 +643,155 @@ func ValidateScript(lines []Line) error {
 		if strings.TrimSpace(l.Text) == "" {
 			return fmt.Errorf("第 %d 行文本为空", i)
 		}
-		if kanaCount(l.Text) >= 4 {
-			ja++
-			if n := len([]rune(l.Text)); n > 24 {
-				return fmt.Errorf("第 %d 行日语过长（%d 字 > 24），请拆成两个短句：%s", i, n, l.Text)
+		if bad := foreignToken(l.Text); bad != "" {
+			return fmt.Errorf("第 %d 行混入非中日文内容 %q，请改写成中文或日语：%s", i, bad, l.Text)
+		}
+		n := len([]rune(l.Text))
+		if isJaLine(l.Text) {
+			if n > maxJaLineRunes {
+				return fmt.Errorf("第 %d 行日语过长（%d 字 > %d），请拆成两个短句：%s", i, n, maxJaLineRunes, l.Text)
 			}
+		} else if n > maxZhLineRunes {
+			return fmt.Errorf("第 %d 行中文过长（%d 字 > %d），请拆成两句：%s", i, n, maxZhLineRunes, l.Text)
+		}
+		// 中文实质行不许重复（说明模型在凑数）；日语行允许重复——"整句再听一遍"就是教学法。
+		// 短 cue 句（"听——""跟我念一遍"）本来就会重复，只查 10 字以上的行。
+		if n >= 10 && !isJaLine(l.Text) {
+			if j, ok := seen[l.Text]; ok {
+				return fmt.Errorf("第 %d 行与第 %d 行完全重复，请换一个说法：%s", i, j, l.Text)
+			}
+			seen[l.Text] = i
+		}
+		if l.Role == last {
+			run++
+		} else {
+			run, last = 1, l.Role
+		}
+		if run > 2 {
+			return fmt.Errorf("第 %d 行起同一 role 连排超过 2 行，请改成 a/b 交替", i)
+		}
+	}
+	return nil
+}
+
+// foreignToken 找出行内的拉丁字母串与角色名——M3 关思考后会漏出英文碎片
+// （实测出现过 "常和家族 delimitate动向"、"食費 entails全部的饭钱"），必须挡回去重写。
+func foreignToken(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			b.WriteRune(r)
+		} else if b.Len() > 0 {
+			break
+		}
+	}
+	if b.Len() > 0 {
+		return b.String()
+	}
+	if strings.Contains(s, "思思") || strings.Contains(s, "xudong") {
+		return "角色名"
+	}
+	return ""
+}
+
+// isJaLine 判定一行是否日语行：假名 ≥4 且假名数不少于汉字数。
+// 中文讲解行常内嵌日语片段（"它常和友達、会議、デート搭配"有 8 假名 15 汉字），
+// 只看绝对假名数会把它当日语行并触发 24 字上限，导致整段重写（2026-11-04 实测踩坑三次）。
+// 自然日语一定有大量假名（助词/词尾），汉字多于假名的行必然是中文讲解。
+func isJaLine(s string) bool {
+	var kana, han int
+	for _, r := range s {
+		switch {
+		case (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F):
+			kana++
+		case r >= 0x4E00 && r <= 0x9FFF:
+			han++
+		}
+	}
+	return kana >= 4 && kana >= han
+}
+
+// repair 自动修掉模型最常见的两类违规，避免整段重写（一次重写 20—90 秒，16 段就是灾难）：
+// 超长行按标点拆成同 role 连说；拆完出现的 3 连排翻给另一位主持（两人均双语，翻角色不伤内容）。
+func repair(lines []Line) []Line {
+	out := make([]Line, 0, len(lines)+8)
+	for _, l := range lines {
+		for _, part := range splitLong(l.Text, isJaLine(l.Text)) {
+			out = append(out, Line{Role: l.Role, Text: part})
+		}
+	}
+	for i := 2; i < len(out); i++ {
+		if out[i].Role == out[i-1].Role && out[i-1].Role == out[i-2].Role {
+			out[i].Role = flipRole(out[i].Role)
+		}
+	}
+	return out
+}
+
+// splitLong 在长度上限内最后一个标点处切开，递归处理剩余部分；找不到标点就原样返回，
+// 交给校验报错重试（硬切会把词切断，比重试更糟）。
+func splitLong(text string, ja bool) []string {
+	limit := maxZhLineRunes
+	if ja {
+		limit = maxJaLineRunes
+	}
+	rs := []rune(text)
+	if len(rs) <= limit {
+		return []string{text}
+	}
+	cut := -1
+	// 优先在句末标点处断，其次才是逗号顿号——断在逗号上会留下"记住，"这种半句。
+	for _, marks := range []string{"。！？；", "，、,.:："} {
+		for i := limit - 1; i >= 1; i-- {
+			if strings.ContainsRune(marks, rs[i]) {
+				cut = i + 1
+				break
+			}
+		}
+		if cut > 0 {
+			break
+		}
+	}
+	if cut <= 0 {
+		return []string{text}
+	}
+	first := strings.TrimSpace(string(rs[:cut]))
+	rest := strings.TrimSpace(string(rs[cut:]))
+	if first == "" || rest == "" {
+		return []string{text}
+	}
+	return append([]string{first}, splitLong(rest, ja)...)
+}
+
+// ValidateScript 整集校验：行数区间、日语占比、首末行中文，外加通用行规则。
+func ValidateScript(lines []Line) error {
+	if len(lines) < 8 {
+		return fmt.Errorf("行数 %d 少于 8", len(lines))
+	}
+	if len(lines) > maxTotalLines {
+		return fmt.Errorf("行数 %d 超过 %d", len(lines), maxTotalLines)
+	}
+	if err := checkLines(lines); err != nil {
+		return err
+	}
+	ja := 0
+	for _, l := range lines {
+		if isJaLine(l.Text) {
+			ja++
 		}
 	}
 	if ja < 2 {
 		return fmt.Errorf("日语行 %d 少于 2", ja)
 	}
 	if ja*2 > len(lines) {
-		return fmt.Errorf("日语行占比过高（%d/%d）", ja, len(lines))
+		return fmt.Errorf("日语行占比过高（%d/%d），讲解应以中文为主", ja, len(lines))
 	}
-	if kanaCount(lines[0].Text) >= 4 || kanaCount(lines[len(lines)-1].Text) >= 4 {
-		return fmt.Errorf("首末行必须为中文")
+	// 首行允许一句简短日语问候（"こんにちは"），末行必须中文收尾。
+	if isJaLine(lines[0].Text) && len([]rune(lines[0].Text)) > 12 {
+		return fmt.Errorf("首行若是日语问候不得超过 12 字（实际 %d 字）：%s", len([]rune(lines[0].Text)), lines[0].Text)
+	}
+	if isJaLine(lines[len(lines)-1].Text) {
+		return fmt.Errorf("末行必须为中文")
 	}
 	return nil
 }

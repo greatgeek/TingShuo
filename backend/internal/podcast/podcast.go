@@ -156,23 +156,21 @@ func ts(ms int64) string {
 	return fmt.Sprintf("%02d:%02d:%02d,%03d", ms/3600000, ms%3600000/60000, ms%60000/1000, ms%1000)
 }
 
-// cacheKey 为「源(课/目录)+脚本+引擎版本」的稳定哈希：同源同脚本零重复计费（AC-3.1 同款护栏）。
-func cacheKey(lessonID, dirID string, lines []Line) string {
+// cacheKey 为「源(课/目录) + 原料词表 + 引擎版本」的稳定哈希：同源同词表零重复计费。
+// 不再把脚本行纳入哈希——长片写稿要几分钟且每次措辞都不同，按脚本哈希等于永不去重。
+func cacheKey(lessonID, dirID string, words []WordBrief) string {
 	h := sha256.New()
 	io.WriteString(h, engineVer+"\x00L:"+lessonID+"\x00D:"+dirID+"\x00")
-	for _, l := range lines {
-		io.WriteString(h, l.Role+"\x01"+l.Text+"\x00")
+	for _, w := range words {
+		io.WriteString(h, w.Surface+"\x01"+w.Reading+"\x01"+w.Meaning+"\x00")
+		for _, s := range w.Sentences {
+			io.WriteString(h, s.Text+"\x00")
+		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-type genReq struct {
-	LessonID string `json:"lesson_id"`
-	DirID    string `json:"dir_id"`
-	Lines    []Line `json:"lines"`
-}
-
-// Meta 为一集的返回元数据（JSON 与 SSE done 事件共用）。
+// Meta 为一集的返回元数据。
 type Meta struct {
 	EpisodeID  string    `json:"episode_id"`
 	Cached     bool      `json:"cached"`
@@ -182,77 +180,42 @@ type Meta struct {
 	Rounds     int       `json:"rounds"`
 }
 
-// generateCore 生成或取缓存一集；emit 非 nil 时推送进度事件（事件名, data）。
-func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, emit func(string, map[string]any)) (*Meta, *httpx.APIError) {
-	stage := func(msg string) {
-		if emit != nil {
-			emit("stage", map[string]any{"msg": msg})
+// Prog 为生成进度（写回 podcast_job，前端轮询显示）。
+type Prog struct {
+	Status        string
+	Stage         string
+	Seg, Segs     int
+	Round, Rounds int
+}
+
+// loadInput 按源（目录优先）取原料，含归属校验。
+func (h *Handler) loadInput(ctx context.Context, userID, lessonID, dirID string) (Input, error) {
+	if dirID != "" {
+		return LoadDirInput(ctx, h.pool, userID, dirID)
+	}
+	if lessonID != "" {
+		return LoadLessonInput(ctx, h.pool, userID, lessonID)
+	}
+	return Input{}, fmt.Errorf("lesson_id / dir_id 至少给一个")
+}
+
+// generate 跑完一集：读原料 → 查缓存 → 分段写稿 → 汉字转假名 → 拆场合成 → 装配落库。
+// 由后台 worker 调用（不在 HTTP 请求生命周期内），onProg 可为 nil。
+func (h *Handler) generate(ctx context.Context, userID, lessonID, dirID string, onProg func(Prog)) (*Meta, error) {
+	prog := func(p Prog) {
+		if onProg != nil {
+			onProg(p)
 		}
 	}
-	lines := req.Lines
-	llmModel := ""
-	var srcWords []WordBrief
-	if len(lines) == 0 {
-		if req.LessonID == "" && req.DirID == "" {
-			return nil, httpx.BadRequest("PARAMS_INVALID", "lesson_id / dir_id / lines 至少给一个")
-		}
-		stage("读取原料…")
-		var (
-			in  Input
-			err error
-		)
-		if req.DirID != "" {
-			in, err = LoadDirInput(ctx, h.pool, userID, req.DirID)
-		} else {
-			in, err = LoadLessonInput(ctx, h.pool, userID, req.LessonID)
-		}
-		if err != nil {
-			return nil, httpx.NotFound(err.Error())
-		}
-		if len(in.Words) == 0 {
-			return nil, httpx.BadRequest("SOURCE_EMPTY", "该来源没有可用于播客的词")
-		}
-		srcWords = in.Words
-		stage(fmt.Sprintf("LLM 写稿中（%d 词 %d 句入料）…", len(in.Words), len(in.Sentences)))
-		lines, err = BuildScript(ctx, in, func(think, content int) {
-			if emit == nil {
-				return
-			}
-			if content == 0 {
-				emit("script", map[string]any{"chars": content, "msg": fmt.Sprintf("构思中… 已思考 %d 字", think)})
-			} else {
-				emit("script", map[string]any{"chars": content, "msg": fmt.Sprintf("写稿中… 已生成 %d 字", content)})
-			}
-		})
-		if err != nil {
-			return nil, httpx.NewError(http.StatusBadGateway, "SCRIPT_LLM", err.Error())
-		}
-		llmModel = os.Getenv("LLM_MODEL")
-		stage(fmt.Sprintf("写稿完成：%d 行对话", len(lines)))
-	} else if req.DirID != "" {
-		if _, err := LoadDirInput(ctx, h.pool, userID, req.DirID); err != nil {
-			return nil, httpx.NotFound(err.Error())
-		}
-	} else if req.LessonID != "" {
-		var n int
-		if err := h.pool.QueryRow(ctx, `SELECT count(1) FROM daily_lesson WHERE id=$1 AND user_id=$2`, req.LessonID, userID).Scan(&n); err != nil || n == 0 {
-			return nil, httpx.NotFound("课程不存在或不属于当前用户")
-		}
-	}
-	if len(lines) < 2 {
-		return nil, httpx.BadRequest("SCRIPT_TOO_SHORT", "脚本至少 2 行")
-	}
-	for i := range lines {
-		if lines[i].Say == "" {
-			lines[i].Say = Kanaize(lines[i].Text, srcWords)
-		}
-	}
-	sessionLines, err := SessionLines(lines)
+	in, err := h.loadInput(ctx, userID, lessonID, dirID)
 	if err != nil {
-		return nil, httpx.BadRequest("SCRIPT_INVALID", err.Error())
+		return nil, err
+	}
+	if len(in.Words) == 0 {
+		return nil, fmt.Errorf("该来源没有可用于播客的词")
 	}
 
-	ck := cacheKey(req.LessonID, req.DirID, lines)
+	ck := cacheKey(lessonID, dirID, in.Words)
 	var (
 		epID       string
 		durationMS int
@@ -265,29 +228,50 @@ func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, e
 		Scan(&epID, &durationMS, &rounds, &tlJSON, &srt); err == nil {
 		var tl []Segment
 		json.Unmarshal(tlJSON, &tl)
+		prog(Prog{Status: JobDone, Stage: "已有成片，直接复用"})
 		return &Meta{EpisodeID: epID, Cached: true, Timeline: tl, SRT: srt, DurationMS: int64(durationMS), Rounds: rounds}, nil
+	}
+
+	segs := len(planSegments(in.Words))
+	prog(Prog{Status: JobWriting, Stage: fmt.Sprintf("写稿中（%d 词 %d 段）…", len(in.Words), segs), Segs: segs})
+	lines, err := BuildScript(ctx, in, func(p Progress) {
+		prog(Prog{
+			Status: JobWriting, Seg: p.Seg, Segs: p.Total,
+			Stage: fmt.Sprintf("写稿中：已完成 %d/%d 段（刚写完 %s）", p.Seg, p.Total, p.Label),
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	for i := range lines {
+		if lines[i].Say == "" {
+			lines[i].Say = Kanaize(lines[i].Text, in.Words)
+		}
+	}
+	sessionLines, err := SessionLines(lines)
+	if err != nil {
+		return nil, err
 	}
 
 	t0 := time.Now()
 	n := len(sessionLines)
-	stage(fmt.Sprintf("合成中 0/%d 轮…", n))
+	prog(Prog{Status: JobSynth, Stage: fmt.Sprintf("写稿完成 %d 行，合成中 0/%d 轮…", len(lines), n),
+		Seg: segs, Segs: segs, Rounds: n})
 	roundBufs, err := h.pod.Session(ctx, [2]string{doubaopod.VoiceSisi, doubaopod.VoiceXudong}, sessionLines, nil, func(i int) {
-		if emit != nil {
-			emit("round", map[string]any{"i": i + 1, "n": n, "msg": fmt.Sprintf("合成中 %d/%d 轮…", i+1, n)})
-		}
+		prog(Prog{Status: JobSynth, Stage: fmt.Sprintf("合成中 %d/%d 轮…", i+1, n),
+			Seg: segs, Segs: segs, Round: i + 1, Rounds: n})
 	})
 	if err != nil {
-		return nil, httpx.NewError(http.StatusBadGateway, "PODCAST_UPSTREAM", err.Error())
+		return nil, err
 	}
-	stage("装配音频与时间轴…")
+	prog(Prog{Status: JobSynth, Stage: "装配音频与时间轴…", Seg: segs, Segs: segs, Round: n, Rounds: n})
 	audio, tl, err := AssembleRounds(roundBufs, lines)
 	if err != nil {
-		return nil, httpx.BadRequest("ASSEMBLE_INVALID", err.Error())
+		return nil, err
 	}
-	stage("落库与缓存…")
 	epID = ulid.MustNew()
 	if err := h.store.PutAudio(ctx, "podcast-"+epID, audio); err != nil {
-		return nil, httpx.BadGateway("对象存储写入失败: " + err.Error())
+		return nil, fmt.Errorf("对象存储写入失败: %w", err)
 	}
 	tlJSON, _ = json.Marshal(tl)
 	srt = SRT(tl)
@@ -295,77 +279,18 @@ func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, e
 	for _, l := range lines {
 		chars += len([]rune(l.Text))
 	}
-	_, err = h.pool.Exec(ctx, `
+	if _, err := h.pool.Exec(ctx, `
 		INSERT INTO podcast_episode (id, user_id, lesson_id, dir_id, cache_key, script, timeline, srt, storage_key, duration_ms, rounds, llm_model, tts_engine)
 		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,NULLIF($12,''),$13)`,
-		epID, userID, req.LessonID, req.DirID, ck, mustJSON(lines), tlJSON, srt, storage.AudioKey("podcast-"+epID),
-		tl[len(tl)-1].EndMS, len(roundBufs), llmModel, engineVer)
-	if err != nil {
-		return nil, httpx.BadGateway("落库失败: " + err.Error())
+		epID, userID, lessonID, dirID, ck, mustJSON(lines), tlJSON, srt, storage.AudioKey("podcast-"+epID),
+		tl[len(tl)-1].EndMS, len(roundBufs), os.Getenv("LLM_MODEL"), engineVer); err != nil {
+		return nil, fmt.Errorf("落库失败: %w", err)
 	}
 	h.pool.Exec(ctx, `
 		INSERT INTO tts_call_log (id, user_id, voice, chars, duration_ms, cache_hit)
 		VALUES ($1,$2,$3,$4,$5,false)`,
 		ulid.MustNew(), userID, engineVer, chars, time.Since(t0).Milliseconds())
 	return &Meta{EpisodeID: epID, Cached: false, Timeline: tl, SRT: srt, DurationMS: tl[len(tl)-1].EndMS, Rounds: len(roundBufs)}, nil
-}
-
-// Generate POST /podcast/generate：一次性 JSON 返回（脚本/工具用）。
-func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
-	userID := auth.FromContext(r.Context())
-	if !genLim.Allow(userID) || !genDaily.Allow(userID) {
-		httpx.Err(w, httpx.NewError(http.StatusTooManyRequests, "QUOTA", "播客生成过于频繁（每日上限 20 集）"))
-		return
-	}
-	var req genReq
-	if e := httpx.Decode(r, &req); e != nil {
-		httpx.Err(w, e)
-		return
-	}
-	meta, aerr := h.generateCore(r.Context(), userID, req, nil)
-	if aerr != nil {
-		httpx.Err(w, aerr)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, meta)
-}
-
-// Stream POST /podcast/generate/stream：SSE 进度流（前端滚动日志用）。
-// 事件：stage{msg} / round{i,n,msg} / done{Meta} / error{message} / end{}
-func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
-	userID := auth.FromContext(r.Context())
-	if !genLim.Allow(userID) || !genDaily.Allow(userID) {
-		httpx.Err(w, httpx.NewError(http.StatusTooManyRequests, "QUOTA", "播客生成过于频繁（每日上限 20 集）"))
-		return
-	}
-	var req genReq
-	if e := httpx.Decode(r, &req); e != nil {
-		httpx.Err(w, e)
-		return
-	}
-	fl, ok := w.(http.Flusher)
-	if !ok {
-		httpx.Err(w, httpx.NewError(http.StatusInternalServerError, "NO_STREAM", "不支持流式响应"))
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Accel-Buffering", "no") // nginx 不缓冲，进度实时到端
-	emit := func(ev string, data map[string]any) {
-		b, _ := json.Marshal(data)
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev, b)
-		fl.Flush()
-	}
-	meta, aerr := h.generateCore(r.Context(), userID, req, emit)
-	if aerr != nil {
-		emit("error", map[string]any{"message": aerr.Message})
-	} else {
-		emit("done", map[string]any{
-			"episode_id": meta.EpisodeID, "cached": meta.Cached, "timeline": meta.Timeline,
-			"srt": meta.SRT, "duration_ms": meta.DurationMS, "rounds": meta.Rounds,
-		})
-	}
-	emit("end", map[string]any{})
 }
 
 // Latest GET /podcast/by-lesson/{lesson_id}：该课最新一集元数据（无则 404）。
@@ -453,36 +378,4 @@ func (h *Handler) File(w http.ResponseWriter, r *http.Request) {
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
-}
-
-// Script POST /podcast/script {lesson_id}：由一课的词/句生成 v13 行级脚本（不合成音频）。
-// 与 /podcast/generate 分离：脚本可先眼检/人工改，再送合成。
-func (h *Handler) Script(w http.ResponseWriter, r *http.Request) {
-	userID := auth.FromContext(r.Context())
-	var req struct {
-		LessonID string `json:"lesson_id"`
-	}
-	if e := httpx.Decode(r, &req); e != nil {
-		httpx.Err(w, e)
-		return
-	}
-	if req.LessonID == "" {
-		httpx.Err(w, httpx.BadRequest("PARAMS_INVALID", "lesson_id 不能为空"))
-		return
-	}
-	in, err := LoadLessonInput(r.Context(), h.pool, userID, req.LessonID)
-	if err != nil {
-		httpx.Err(w, httpx.NotFound(err.Error()))
-		return
-	}
-	if len(in.Words) == 0 {
-		httpx.Err(w, httpx.BadRequest("LESSON_EMPTY", "该课没有可用于播客的词"))
-		return
-	}
-	lines, err := BuildScript(r.Context(), in, nil)
-	if err != nil {
-		httpx.Err(w, httpx.NewError(http.StatusBadGateway, "SCRIPT_LLM", err.Error()))
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"lines": lines, "input": in})
 }

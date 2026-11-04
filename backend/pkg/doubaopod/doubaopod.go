@@ -3,6 +3,7 @@
 //   - 播客每场限 2 音色；saturn 播客系列（咪仔/大壹）为中文音色，读日文带中文音；
 //   - 每行语言控制的唯一通道是 speaker 分配（日语行分给 ja 原生音色）；
 //   - SSE 事件 360=轮开始 / 362=轮结束，可按轮切分音频 → v10 混合装配的数据基础。
+//
 // 本包只负责「一场会话 → 每轮音频缓冲」，装配策略在 internal/podcast。
 package doubaopod
 
@@ -33,13 +34,21 @@ const (
 // AdditionsUranus：uranus 系列音色挂播客服务时需显式指定 additions 模型（样片验证）。
 const AdditionsUranus = "seed-tts-2.0-standard"
 
+// 火山文档硬限：单轮 ≤300 字符、单场所有轮次合计 ≤10000 字符（max_char_length_per_round）。
+// 预算取 4000：一场约 13 分钟音频、3 分钟合成，失败重试的代价小；
+// 40 分钟长集因此自动拆成 3 场（2026-11-04 实测 309 字/分钟、240 轮单场通过）。
+const (
+	maxCharsPerRound   = 300
+	maxCharsPerSession = 4000
+)
+
 type Client struct {
 	apiKey string
 	http   *http.Client
 }
 
 func New(apiKey string) *Client {
-	return &Client{apiKey: apiKey, http: &http.Client{Timeout: 300 * time.Second}}
+	return &Client{apiKey: apiKey, http: &http.Client{Timeout: 900 * time.Second}}
 }
 
 // Line 为脚本一行：Speaker 决定该行音色（亦即该行语言）。
@@ -65,9 +74,11 @@ type sessionReq struct {
 	} `json:"speaker_info"`
 }
 
-// Session 跑一场播客会话，返回按轮（360→362）切分的 MP3 缓冲。
-// rounds[i] 对应 lines[i]（action=3 保持脚本顺序，样片验证 8/8、3/3 对齐）。
-// onRound 非 nil 时每完成一轮回调轮下标（进度流用）。
+// Session 跑完整脚本并按字符预算自动拆场（单场硬限见 maxCharsPerSession），
+// 返回按轮（360→362）切分的 MP3 缓冲：rounds[i] 对应 lines[i]（action=3 保持脚本顺序，
+// 样片验证 8/8、3/3、240/240 对齐）。onRound 非 nil 时每完成一轮回调**全局**轮下标。
+// 同一对 speaker 跨场音色一致（同一 speaker ID 即固定音色）；use_head_music 全程关闭，
+// 否则续场会在中间插开场音效。
 func (c *Client) Session(ctx context.Context, speakers [2]string, lines []Line, additions map[string]string, onRound func(int)) ([][]byte, error) {
 	if c.apiKey == "" {
 		return nil, fmt.Errorf("DOUBAO_TTS_API_KEY 未配置")
@@ -75,6 +86,56 @@ func (c *Client) Session(ctx context.Context, speakers [2]string, lines []Line, 
 	if len(lines) == 0 {
 		return nil, fmt.Errorf("脚本为空")
 	}
+	var (
+		all   [][]byte
+		batch []Line
+		chars int
+	)
+	run := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		base := len(all)
+		var rounds [][]byte
+		var err error
+		for attempt := 0; attempt < 2; attempt++ {
+			rounds, err = c.session(ctx, speakers, batch, additions, func(i int) {
+				if onRound != nil {
+					onRound(base + i)
+				}
+			})
+			if err == nil {
+				break
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("第 %d-%d 轮合成失败: %w", base+1, base+len(batch), err)
+		}
+		all = append(all, rounds...)
+		batch, chars = nil, 0
+		return nil
+	}
+	for i, l := range lines {
+		n := len([]rune(l.Text))
+		if n > maxCharsPerRound {
+			return nil, fmt.Errorf("第 %d 行 %d 字超过单轮上限 %d 字", i, n, maxCharsPerRound)
+		}
+		if chars+n > maxCharsPerSession {
+			if err := run(); err != nil {
+				return nil, err
+			}
+		}
+		batch = append(batch, l)
+		chars += n
+	}
+	if err := run(); err != nil {
+		return nil, err
+	}
+	return all, nil
+}
+
+// session 跑一场会话（一场 ≤ maxCharsPerSession 字符）。
+func (c *Client) session(ctx context.Context, speakers [2]string, lines []Line, additions map[string]string, onRound func(int)) ([][]byte, error) {
 	var req sessionReq
 	req.Action = 3
 	req.NlpTexts = lines

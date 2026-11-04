@@ -2533,21 +2533,70 @@ function podMount(slot) {
   if (p.parentNode !== target) target.appendChild(p);
 }
 function podSrcPath() { return POD_SRC.kind === 'dir' ? '/podcast/by-dir/' : '/podcast/by-lesson/'; }
-function podFmt(ms) { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function podFmt(ms) {
+  const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(ss).padStart(2, '0'); // 长片要能显示到小时
+}
+const podSleep = (ms) => new Promise(r => setTimeout(r, ms));
+let POD_T0 = 0;      // 本次生成的起点（日志时间戳用）
+let POD_LOG_CUR = null; // 正在原地刷新的那行日志
+function podLogInit() { const l = $('pod-log'); l.hidden = false; l.innerHTML = ''; POD_LOG_CUR = null; }
+// podLog：replace=true 时原地刷新当前行（轮次/秒数在跳），否则追加新行（阶段变了）
+function podLog(msg, replace) {
+  const l = $('pod-log');
+  const txt = podFmt(Date.now() - POD_T0) + '  ' + msg;
+  if (replace && POD_LOG_CUR) { POD_LOG_CUR.textContent = txt; l.scrollTop = l.scrollHeight; return; }
+  if (POD_LOG_CUR) POD_LOG_CUR.classList.remove('cur');
+  const d = document.createElement('div');
+  d.className = 'cur';
+  d.textContent = txt;
+  l.appendChild(d);
+  POD_LOG_CUR = d;
+  l.scrollTop = l.scrollHeight; // 只滚日志框，页面不动
+}
 async function podOpen(kind, id, slot) {
   if (!id) { return; }
   POD_SRC = { kind, id };
+  POD_EST = null;
   podMount(slot);
   $('pod-panel').hidden = false;
   $('pod-log').hidden = true;
   $('pod-title').textContent = (kind === 'dir' ? '本单元播客' : '本课播客') + ' · 思思 & xudong';
   $('pod-state').textContent = '载入中…';
+  podEstimate(); // 不 await：只影响按钮文案与提示
+  // 服务端可能还有一集在跑（关页面/锁屏不会中断它）→ 直接接着看进度
+  const q = kind === 'dir' ? 'dir_id=' + id : 'lesson_id=' + id;
+  let job = null;
+  try { job = await api('/podcast/jobs/latest?' + q); } catch (e) { /* 没有任务，正常 */ }
+  if (job && ['queued', 'writing', 'synthesizing'].includes(job.status)) {
+    podReset();
+    POD_T0 = Date.now();
+    podLogInit();
+    podLog('接着上次的进度（任务在服务端跑，关页面也不会断）');
+    await podWatch(job.id);
+    return;
+  }
   try {
     const meta = await api(podSrcPath() + id);
     await podLoad(meta);
   } catch (e) {
     podReset();
   }
+}
+// podEstimate 生成前的时长/成本预估：长片一集十几分钟、按 token 计费，先让你知道要花多少
+let POD_EST = null;
+async function podEstimate() {
+  if (!POD_SRC) return null;
+  const q = POD_SRC.kind === 'dir' ? 'dir_id=' + POD_SRC.id : 'lesson_id=' + POD_SRC.id;
+  try {
+    const e = await api('/podcast/estimate?' + q);
+    POD_EST = e;
+    const btn = $('pod-gen');
+    btn.textContent = '生成播客（约 ' + e.est_minutes + ' 分钟）';
+    btn.title = `${e.words} 词 · ${e.segs} 段写稿 · 预计 ${e.est_minutes} 分钟音频 · 约 ${e.est_yuan} 元`;
+    podShowEstimate();
+    return e;
+  } catch (e) { return null; /* 估算失败不影响生成 */ }
 }
 function podReset() {
   podStopAudio();
@@ -2556,6 +2605,12 @@ function podReset() {
   $('pod-sub').textContent = '';
   $('pod-time').textContent = '0:00 / 0:00';
   $('pod-gen').hidden = false;
+  podShowEstimate(); // 估算可能比 podReset 先回来，这里补一次
+}
+// podShowEstimate 只在"还没有播客"的空白态下补预估，不覆盖已生成/生成中的状态
+function podShowEstimate() {
+  if (!POD_EST || !$('pod-state').textContent.startsWith('还没有播客')) return;
+  $('pod-state').textContent = `还没有播客 · ${POD_EST.words} 词 · 约 ${POD_EST.est_minutes} 分钟 · 约 ${POD_EST.est_yuan} 元`;
 }
 async function podLoad(meta) {
   podStopAudio();
@@ -2622,23 +2677,14 @@ function podStopAudio() {
 }
 async function podGenerate() {
   if (!POD_SRC) return;
+  const est = POD_EST || await podEstimate();
+  if (est && !confirm(`${est.title}：${est.words} 个词\n预计 ${est.est_minutes} 分钟音频，合成成本约 ${est.est_yuan} 元；生成要跑十几分钟。\n\n生成期间可以关掉页面，回来接着看进度。\n\n确定开始？`)) return;
   $('pod-gen').disabled = true;
-  const log = $('pod-log');
-  log.hidden = false; log.innerHTML = '';
-  const t0 = Date.now();
-  const stamp = () => podFmt(Date.now() - t0);
-  const podLog = (msg, isCur) => {
-    const d = document.createElement('div');
-    if (isCur) d.className = 'cur';
-    d.textContent = stamp() + '  ' + msg;
-    log.appendChild(d);
-    log.scrollTop = log.scrollHeight; // 日志框内自动滚到底（页面不动）
-    return d;
-  };
-  const ticker = setInterval(() => { $('pod-state').textContent = '生成中 ' + Math.round((Date.now() - t0) / 1000) + 's'; }, 500);
+  POD_T0 = Date.now();
+  podLogInit();
   try {
     const body = POD_SRC.kind === 'dir' ? { dir_id: POD_SRC.id } : { lesson_id: POD_SRC.id };
-    const r = await fetchAuth('/api/v1/podcast/generate/stream', {
+    const r = await fetchAuth('/api/v1/podcast/jobs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -2647,45 +2693,51 @@ async function podGenerate() {
       const j = await r.json().catch(() => ({}));
       throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
     }
-    const reader = r.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '', ev = '', meta = null, errMsg = null, roundEl = null, scriptEl = null;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const ls = buf.split('\n'); buf = ls.pop() || '';
-      for (const line of ls) {
-        if (line.startsWith('event:')) { ev = line.slice(6).trim(); continue; }
-        if (!line.startsWith('data:')) continue;
-        let d = {}; try { d = JSON.parse(line.slice(5)); } catch (e) { continue; }
-        if (ev === 'stage') { roundEl = null; scriptEl = null; podLog(d.msg, true); }
-        else if (ev === 'script') {
-          if (scriptEl) scriptEl.remove(); // 写稿字数原地刷新
-          scriptEl = podLog(d.msg, true);
-        }
-        else if (ev === 'round') {
-          if (roundEl) roundEl.remove(); // 轮次行原地刷新，不刷屏
-          roundEl = podLog(d.msg, true);
-        }
-        else if (ev === 'done') meta = d;
-        else if (ev === 'error') errMsg = d.message;
-      }
-    }
-    if (errMsg) throw new Error(errMsg);
-    if (!meta) throw new Error('流结束但未收到 done 事件');
-    podLog(meta.cached ? '命中缓存，直接载入' : '完成，开始播放');
-    await new Promise(res => setTimeout(res, 400));
-    log.hidden = true;
-    await podLoad(meta);
-    podPlay(true);
+    const job = await r.json();
+    podLog(`已排队：${job.words} 词，预计 ${job.est_minutes} 分钟音频。可以关掉页面，回来接着看。`);
+    await podWatch(job.id);
   } catch (e) {
     podLog('失败：' + e.message);
     $('pod-state').textContent = '生成失败：' + e.message;
-  } finally {
-    clearInterval(ticker);
     $('pod-gen').disabled = false;
   }
+}
+
+// podWatch 轮询后台任务：阶段变化时追加一行，同阶段原地刷新数字（不刷屏）。
+// 任务在服务端跑，轮询断了也不影响生成——重新打开面板会接着显示进度。
+async function podWatch(jobId) {
+  let lastKey = '';
+  for (;;) {
+    let j;
+    try { j = await api('/podcast/jobs/' + jobId); } catch (e) { await podSleep(3000); continue; }
+    const key = j.status + '|' + (j.status === 'writing' ? j.seg : '');
+    const detail = j.status === 'writing' && j.segs ? ` ${j.seg}/${j.segs} 段`
+      : (j.status === 'synthesizing' && j.rounds ? ` ${j.round}/${j.rounds} 轮` : '');
+    podLog((j.stage || '处理中…') + detail, key === lastKey);
+    lastKey = key;
+    $('pod-state').textContent = '生成中 ' + podFmt(Date.now() - POD_T0) + ' · ' + (j.stage || '');
+    if (j.status === 'error') {
+      podLog('失败：' + (j.error || '未知错误'));
+      $('pod-state').textContent = '生成失败';
+      $('pod-gen').disabled = false;
+      return;
+    }
+    if (j.status === 'done') break;
+    await podSleep(2000);
+  }
+  podLog('完成，开始播放');
+  $('pod-state').textContent = '载入音频…';
+  try {
+    const meta = await api(podSrcPath() + POD_SRC.id);
+    await podSleep(400);
+    $('pod-log').hidden = true;
+    await podLoad(meta);
+    podPlay(true);
+  } catch (e) {
+    podLog('音频载入失败：' + e.message);
+    $('pod-state').textContent = '生成完成，但音频载入失败：' + e.message;
+  }
+  $('pod-gen').disabled = false;
 }
 
 // ============ 启动 ============

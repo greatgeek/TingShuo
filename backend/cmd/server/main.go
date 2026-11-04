@@ -28,12 +28,12 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/user"
 	"github.com/greatgeek/TingShuo/backend/internal/word"
 	"github.com/greatgeek/TingShuo/backend/internal/wordstudy"
-	"github.com/greatgeek/TingShuo/backend/pkg/storage"
-	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
-	"github.com/greatgeek/TingShuo/backend/pkg/doubaopod"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
+	"github.com/greatgeek/TingShuo/backend/pkg/doubaopod"
 	"github.com/greatgeek/TingShuo/backend/pkg/envcfg"
 	"github.com/greatgeek/TingShuo/backend/pkg/jwtw"
+	"github.com/greatgeek/TingShuo/backend/pkg/storage"
+	"github.com/greatgeek/TingShuo/backend/pkg/ttsclient"
 )
 
 func main() {
@@ -89,6 +89,7 @@ func run() error {
 	jobH := generate.NewJobHandler(pool)
 	ttsH := tts.NewHandler(pool, store, azureTTS)
 	podH := podcast.NewHandler(pool, doubaopod.New(os.Getenv("DOUBAO_TTS_API_KEY")), store)
+	podH.StartWorker(ctx) // 长片一集要跑十几分钟，生成走后台任务，前端轮询进度
 	favH := favorite.NewHandler(pool)
 	wordH := word.NewHandler(pool)
 
@@ -150,9 +151,10 @@ func run() error {
 			sec.Get("/notebooks/dir/{dir_id}/words", nbH.DirWords)
 
 			sec.Post("/audio/say", ttsH.Say)
-			sec.Post("/podcast/generate", podH.Generate)
-			sec.Post("/podcast/generate/stream", podH.Stream)
-			sec.Post("/podcast/script", podH.Script)
+			sec.Post("/podcast/jobs", podH.CreateJob)
+			sec.Get("/podcast/jobs/latest", podH.LatestJob)
+			sec.Get("/podcast/jobs/{id}", podH.GetJob)
+			sec.Get("/podcast/estimate", podH.Estimate)
 			sec.Get("/podcast/by-lesson/{lesson_id}", podH.Latest)
 			sec.Get("/podcast/by-dir/{dir_id}", podH.LatestDir)
 			sec.Get("/podcast/{id}/file", podH.File)
