@@ -198,6 +198,12 @@
       <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置">⚙</button>
       <button class="btn accent" id="nb-play-all" title="按设置连播本目录全部词与例句">▶ 全播</button>
     </div>
+    <!-- 目录选择面板紧跟横条：播客面板可能很高（生成中日志+几百行列表），
+         放在它下面时点"更换"弹出来的面板在屏幕外，看着像没反应（2026-11-04 报障） -->
+    <div class="card nb-pickpanel" id="nbp-panel" hidden>
+      <select id="nbp-nb"></select>
+      <div class="nb-picklist" id="nbp-list"></div>
+    </div>
     <div id="pod-slot-nb"></div>
     <div class="card nb-nowbar" id="nb-nowbar" hidden>
       <span id="nb-now-text"></span>
@@ -205,10 +211,6 @@
         <button class="btn ghost" id="nb-now-pause">⏸ 暂停</button>
         <button class="btn ghost" id="nb-now-stop">■ 停止</button>
       </span>
-    </div>
-    <div class="card nb-pickpanel" id="nbp-panel" hidden>
-      <select id="nbp-nb"></select>
-      <div class="nb-picklist" id="nbp-list"></div>
     </div>
     <div class="sents" id="nb-words"></div>
     <p class="hint" id="nb-hint" style="margin-top:12px"></p>

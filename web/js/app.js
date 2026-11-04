@@ -2046,6 +2046,7 @@ function openNbPicker() {
   }
   renderNbPickerList();
   $('nbp-panel').hidden = false;
+  $('nbp-panel').scrollIntoView({ block: 'nearest' }); // 小屏上确保弹出来的面板在视口里
 }
 function closeNbPicker() { $('nbp-panel').hidden = true; }
 // 点面板与横条之外收起
