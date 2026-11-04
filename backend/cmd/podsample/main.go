@@ -67,6 +67,11 @@ func main() {
 		fmt.Println(string(tj))
 	}
 
+	for i := range script {
+		if script[i].Say == "" {
+			script[i].Say = podcast.Kanaize(script[i].Text, demoInput.Words)
+		}
+	}
 	lines, err := podcast.SessionLines(script)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "脚本校验失败:", err)
@@ -75,6 +80,10 @@ func main() {
 	client := doubaopod.New(key)
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
+
+	for i, l := range lines {
+		fmt.Printf("合成 %2d %s: %s\n", i+1, l.Speaker[:12], l.Text)
+	}
 
 	rounds, err := client.Session(ctx, [2]string{doubaopod.VoiceSisi, doubaopod.VoiceXudong}, lines, nil, nil)
 	if err != nil {

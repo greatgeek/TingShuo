@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const engineVer = "doubao-podcast-v13"
+const engineVer = "doubao-podcast-v13-kana"
 
 var (
 	genLim   = httpx.NewLimiter(5, 10) // 每用户 5/分钟（播客会话成本高）
@@ -52,10 +53,12 @@ func NewHandler(pool *pgxpool.Pool, pod *doubaopod.Client, store *storage.Client
 	return &Handler{pool: pool, pod: pod, store: store}
 }
 
-// Line 为脚本一行：role 决定音色，文本语言（中/日）由内容决定。
+// Line 为脚本一行：role 决定音色；Text 为展示文本（字幕/列表，可含日语汉字），
+// Say 为合成文本（缺省时服务端用词表把汉字形替换成假名读音，保证日语发音，2026-11-04 用户方案）。
 type Line struct {
 	Role string `json:"role"`
 	Text string `json:"text"`
+	Say  string `json:"say,omitempty"`
 }
 
 // Segment 为时间轴一项（逐轮高亮/字幕的数据源）。
@@ -78,6 +81,29 @@ func voiceOf(role string) (string, error) {
 	}
 }
 
+// Kanaize 将文本中出现的词表汉字形替换为假名读音（合成文本用）；展示文本保持汉字。
+// 例：中文行「食費」就是伙食费 → 合成文本「しょくひ」就是伙食费，中文主持也按日语读音念该词。
+// 按词形长度降序替换，避免短词先命中破坏长词（外食 被 食 吃掉）；单字词跳过，
+// 否则会误伤中文行文里的同形字（伙食费 里的 食）。
+func Kanaize(text string, words []WordBrief) string {
+	out := text
+	for _, w := range sortedBySurfaceLen(words) {
+		if w.Reading == "" || w.Surface == w.Reading || len([]rune(w.Surface)) < 2 {
+			continue
+		}
+		out = strings.ReplaceAll(out, w.Surface, w.Reading)
+	}
+	return out
+}
+
+func sortedBySurfaceLen(words []WordBrief) []WordBrief {
+	out := append([]WordBrief(nil), words...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return len([]rune(out[i].Surface)) > len([]rune(out[j].Surface))
+	})
+	return out
+}
+
 // SessionLines 校验脚本并映射为播客会话行。
 func SessionLines(lines []Line) ([]doubaopod.Line, error) {
 	out := make([]doubaopod.Line, 0, len(lines))
@@ -89,7 +115,11 @@ func SessionLines(lines []Line) ([]doubaopod.Line, error) {
 		if err != nil {
 			return nil, fmt.Errorf("第 %d 行: %w", i, err)
 		}
-		out = append(out, doubaopod.Line{Speaker: v, Text: l.Text})
+		txt := l.Say
+		if strings.TrimSpace(txt) == "" {
+			txt = l.Text
+		}
+		out = append(out, doubaopod.Line{Speaker: v, Text: txt})
 	}
 	return out, nil
 }
@@ -161,6 +191,7 @@ func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, e
 	}
 	lines := req.Lines
 	llmModel := ""
+	var srcWords []WordBrief
 	if len(lines) == 0 {
 		if req.LessonID == "" && req.DirID == "" {
 			return nil, httpx.BadRequest("PARAMS_INVALID", "lesson_id / dir_id / lines 至少给一个")
@@ -181,6 +212,7 @@ func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, e
 		if len(in.Words) == 0 {
 			return nil, httpx.BadRequest("SOURCE_EMPTY", "该来源没有可用于播客的词")
 		}
+		srcWords = in.Words
 		stage(fmt.Sprintf("LLM 写稿中（%d 词 %d 句入料）…", len(in.Words), len(in.Sentences)))
 		lines, err = BuildScript(ctx, in, func(think, content int) {
 			if emit == nil {
@@ -209,6 +241,11 @@ func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, e
 	}
 	if len(lines) < 2 {
 		return nil, httpx.BadRequest("SCRIPT_TOO_SHORT", "脚本至少 2 行")
+	}
+	for i := range lines {
+		if lines[i].Say == "" {
+			lines[i].Say = Kanaize(lines[i].Text, srcWords)
+		}
 	}
 	sessionLines, err := SessionLines(lines)
 	if err != nil {
@@ -259,17 +296,17 @@ func (h *Handler) generateCore(ctx context.Context, userID string, req genReq, e
 		chars += len([]rune(l.Text))
 	}
 	_, err = h.pool.Exec(ctx, `
-		INSERT INTO podcast_episode (id, user_id, lesson_id, dir_id, cache_key, script, timeline, srt, storage_key, duration_ms, rounds, llm_model)
-		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,NULLIF($12,''))`,
+		INSERT INTO podcast_episode (id, user_id, lesson_id, dir_id, cache_key, script, timeline, srt, storage_key, duration_ms, rounds, llm_model, tts_engine)
+		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,NULLIF($12,''),$13)`,
 		epID, userID, req.LessonID, req.DirID, ck, mustJSON(lines), tlJSON, srt, storage.AudioKey("podcast-"+epID),
-		tl[len(tl)-1].EndMS, len(roundBufs), llmModel)
+		tl[len(tl)-1].EndMS, len(roundBufs), llmModel, engineVer)
 	if err != nil {
 		return nil, httpx.BadGateway("落库失败: " + err.Error())
 	}
 	h.pool.Exec(ctx, `
 		INSERT INTO tts_call_log (id, user_id, voice, chars, duration_ms, cache_hit)
-		VALUES ($1,$2,'doubao-podcast-v13',$3,$4,false)`,
-		ulid.MustNew(), userID, chars, time.Since(t0).Milliseconds())
+		VALUES ($1,$2,$3,$4,$5,false)`,
+		ulid.MustNew(), userID, engineVer, chars, time.Since(t0).Milliseconds())
 	return &Meta{EpisodeID: epID, Cached: false, Timeline: tl, SRT: srt, DurationMS: tl[len(tl)-1].EndMS, Rounds: len(roundBufs)}, nil
 }
 
