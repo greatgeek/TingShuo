@@ -326,7 +326,7 @@ const scriptSystem = `你是日语教学播客《通勤日语电台》的脚本�
 硬约束：
 1. 只输出 JSON：{"lines":[{"role":"a","text":"..."}]}，不要任何解释文字或代码围栏。
 2. 日语行必须短，不超过 16 个字符：耳朵一次只吃得下一小口，长句拆成 2—3 个片段（前半以、或，结尾）。中文行不超过 26 字，一次只说一个点，像说话不像念稿。
-3. 每个日语行前面都要有中文引子（"听——""跟我念""再来一遍"），不许让日语裸切进来；唯一例外是把一句日语拆成两半时的后半。中文行里不要夹整句日语，要引用就单独成行。
+3. 一句话里可以中日混着说：中文部分写汉字，要念日语的词也写它的汉字（服务端会换成假名读音）。但**一行不要以日语词开头**——先垫一两个中文字（"它""这个词""比如"）再引出日语词，否则整行会被念成日语。纯日语示范行前面要有中文引子（"听——""跟我念""再来一遍"）；唯一例外是把一句日语拆成两半时的后半。
 4. a/b 交替为主，同一 role 不连续超过 2 行。
 5. text 里不写假名注音、不写角色名（不许出现"思思""xudong"）、不写音效或停顿提示；日语词直接写汉字（服务端会按词表转成日语读音）。
 6. text 只能是中文或日语，绝不许出现英文单词或字母。
@@ -416,7 +416,11 @@ func writeSegment(ctx context.Context, in Input, s segment, prevErr error) ([]Li
 		return nil, err
 	}
 	fixed := repair(lines)
-	return fixed, checkLines(fixed)
+	if err := checkLines(fixed); err != nil {
+		return nil, err
+	}
+	FillSay(fixed, in.Words) // 行首假名由 FillSay 自动垫中文引子，无需重试
+	return fixed, nil
 }
 
 // sanitize 丢掉漏出拉丁字母或角色名的行。宁可少一句，也不要让主持人念出 "weekdays"。
@@ -662,6 +666,10 @@ func checkLines(lines []Line) error {
 		if bad := foreignToken(l.Text); bad != "" {
 			return fmt.Errorf("第 %d 行混入非中日文内容 %q，请改写成中文或日语：%s", i, bad, l.Text)
 		}
+		// 行尾悬空连接词（实测出现过"山田さんは、或"这种半截行），念出来是断的。
+		if tail := danglingTail(l.Text); tail != "" {
+			return fmt.Errorf("第 %d 行以连接词 %q 结尾，话没说完；请把它并进下一行或改写：%s", i, tail, l.Text)
+		}
 		n := len([]rune(l.Text))
 		if isJaLine(l.Text) {
 			if n > maxJaLineRunes {
@@ -675,12 +683,15 @@ func checkLines(lines []Line) error {
 					return fmt.Errorf("第 %d 行日语前缺中文引子（第 %d 行日语已说完），加一句\"听——\"或\"跟我念\"：%s", i, i-1, l.Text)
 				}
 			}
-		} else if n > maxZhLineRunes {
-			return fmt.Errorf("第 %d 行中文过长（%d 字 > %d），一次只说一个点：%s", i, n, maxZhLineRunes, l.Text)
+		} else {
+			if n > maxZhLineRunes {
+				return fmt.Errorf("第 %d 行中文过长（%d 字 > %d），一次只说一个点：%s", i, n, maxZhLineRunes, l.Text)
+			}
 		}
 		// 中文实质行不许重复（说明模型在凑数）；日语行允许重复——"整句再听一遍"就是教学法。
-		// 短 cue 句（"听——""跟我念一遍"）本来就会重复，只查 10 字以上的行。
-		if n >= 10 && !isJaLine(l.Text) {
+		// 阈值 16 字：过渡句/引子（"来，我们把例句慢慢拆开。"）本来就会复用，
+		// 真正凑数的重复是整句解释（20 字以上）。
+		if n >= 16 && !isJaLine(l.Text) {
 			if j, ok := seen[l.Text]; ok {
 				return fmt.Errorf("第 %d 行与第 %d 行完全重复，请换一个说法：%s", i, j, l.Text)
 			}
@@ -718,21 +729,38 @@ func foreignToken(s string) string {
 	return ""
 }
 
-// isJaLine 判定一行是否日语行：假名 ≥4 且假名数不少于汉字数。
-// 中文讲解行常内嵌日语片段（"它常和友達、会議、デート搭配"有 8 假名 15 汉字），
-// 只看绝对假名数会把它当日语行并触发 24 字上限，导致整段重写（2026-11-04 实测踩坑三次）。
-// 自然日语一定有大量假名（助词/词尾），汉字多于假名的行必然是中文讲解。
+// isJaLine 判定一行是否日语行：不含中文标点（，；：）且含 ≥2 个假名。
+// 按假名/汉字比例判会两头错：汉字多的真日语（"私は中国人です。"3 假名 4 汉字）被判成中文，
+// 而内嵌日语片段的中文长句又可能被判成日语。中文标点是最硬的信号——日语书写不用，；：，
+// 含假名又带中文标点的行必然是中文讲解混了日语，交给"中文行禁假名"那道闸拒掉重写。
 func isJaLine(s string) bool {
-	var kana, han int
+	if strings.ContainsAny(s, "，；：") {
+		return false
+	}
+	return kanaCount(s) >= 2
+}
+
+// kanaCount 统计一行里的假名字符数（中文行禁假名用）。
+func kanaCount(s string) int {
+	n := 0
 	for _, r := range s {
-		switch {
-		case (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F):
-			kana++
-		case r >= 0x4E00 && r <= 0x9FFF:
-			han++
+		if (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F) {
+			n++
 		}
 	}
-	return kana >= 4 && kana >= han
+	return n
+}
+
+// danglingTail 行尾悬空的连接词——话没说完就断行，念出来是碎的。
+// 只列不会作为词语结尾的字/词（"温和"以和结尾、"学校で"以で结尾，都不能误伤）。
+func danglingTail(s string) string {
+	s = strings.TrimSpace(s)
+	for _, t := range []string{"或者", "以及", "而且", "但是", "或", "但"} {
+		if strings.HasSuffix(s, t) {
+			return t
+		}
+	}
+	return ""
 }
 
 // repair 自动修掉模型最常见的两类违规，避免整段重写（一次重写 20—90 秒，16 段就是灾难）：

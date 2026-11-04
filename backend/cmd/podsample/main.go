@@ -29,18 +29,19 @@ var fixedScript = []podcast.Line{
 	{Role: podcast.RoleA, Text: "下期见！"},
 }
 
-// demoInput 为 LLM 出稿模式的演示原料（一个目录的典型词，每词带自己的例句）。
+// demoInput 为 LLM 出稿模式的演示原料。用「中国人/山田/日本人」这类中日同形词：
+// 它们正是 2026-11-04 语言串味报障的词类（中文行被假名化后整行念成日语），留作回归夹具。
 var demoInput = podcast.Input{
-	Title: "钱和生活",
+	Title: "国籍和人名",
 	Words: []podcast.WordBrief{
-		{Surface: "食費", Reading: "しょくひ", Meaning: "伙食费，吃饭花的钱", Sentences: []podcast.SentenceBrief{
-			{Text: "今月は外食が多かったので、食費が増えました。", Translation: "这个月在外吃饭比较多，所以伙食费增加了。"},
+		{Surface: "中国人", Reading: "ちゅうごくじん", Meaning: "中国人", Sentences: []podcast.SentenceBrief{
+			{Text: "李さんは中国人ですか。", Translation: "小李是中国人吗？"},
 		}},
-		{Surface: "外食", Reading: "がいしょく", Meaning: "在外吃饭，下馆子", Sentences: []podcast.SentenceBrief{
-			{Text: "週末は家族と外食します。", Translation: "周末和家人出去吃饭。"},
+		{Surface: "山田", Reading: "やまだ", Meaning: "山田（日本姓氏）", Sentences: []podcast.SentenceBrief{
+			{Text: "山田さんは先生です。", Translation: "山田是老师。"},
 		}},
-		{Surface: "財布", Reading: "さいふ", Meaning: "钱包", Sentences: []podcast.SentenceBrief{
-			{Text: "財布の中に千円しか残っていません。", Translation: "钱包里只剩一千日元了。"},
+		{Surface: "日本人", Reading: "にほんじん", Meaning: "日本人", Sentences: []podcast.SentenceBrief{
+			{Text: "彼は日本人ではありません。", Translation: "他不是日本人。"},
 		}},
 	},
 }
@@ -70,6 +71,7 @@ func main() {
 			os.Exit(1)
 		}
 		script = lines
+		podcast.FillSay(script, demoInput.Words) // 与 generate 同一道语言把关，样片所见即所听
 		chars := 0
 		for _, l := range script {
 			chars += len([]rune(l.Text))
@@ -77,18 +79,17 @@ func main() {
 		fmt.Printf("脚本 %d 行 %d 字 约 %d 分钟（按实测 309 字/分）耗时 %s\n",
 			len(script), chars, chars/309, time.Since(t0).Round(time.Second))
 		for i, l := range script {
-			fmt.Printf("%3d %s %s\n", i+1, l.Role, l.Text)
+			say := ""
+			if l.Say != "" && l.Say != l.Text {
+				say = "   ⇒合成: " + l.Say
+			}
+			fmt.Printf("%3d %s %s%s\n", i+1, l.Role, l.Text, say)
 		}
 		if os.Getenv("POD_SCRIPT_ONLY") == "1" {
 			return
 		}
 	}
 
-	for i := range script {
-		if script[i].Say == "" {
-			script[i].Say = podcast.Kanaize(script[i].Text, demoInput.Words)
-		}
-	}
 	lines, err := podcast.SessionLines(script)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "脚本校验失败:", err)

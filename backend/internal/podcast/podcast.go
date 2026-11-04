@@ -33,8 +33,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// engineVer 进缓存 key：改 prompt/校验/音色后 bump，让旧缓存（旧节奏的稿子）不再命中。
-const engineVer = "doubao-podcast-v14-rhythm"
+// engineVer 进缓存 key：改 prompt/校验/音色/合成文本策略后 bump，让旧缓存不再命中。
+const engineVer = "doubao-podcast-v16-mix"
 
 var (
 	genLim   = httpx.NewLimiter(5, 10) // 每用户 5/分钟（播客会话成本高）
@@ -85,9 +85,41 @@ func voiceOf(role string) (string, error) {
 	}
 }
 
-// Kanaize 将文本中出现的词表汉字形替换为假名读音（合成文本用）；展示文本保持汉字。
-// 例：中文行「食費」就是伙食费 → 合成文本「しょくひ」就是伙食费，中文主持也按日语读音念该词。
-// 按词形长度降序替换，避免短词先命中破坏长词（外食 被 食 吃掉）；单字词跳过，
+// FillSay 为每行回填合成文本：中文部分保持汉字，词表里的日语词换成假名读音，
+// 于是同一句话可以中日混着念（用户 2026-11-04 明确要的效果："说中文用中文表示，
+// 说日语替换成假名"）。展示文本 Text 不变，字幕/列表仍是汉字。
+// 中文行若合成后以假名开头（行首就是日语词），垫一个中文引子把音色锚在中文——
+// 行首假名会让双语音色把整行切去日语念（同日报障根因）；行中混读才是想要的效果。
+// 纯日语行（isJaLine）行首本来就是假名，不垫。
+func FillSay(lines []Line, words []WordBrief) {
+	for i := range lines {
+		if lines[i].Say != "" {
+			continue
+		}
+		say := Kanaize(lines[i].Text, words)
+		if startsKana(say) && !isJaLine(lines[i].Text) {
+			if i%2 == 0 {
+				say = "这个词——" + say
+			} else {
+				say = "它——" + say
+			}
+		}
+		lines[i].Say = say
+	}
+}
+
+// startsKana 合成文本是否以假名开头。行首假名会让双语音色把整行切去日语念
+// （2026-11-04 报障根因）；行中混读才是想要的效果，所以只禁行首。
+func startsKana(s string) bool {
+	for _, r := range s {
+		return (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F)
+	}
+	return false
+}
+
+// Kanaize 把文本里出现的词表汉字形替换成假名读音，中文部分原样保留 → 合成文本中日混排。
+// 日语行里的不规则读音靠它兜住（主人公→しゅじんこう）。
+// 词形按长度降序替换，避免短词先命中破坏长词（外食 被 食 吃掉）；单字词跳过，
 // 否则会误伤中文行文里的同形字（伙食费 里的 食）。
 func Kanaize(text string, words []WordBrief) string {
 	out := text
@@ -247,11 +279,7 @@ func (h *Handler) generate(ctx context.Context, userID, lessonID, dirID string, 
 	if err != nil {
 		return nil, err
 	}
-	for i := range lines {
-		if lines[i].Say == "" {
-			lines[i].Say = Kanaize(lines[i].Text, in.Words)
-		}
-	}
+	FillSay(lines, in.Words)
 	sessionLines, err := SessionLines(lines)
 	if err != nil {
 		return nil, err

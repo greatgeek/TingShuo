@@ -1,6 +1,9 @@
 package podcast
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseLines(t *testing.T) {
 	cases := []struct {
@@ -83,5 +86,27 @@ func TestRepairFixesRoleRun(t *testing.T) {
 	out := repair(in)
 	if err := checkLines(out); err != nil {
 		t.Errorf("修复后仍不合规：%v", err)
+	}
+}
+
+func TestFillSayMixesLanguages(t *testing.T) {
+	words := []WordBrief{{Surface: "中国人", Reading: "ちゅうごくじん"}, {Surface: "山田", Reading: "やまだ"}}
+	lines := []Line{
+		{Role: RoleA, Text: "小李是中国人。介绍别人国籍的说法。"},   // 行中混读：想要
+		{Role: RoleB, Text: "李さんは中国人ですか。"},             // 纯日语行：整行假名化
+		{Role: RoleA, Text: "山田这个词，放在句首很常见。"},        // 行首是词 → 合成后行首假名
+	}
+	FillSay(lines, words)
+	if lines[0].Say != "小李是ちゅうごくじん。介绍别人国籍的说法。" {
+		t.Errorf("中文行应只把日语词换假名：%s", lines[0].Say)
+	}
+	if lines[1].Say != "李さんはちゅうごくじんですか。" {
+		t.Errorf("日语行应整行假名化：%s", lines[1].Say)
+	}
+	if startsKana(lines[2].Say) || !strings.HasPrefix(lines[2].Say, "这个词——") {
+		t.Errorf("行首是日语词的中文行应自动垫中文引子：%s", lines[2].Say)
+	}
+	if startsKana(lines[0].Say) {
+		t.Error("行中混读不应被判为假名开头")
 	}
 }
