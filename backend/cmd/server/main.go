@@ -124,6 +124,13 @@ func run() error {
 			pub.Post("/auth/refresh", authH.Refresh)
 		})
 
+		// 播客音频流：浏览器 <audio> 直连（携 Play 换的短时效票据），带不了 Authorization 头，
+		// 所以挂在鉴权组外——票据本身即授权（单对象、单用户、30 分钟）。
+		api.Group(func(pub chi.Router) {
+			pub.Use(httpx.Limit(httpx.NewLimiter(60, 30), httpx.ClientIP))
+			pub.Get("/podcast/{id}/file", podH.File)
+		})
+
 		// 鉴权端点
 		api.Group(func(sec chi.Router) {
 			sec.Use(authH.Middleware)
@@ -155,9 +162,9 @@ func run() error {
 			sec.Get("/podcast/jobs/latest", podH.LatestJob)
 			sec.Get("/podcast/jobs/{id}", podH.GetJob)
 			sec.Get("/podcast/estimate", podH.Estimate)
+			sec.Get("/podcast/{id}/play", podH.Play)
 			sec.Get("/podcast/by-lesson/{lesson_id}", podH.Latest)
 			sec.Get("/podcast/by-dir/{dir_id}", podH.LatestDir)
-			sec.Get("/podcast/{id}/file", podH.File)
 
 			sec.Post("/favorites", favH.AddSentence)
 			sec.Delete("/favorites/sentences/{sentence_id}", favH.RemoveSentence)

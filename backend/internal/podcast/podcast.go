@@ -10,7 +10,9 @@ package podcast
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -18,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -353,10 +356,37 @@ func (h *Handler) LatestDir(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// File GET /podcast/{id}/file：流式代理该集音频（归属校验同 tts.File）。
-func (h *Handler) File(w http.ResponseWriter, r *http.Request) {
+// Play GET /podcast/{id}/play（需登录）：换一张 30 分钟的播放票据。
+// <audio src> 带不了 Authorization 头，而长集 15—25MB 又不能先整包下载成 blob
+// （手机上又慢又占内存，2026-11-04 实测打不开），所以给浏览器一个自带票据的 URL 走原生流式播放。
+func (h *Handler) Play(w http.ResponseWriter, r *http.Request) {
 	userID := auth.FromContext(r.Context())
 	epID := chi.URLParam(r, "id")
+	var n int
+	if err := h.pool.QueryRow(r.Context(),
+		`SELECT count(1) FROM podcast_episode WHERE id=$1 AND user_id=$2`, epID, userID).Scan(&n); err != nil || n == 0 {
+		httpx.Err(w, httpx.NotFound("播客不存在或不属于当前用户"))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"url":        "/api/v1/podcast/" + epID + "/file?ticket=" + playTicket(epID, userID),
+		"expires_in": int(playTicketTTL.Seconds()),
+	})
+}
+
+// File GET /podcast/{id}/file：流式代理该集音频，支持 Range（拖进度条）。
+// 鉴权二选一：Authorization 头（登录态）或 ?ticket=（Play 换的短时效票据，供 <audio> 用）。
+func (h *Handler) File(w http.ResponseWriter, r *http.Request) {
+	epID := chi.URLParam(r, "id")
+	userID := auth.FromContext(r.Context())
+	if userID == "" {
+		uid, ok := verifyPlayTicket(r.URL.Query().Get("ticket"), epID)
+		if !ok {
+			httpx.Err(w, httpx.NewError(http.StatusUnauthorized, "AUTH_REQUIRED", "需要登录或有效播放票据"))
+			return
+		}
+		userID = uid
+	}
 	var objectKey string
 	if err := h.pool.QueryRow(r.Context(),
 		`SELECT storage_key FROM podcast_episode WHERE id=$1 AND user_id=$2`, epID, userID).
@@ -364,16 +394,101 @@ func (h *Handler) File(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.NotFound("播客不存在或不属于当前用户"))
 		return
 	}
-	obj, err := h.store.GetObject(r.Context(), objectKey)
+	size, err := h.store.StatAudio(r.Context(), objectKey)
+	if err != nil {
+		httpx.Err(w, httpx.BadGateway("对象存储读取失败: "+err.Error()))
+		return
+	}
+	start, end, ranged := parseRange(r.Header.Get("Range"), size)
+	obj, err := h.store.GetObjectRange(r.Context(), objectKey, start, end)
 	if err != nil {
 		httpx.Err(w, httpx.BadGateway("对象存储读取失败: "+err.Error()))
 		return
 	}
 	defer obj.Close()
 	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("Cache-Control", "private, max-age=86400")
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	w.Header().Set("Content-Length", strconv.FormatInt(end-start+1, 10))
+	if ranged {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
+		w.WriteHeader(http.StatusPartialContent)
+	}
 	io.Copy(w, obj)
 }
+
+// parseRange 解析 Range 头为 [start, end] 闭区间；无/非法 Range 返回整对象。
+func parseRange(hdr string, size int64) (start, end int64, ranged bool) {
+	end = size - 1
+	if !strings.HasPrefix(hdr, "bytes=") {
+		return 0, end, false
+	}
+	spec := strings.SplitN(strings.TrimPrefix(hdr, "bytes="), "-", 2)
+	if len(spec) != 2 {
+		return 0, end, false
+	}
+	if spec[0] == "" { // bytes=-N：尾部 N 字节
+		n, err := strconv.ParseInt(spec[1], 10, 64)
+		if err != nil || n <= 0 {
+			return 0, end, false
+		}
+		if n > size {
+			n = size
+		}
+		return size - n, end, true
+	}
+	s, err := strconv.ParseInt(spec[0], 10, 64)
+	if err != nil || s < 0 || s >= size {
+		return 0, end, false
+	}
+	start = s
+	if spec[1] != "" {
+		if e, err := strconv.ParseInt(spec[1], 10, 64); err == nil && e >= start && e < size {
+			end = e
+		}
+	}
+	return start, end, true
+}
+
+// playTicketTTL 播放票据有效期：够听完半集再续（前端可在快过期时重换）。
+const playTicketTTL = 30 * time.Minute
+
+// playTicket 签发 HMAC 票据：只授权单个对象、单个用户、30 分钟，
+// 泄露影响面远小于把长期 access token 放进 URL（会进访问日志和历史记录）。
+func playTicket(epID, userID string) string {
+	payload := fmt.Sprintf("%s|%s|%d", epID, userID, time.Now().Add(playTicketTTL).Unix())
+	mac := hmac.New(sha256.New, ticketKey())
+	io.WriteString(mac, payload)
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil))
+}
+
+func verifyPlayTicket(ticket, epID string) (string, bool) {
+	parts := strings.SplitN(ticket, ".", 2)
+	if len(parts) != 2 {
+		return "", false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return "", false
+	}
+	f := strings.Split(string(raw), "|")
+	if len(f) != 3 || f[0] != epID {
+		return "", false
+	}
+	exp, err := strconv.ParseInt(f[2], 10, 64)
+	if err != nil || time.Now().Unix() > exp {
+		return "", false
+	}
+	mac := hmac.New(sha256.New, ticketKey())
+	io.WriteString(mac, string(raw))
+	want, err := hex.DecodeString(parts[1])
+	if err != nil || !hmac.Equal(mac.Sum(nil), want) {
+		return "", false
+	}
+	return f[1], true
+}
+
+func ticketKey() []byte { return []byte(os.Getenv("JWT_SECRET") + ":podcast-play") }
 
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)

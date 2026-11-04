@@ -2616,11 +2616,13 @@ async function podLoad(meta) {
   podStopAudio();
   POD = { id: meta.episode_id, timeline: meta.timeline, duration_ms: meta.duration_ms, cur: -1 };
   $('pod-gen').hidden = true;
-  $('pod-state').textContent = '已生成 · ' + meta.rounds + ' 轮';
-  const r = await fetchAuth('/api/v1/podcast/' + meta.episode_id + '/file');
-  if (!r.ok) throw new Error('音频加载失败 HTTP ' + r.status);
-  POD.url = URL.createObjectURL(await r.blob());
-  const a = new Audio(POD.url);
+  $('pod-state').textContent = '已生成 · ' + meta.rounds + ' 轮 · ' + podFmt(meta.duration_ms);
+  podRenderList(); // 列表与时间轴先出来：长集音频 15—25MB，不能等整包下载（手机上打不开，2026-11-04 实测）
+  podTick();
+  const pj = await api('/podcast/' + meta.episode_id + '/play');
+  const a = new Audio();
+  a.preload = 'metadata';
+  a.src = pj.url; // 浏览器原生流式 + Range：秒开、能拖进度、不用把整集读进内存
   POD.audio = a;
   a.playbackRate = parseFloat(localStorage.getItem('ts_pod_rate') || '1');
   $('pod-rate').value = String(a.playbackRate);
@@ -2630,8 +2632,20 @@ async function podLoad(meta) {
     const pos = parseFloat(localStorage.getItem('ts_pod_pos_' + POD.id) || '0'); // 记住上次位置（毫秒）
     if (pos > 1000 && pos < meta.duration_ms - 3000) a.currentTime = pos / 1000;
   });
-  podRenderList();
-  podTick();
+  let retried = false;
+  a.addEventListener('error', async () => {
+    if (!POD || POD.audio !== a) return;
+    if (retried) { $('pod-state').textContent = '音频加载失败，请重试'; return; }
+    retried = true; // 票据 30 分钟过期或网络抖一下：换一张票据从原位置续
+    const at = a.currentTime;
+    try {
+      const np = await api('/podcast/' + meta.episode_id + '/play');
+      a.src = np.url;
+      a.currentTime = at;
+    } catch (e) {
+      $('pod-state').textContent = '音频加载失败，请重试';
+    }
+  });
 }
 function podRenderList() {
   const box = $('pod-list'); box.innerHTML = '';
@@ -2672,7 +2686,7 @@ function podPlay(on) {
   else { POD.audio.pause(); $('pod-play').textContent = '▶'; }
 }
 function podStopAudio() {
-  if (POD && POD.audio) { try { POD.audio.pause(); } catch (e) {} if (POD.url) URL.revokeObjectURL(POD.url); }
+  if (POD && POD.audio) { try { POD.audio.pause(); POD.audio.src = ''; } catch (e) {} } // 断开流式下载
   POD = null;
 }
 async function podGenerate() {

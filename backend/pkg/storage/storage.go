@@ -74,6 +74,24 @@ func (c *Client) GetObject(ctx context.Context, objectKey string) (*minio.Object
 	return c.mc.GetObject(ctx, c.audioBucket, objectKey, minio.GetObjectOptions{})
 }
 
+// StatAudio 取对象字节数（长音频要按 Range 流式播放，先得知道总长）。
+func (c *Client) StatAudio(ctx context.Context, objectKey string) (int64, error) {
+	st, err := c.mc.StatObject(ctx, c.audioBucket, objectKey, minio.StatObjectOptions{})
+	if err != nil {
+		return 0, err
+	}
+	return st.Size, nil
+}
+
+// GetObjectRange 打开对象的 [start, end] 闭区间字节（播客拖进度条用；调用方负责 Close）。
+func (c *Client) GetObjectRange(ctx context.Context, objectKey string, start, end int64) (*minio.Object, error) {
+	opts := minio.GetObjectOptions{}
+	if err := opts.SetRange(start, end); err != nil {
+		return nil, err
+	}
+	return c.mc.GetObject(ctx, c.audioBucket, objectKey, opts)
+}
+
 // PresignedGET 生成下载 URL（/audio/{id}/file 302 目标；10 分钟有效，§8.6）。
 // objectKey 为完整对象 key（即 audio_asset.storage_url 的值，已含 .mp3 后缀）。
 func (c *Client) PresignedGET(ctx context.Context, objectKey string, ttl time.Duration) (string, error) {
