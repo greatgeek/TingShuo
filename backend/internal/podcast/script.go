@@ -729,26 +729,35 @@ func foreignToken(s string) string {
 	return ""
 }
 
-// isJaLine 判定一行是否日语行：不含中文标点（，；：）且含 ≥2 个假名。
-// 按假名/汉字比例判会两头错：汉字多的真日语（"私は中国人です。"3 假名 4 汉字）被判成中文，
-// 而内嵌日语片段的中文长句又可能被判成日语。中文标点是最硬的信号——日语书写不用，；：，
-// 含假名又带中文标点的行必然是中文讲解混了日语，交给"中文行禁假名"那道闸拒掉重写。
+// isJaLine 判定一行是否日语行：不含中文标点（，；：）、含 ≥2 个假名，
+// 且不是"汉字多于假名还带「」引用"的中文句（如 日常问熟人可以用「誰ですか」。）。
+// 中文标点是硬信号——日语书写不用，；：；带「」且汉字占多的是中文句引用日语，
+// 纯日语即使汉字多（私は中国人です。）也不会带「」。
 func isJaLine(s string) bool {
 	if strings.ContainsAny(s, "，；：") {
 		return false
 	}
-	return kanaCount(s) >= 2
+	kana, han := kanaHanCount(s)
+	if kana < 2 {
+		return false
+	}
+	if han > kana && strings.ContainsAny(s, "「」") {
+		return false
+	}
+	return true
 }
 
-// kanaCount 统计一行里的假名字符数（中文行禁假名用）。
-func kanaCount(s string) int {
-	n := 0
+// kanaHanCount 统计一行里的假名数与汉字数。
+func kanaHanCount(s string) (kana, han int) {
 	for _, r := range s {
-		if (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F) {
-			n++
+		switch {
+		case (r >= 0x3040 && r <= 0x30FF) || (r >= 0xFF66 && r <= 0xFF9F):
+			kana++
+		case r >= 0x4E00 && r <= 0x9FFF:
+			han++
 		}
 	}
-	return n
+	return kana, han
 }
 
 // danglingTail 行尾悬空的连接词——话没说完就断行，念出来是碎的。
@@ -763,8 +772,9 @@ func danglingTail(s string) string {
 	return ""
 }
 
-// repair 自动修掉模型最常见的两类违规，避免整段重写（一次重写 20—90 秒，16 段就是灾难）：
-// 超长行按标点拆成同 role 连说；拆完出现的 3 连排翻给另一位主持（两人均双语，翻角色不伤内容）。
+// repair 自动修掉模型最常见的几类违规，避免整段重写（一次重写 20—90 秒，16 段经不起）：
+// 超长行按标点拆成同 role 连说；日语行前缺中文引子就补一行"听——"；
+// 拆完/补完出现的 3 连排翻给另一位主持（两人均双语，翻角色不伤内容）。
 func repair(lines []Line) []Line {
 	out := make([]Line, 0, len(lines)+8)
 	for _, l := range lines {
@@ -772,12 +782,22 @@ func repair(lines []Line) []Line {
 			out = append(out, Line{Role: l.Role, Text: part})
 		}
 	}
-	for i := 2; i < len(out); i++ {
-		if out[i].Role == out[i-1].Role && out[i-1].Role == out[i-2].Role {
-			out[i].Role = flipRole(out[i].Role)
+	withCue := make([]Line, 0, len(out)+4)
+	for i, l := range out {
+		if i > 0 && isJaLine(l.Text) && isJaLine(out[i-1].Text) {
+			prev := out[i-1].Text
+			if !strings.HasSuffix(prev, "、") && !strings.HasSuffix(prev, "，") {
+				withCue = append(withCue, Line{Role: flipRole(l.Role), Text: "听——"})
+			}
+		}
+		withCue = append(withCue, l)
+	}
+	for i := 2; i < len(withCue); i++ {
+		if withCue[i].Role == withCue[i-1].Role && withCue[i-1].Role == withCue[i-2].Role {
+			withCue[i].Role = flipRole(withCue[i].Role)
 		}
 	}
-	return out
+	return withCue
 }
 
 // splitLong 在长度上限内最后一个标点处切开，递归处理剩余部分；找不到标点就原样返回，

@@ -38,12 +38,15 @@ func TestIsJaLine(t *testing.T) {
 		"約束があります。",
 		"しょくひ。",
 		"財布の中に千円しかありません。",
+		"私は中国人です。",   // 汉字多于假名的纯日语也要认出来
+		"李さんは、",       // 拆句前半
 	}
 	zh := []string{
 		"它常和友達、会議、デート搭配，也可以用約束があります。",
 		"先拆：今月是时间；外食が主语，多かった是过去形。",
 		"意思是“和朋友约好了”。",
 		"这个词在便利店结账时一定会听到。",
+		"日常问熟人可以用「誰ですか」。", // 中文句引用日语，2026-11-04 线上误判用例
 	}
 	for _, s := range ja {
 		if !isJaLine(s) {
@@ -54,6 +57,29 @@ func TestIsJaLine(t *testing.T) {
 		if isJaLine(s) {
 			t.Errorf("应判为中文行：%s", s)
 		}
+	}
+}
+
+func TestRepairInsertsMissingCue(t *testing.T) {
+	// 两句"说完"的日语连排：第二句前应自动补一行中文引子，而不是整段重试
+	in := []Line{
+		{Role: RoleA, Text: "山田さんは先生です。"},
+		{Role: RoleB, Text: "誰ですか。"},
+	}
+	out := repair(in)
+	if err := checkLines(out); err != nil {
+		t.Fatalf("补引子后应通过校验：%v", err)
+	}
+	if len(out) != 3 || out[1].Text != "听——" || out[2].Text != "誰ですか。" {
+		t.Errorf("日语行前应补中文引子，得到：%v", out)
+	}
+	// 拆句后半（以、结尾）不该补引子
+	cont := repair([]Line{
+		{Role: RoleA, Text: "山田さんは、"},
+		{Role: RoleB, Text: "先生です。"},
+	})
+	if len(cont) != 2 {
+		t.Errorf("拆句后半不应补引子，得到 %d 行", len(cont))
 	}
 }
 
