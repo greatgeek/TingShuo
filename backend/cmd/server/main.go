@@ -153,6 +153,7 @@ func run() error {
 			sec.Post("/podcast/generate", podH.Generate)
 			sec.Post("/podcast/script", podH.Script)
 			sec.Get("/podcast/by-lesson/{lesson_id}", podH.Latest)
+			sec.Get("/podcast/by-dir/{dir_id}", podH.LatestDir)
 			sec.Get("/podcast/{id}/file", podH.File)
 
 			sec.Post("/favorites", favH.AddSentence)

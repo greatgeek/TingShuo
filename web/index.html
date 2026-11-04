@@ -142,7 +142,7 @@
     </div>
     <div class="card pod-panel" id="pod-panel" hidden>
       <div class="pod-head">
-        <span class="pod-title">本课播客 · 思思 & xudong</span>
+        <span class="pod-title" id="pod-title">本课播客 · 思思 & xudong</span>
         <span class="pod-state" id="pod-state"></span>
         <span style="flex:1"></span>
         <button class="btn ghost" id="pod-gen">生成播客</button>
@@ -193,9 +193,11 @@
     <div class="card nb-strip" id="nb-strip">
       <div class="nb-strip-main" id="nb-strip-text">生词本</div>
       <button class="btn ghost" id="nb-strip-btn">更换</button>
-      <button class="btn ghost" id="nb-play-cfg" title="播放设置">⚙</button>
+      <button class="btn ghost nb-icon" id="nb-pod-btn" title="用本单元的词和句子生成播客">🎙</button>
+      <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置">⚙</button>
       <button class="btn accent" id="nb-play-all" title="按设置连播本目录全部词与例句">▶ 全播</button>
     </div>
+    <div id="pod-slot-nb"></div>
     <div class="card nb-nowbar" id="nb-nowbar" hidden>
       <span id="nb-now-text"></span>
       <span class="nb-now-btns">

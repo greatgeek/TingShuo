@@ -136,10 +136,10 @@ func ts(ms int64) string {
 	return fmt.Sprintf("%02d:%02d:%02d,%03d", ms/3600000, ms%3600000/60000, ms%60000/1000, ms%1000)
 }
 
-// cacheKey 为「课+脚本+引擎版本」的稳定哈希：同课同脚本零重复计费（AC-3.1 同款护栏）。
-func cacheKey(lessonID string, lines []Line) string {
+// cacheKey 为「源(课/目录)+脚本+引擎版本」的稳定哈希：同源同脚本零重复计费（AC-3.1 同款护栏）。
+func cacheKey(lessonID, dirID string, lines []Line) string {
 	h := sha256.New()
-	io.WriteString(h, engineVer+"\x00"+lessonID+"\x00")
+	io.WriteString(h, engineVer+"\x00L:"+lessonID+"\x00D:"+dirID+"\x00")
 	for _, l := range lines {
 		io.WriteString(h, l.Role+"\x01"+l.Text+"\x00")
 	}
@@ -157,6 +157,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	}
 	var req struct {
 		LessonID string `json:"lesson_id"`
+		DirID    string `json:"dir_id"`
 		Lines    []Line `json:"lines"`
 	}
 	if e := httpx.Decode(r, &req); e != nil {
@@ -166,17 +167,25 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	lines := req.Lines
 	llmModel := ""
 	if len(lines) == 0 {
-		if req.LessonID == "" {
-			httpx.Err(w, httpx.BadRequest("PARAMS_INVALID", "lesson_id 与 lines 至少给一个"))
+		if req.LessonID == "" && req.DirID == "" {
+			httpx.Err(w, httpx.BadRequest("PARAMS_INVALID", "lesson_id / dir_id / lines 至少给一个"))
 			return
 		}
-		in, err := LoadLessonInput(r.Context(), h.pool, userID, req.LessonID)
+		var (
+			in  Input
+			err error
+		)
+		if req.DirID != "" {
+			in, err = LoadDirInput(r.Context(), h.pool, userID, req.DirID)
+		} else {
+			in, err = LoadLessonInput(r.Context(), h.pool, userID, req.LessonID)
+		}
 		if err != nil {
 			httpx.Err(w, httpx.NotFound(err.Error()))
 			return
 		}
 		if len(in.Words) == 0 {
-			httpx.Err(w, httpx.BadRequest("LESSON_EMPTY", "该课没有可用于播客的词"))
+			httpx.Err(w, httpx.BadRequest("SOURCE_EMPTY", "该来源没有可用于播客的词"))
 			return
 		}
 		lines, err = BuildScript(r.Context(), in)
@@ -185,6 +194,11 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		llmModel = os.Getenv("LLM_MODEL")
+	} else if req.DirID != "" {
+		if _, err := LoadDirInput(r.Context(), h.pool, userID, req.DirID); err != nil {
+			httpx.Err(w, httpx.NotFound(err.Error()))
+			return
+		}
 	} else if req.LessonID != "" {
 		var n int
 		if err := h.pool.QueryRow(r.Context(), `SELECT count(1) FROM daily_lesson WHERE id=$1 AND user_id=$2`, req.LessonID, userID).Scan(&n); err != nil || n == 0 {
@@ -202,7 +216,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ck := cacheKey(req.LessonID, lines)
+	ck := cacheKey(req.LessonID, req.DirID, lines)
 	var (
 		epID       string
 		durationMS int
@@ -245,9 +259,9 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 		chars += len([]rune(l.Text))
 	}
 	_, err = h.pool.Exec(r.Context(), `
-		INSERT INTO podcast_episode (id, user_id, lesson_id, cache_key, script, timeline, srt, storage_key, duration_ms, rounds, llm_model)
-		VALUES ($1,$2,NULLIF($3,''),$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''))`,
-		epID, userID, req.LessonID, ck, mustJSON(lines), tlJSON, srt, storage.AudioKey("podcast-"+epID),
+		INSERT INTO podcast_episode (id, user_id, lesson_id, dir_id, cache_key, script, timeline, srt, storage_key, duration_ms, rounds, llm_model)
+		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,NULLIF($12,''))`,
+		epID, userID, req.LessonID, req.DirID, ck, mustJSON(lines), tlJSON, srt, storage.AudioKey("podcast-"+epID),
 		tl[len(tl)-1].EndMS, len(roundBufs), llmModel)
 	if err != nil {
 		httpx.Err(w, httpx.BadGateway("落库失败: "+err.Error()))
@@ -283,6 +297,37 @@ func (h *Handler) Latest(w http.ResponseWriter, r *http.Request) {
 		Scan(&epID, &durationMS, &rounds, &tlJSON, &srt)
 	if err != nil {
 		httpx.Err(w, httpx.NotFound("该课还没有播客"))
+		return
+	}
+	var tl []Segment
+	json.Unmarshal(tlJSON, &tl)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"episode_id": epID, "timeline": tl, "srt": srt,
+		"duration_ms": durationMS, "rounds": rounds,
+	})
+}
+
+// LatestDir GET /podcast/by-dir/{dir_id}：该生词本目录最新一集元数据（无则 404）。
+func (h *Handler) LatestDir(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	dirID := chi.URLParam(r, "dir_id")
+	var (
+		epID       string
+		durationMS int
+		rounds     int
+		tlJSON     []byte
+		srt        string
+	)
+	err := h.pool.QueryRow(r.Context(), `
+		SELECT e.id, e.duration_ms, e.rounds, e.timeline, e.srt
+		FROM podcast_episode e
+		JOIN notebook_dir d ON d.id = e.dir_id
+		JOIN notebook nb ON nb.id = d.notebook_id
+		WHERE e.dir_id = $1 AND nb.user_id = $2
+		ORDER BY e.created_at DESC LIMIT 1`, dirID, userID).
+		Scan(&epID, &durationMS, &rounds, &tlJSON, &srt)
+	if err != nil {
+		httpx.Err(w, httpx.NotFound("该单元还没有播客"))
 		return
 	}
 	var tl []Segment

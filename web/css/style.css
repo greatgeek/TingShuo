@@ -375,3 +375,11 @@ body.nb-playing #sc-notebook{padding-bottom:80px}
 .pod-row .tx{min-width:0}
 .pod-row.ja .tx{color:#0a6b52}
 #pod-gen[hidden]{display:none}
+
+/* 生词本横条四按钮收整：图标按钮等宽、文字按钮紧凑、整体留白均匀 */
+.nb-strip{gap:6px}
+.nb-strip .btn{flex:0 0 auto}
+.nb-strip .nb-icon{padding:5px 9px;font-size:14px;line-height:1;width:auto}
+.nb-strip #nb-strip-btn{padding:5px 10px;font-size:12px;width:auto}
+.nb-strip #nb-play-all{padding:5px 12px;font-size:12px;width:auto}
+#pod-slot-nb .pod-panel{margin-top:8px}

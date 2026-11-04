@@ -2522,16 +2522,27 @@ function saveNbCfg() {
   toast(`已保存：词 ×${PL_CFG.word} · 句 ×${PL_CFG.sent} · 循环 ×${PL_CFG.loop}`);
 }
 
-// ============ 本课播客（v13：思思+xudong 单场双语） ============
-let POD = null; // {id, timeline, duration_ms, audio, url, cur}
+// ============ 本课/本单元播客（v13：思思+xudong 单场双语） ============
+let POD = null;      // {id, timeline, duration_ms, audio, url, cur}
+let POD_SRC = null;  // {kind:'lesson'|'dir', id}
+let POD_HOME = null; // 播放器面板的默认父节点（学习页）
+function podMount(slot) {
+  const p = $('pod-panel');
+  if (!POD_HOME) POD_HOME = p.parentNode;
+  const target = slot || POD_HOME;
+  if (p.parentNode !== target) target.appendChild(p);
+}
+function podSrcPath() { return POD_SRC.kind === 'dir' ? '/podcast/by-dir/' : '/podcast/by-lesson/'; }
 function podFmt(ms) { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
-async function podOpen() {
+async function podOpen(kind, id, slot) {
+  if (!id) { return; }
+  POD_SRC = { kind, id };
+  podMount(slot);
   $('pod-panel').hidden = false;
-  const lid = LESSON && LESSON.lesson && LESSON.lesson.id;
-  if (!lid) { $('pod-state').textContent = '未打开课程'; return; }
+  $('pod-title').textContent = (kind === 'dir' ? '本单元播客' : '本课播客') + ' · 思思 & xudong';
   $('pod-state').textContent = '载入中…';
   try {
-    const meta = await api('/podcast/by-lesson/' + lid);
+    const meta = await api(podSrcPath() + id);
     await podLoad(meta);
   } catch (e) {
     podReset();
@@ -2539,7 +2550,7 @@ async function podOpen() {
 }
 function podReset() {
   podStopAudio();
-  $('pod-state').textContent = '本课还没有播客';
+  $('pod-state').textContent = '还没有播客';
   $('pod-list').innerHTML = '';
   $('pod-sub').textContent = '';
   $('pod-time').textContent = '0:00 / 0:00';
@@ -2609,12 +2620,12 @@ function podStopAudio() {
   POD = null;
 }
 async function podGenerate() {
-  const lid = LESSON && LESSON.lesson && LESSON.lesson.id;
-  if (!lid) return;
+  if (!POD_SRC) return;
   $('pod-gen').disabled = true;
   $('pod-state').textContent = '生成中：写稿 → 合成 → 装配（约 30—60 秒）…';
   try {
-    const meta = await api('/podcast/generate', { method: 'POST', body: JSON.stringify({ lesson_id: lid }) });
+    const body = POD_SRC.kind === 'dir' ? { dir_id: POD_SRC.id } : { lesson_id: POD_SRC.id };
+    const meta = await api('/podcast/generate', { method: 'POST', body: JSON.stringify(body) });
     await podLoad(meta);
     podPlay(true);
   } catch (e) {
@@ -2665,7 +2676,12 @@ $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
 $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
-$('pod-btn').onclick = podOpen;
+$('pod-btn').onclick = () => podOpen('lesson', LESSON && LESSON.lesson && LESSON.lesson.id, null);
+$('nb-pod-btn').onclick = (e) => {
+  e.stopPropagation(); // 横条点击会开选择面板，需阻断
+  if (!NB_CURDIR) { toast('先选择目录'); return; }
+  podOpen('dir', NB_CURDIR, $('pod-slot-nb'));
+};
 $('pod-close').onclick = () => { podStopAudio(); $('pod-panel').hidden = true; };
 $('pod-gen').onclick = podGenerate;
 $('pod-play').onclick = () => { if (POD) podPlay(POD.audio.paused); };

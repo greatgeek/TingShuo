@@ -77,6 +77,52 @@ func LoadLessonInput(ctx context.Context, pool *pgxpool.Pool, userID, lessonID s
 	return in, srows.Err()
 }
 
+// LoadDirInput 取生词本目录（单元）的词与例句作为播客原料（v0.3.1：生词本横条入口）。
+func LoadDirInput(ctx context.Context, pool *pgxpool.Pool, userID, dirID string) (Input, error) {
+	var n int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(1) FROM notebook_dir d
+		JOIN notebook nb ON nb.id = d.notebook_id
+		WHERE d.id = $1 AND nb.user_id = $2`, dirID, userID).Scan(&n); err != nil || n == 0 {
+		return Input{}, fmt.Errorf("目录不存在或不属于当前用户")
+	}
+	var in Input
+	rows, err := pool.Query(ctx, `
+		SELECT w.surface, coalesce(w.reading,''), coalesce(w.meaning,'')
+		FROM notebook_word nw JOIN word w ON w.id = nw.word_id
+		WHERE nw.dir_id = $1 ORDER BY nw.sort_order LIMIT 8`, dirID)
+	if err != nil {
+		return Input{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var w WordBrief
+		if err := rows.Scan(&w.Surface, &w.Reading, &w.Meaning); err != nil {
+			return Input{}, err
+		}
+		in.Words = append(in.Words, w)
+	}
+	if err := rows.Err(); err != nil {
+		return Input{}, err
+	}
+	srows, err := pool.Query(ctx, `
+		SELECT ns.text, coalesce(ns.translation,'')
+		FROM notebook_sentence ns JOIN notebook_word nw ON nw.id = ns.notebook_word_id
+		WHERE nw.dir_id = $1 ORDER BY nw.sort_order, ns.sort_order LIMIT 6`, dirID)
+	if err != nil {
+		return Input{}, err
+	}
+	defer srows.Close()
+	for srows.Next() {
+		var s SentenceBrief
+		if err := srows.Scan(&s.Text, &s.Translation); err != nil {
+			return Input{}, err
+		}
+		in.Sentences = append(in.Sentences, s)
+	}
+	return in, srows.Err()
+}
+
 const scriptSystem = `你是日语教学播客《通勤日语电台》的脚本作者。两位主持：思思（女，role=a）、xudong（男，role=b），两人均能自然地说中文与日语。
 硬约束：
 1. 只输出 JSON：{"lines":[{"role":"a","text":"..."}]}，行数 8—24。
