@@ -64,9 +64,17 @@ func TestRepairSplitsLongLines(t *testing.T) {
 		if len([]rune(l.Text)) > maxZhLineRunes {
 			t.Errorf("拆完仍超长：%s", l.Text)
 		}
-		if l.Role != RoleA {
-			t.Errorf("拆行应保持原 role，得到 %s", l.Role)
-		}
+	}
+	// 拆出的连排片段若到第 3 行，应翻给另一位主持（两人都双语），整体仍要合规
+	if err := checkLines(lines); err != nil {
+		t.Errorf("拆行后应通过行级校验：%v", err)
+	}
+	joined := ""
+	for _, l := range lines {
+		joined += l.Text
+	}
+	if joined != long {
+		t.Errorf("拆行不应丢字：\n%s\n%s", joined, long)
 	}
 }
 

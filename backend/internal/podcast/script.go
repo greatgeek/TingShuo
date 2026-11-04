@@ -23,13 +23,14 @@ import (
 // 服务端持 LLM key（env LLM_BASE_URL / LLM_API_KEY / LLM_MODEL），与 internal/generate/job.go 同模式。
 
 const (
-	wordsPerSeg     = 3    // 每段讲几个词
-	maxSentPerWord  = 2    // 每词最多带几句例句入料（多了会摊薄讲解）
-	minLinesPerWord = 9    // 每词最少行数：少于这个数说明讲解被压缩成"一句带过"
-	maxLinesPerWord = 28   // 每词最多行数：M3 关思考后稳定写到 22 行/词，留出余量但挡住失控
-	maxTotalLines   = 1500 // 整集行数上限（42 词大目录也能装下）
-	maxJaLineRunes  = 24   // 日语单行上限（用户实测：再长就听不懂）
-	maxZhLineRunes  = 40   // 中文单行上限（解析要篇幅，但一口气念不完就得拆）
+	wordsPerSeg     = 3  // 每段讲几个词
+	maxSentPerWord  = 2  // 每词最多带几句例句入料（多了会摊薄讲解）
+	minLinesPerWord = 9  // 每词最少行数：少于这个数说明讲解被压缩成"一句带过"
+	maxLinesPerWord = 28 // 每词最多行数：留出余量但挡住失控
+	maxTotalLines   = 1500
+	maxJaLineRunes  = 16 // 日语单行上限：耳朵一次只吃得下一小口，整句要拆片段
+	maxZhLineRunes  = 26 // 中文单行上限：一次只说一个点，像说话不像念稿
+	maxJaRepeat     = 2  // 同一句日语在一段里最多出现次数（示范+收尾各一遍，禁止三遍）
 )
 
 type WordBrief struct {
@@ -324,25 +325,30 @@ const scriptSystem = `你是日语教学播客《通勤日语电台》的脚本�
 听众是通勤路上的中国日语学习者，只用耳朵听，看不到任何文字。
 硬约束：
 1. 只输出 JSON：{"lines":[{"role":"a","text":"..."}]}，不要任何解释文字或代码围栏。
-2. 日语行必须短，不超过 24 个字符，超了就拆成两行；中文行不超过 40 字。
-3. 每个日语行前后都要有中文行包裹（cue 句，如"听——""跟我念一遍——""意思是……"）。中文行里不要夹整句日语，要引用日语就单独成行。
+2. 日语行必须短，不超过 16 个字符：耳朵一次只吃得下一小口，长句拆成 2—3 个片段（前半以、或，结尾）。中文行不超过 26 字，一次只说一个点，像说话不像念稿。
+3. 每个日语行前面都要有中文引子（"听——""跟我念""再来一遍"），不许让日语裸切进来；唯一例外是把一句日语拆成两半时的后半。中文行里不要夹整句日语，要引用就单独成行。
 4. a/b 交替为主，同一 role 不连续超过 2 行。
 5. text 里不写假名注音、不写角色名（不许出现"思思""xudong"）、不写音效或停顿提示；日语词直接写汉字（服务端会按词表转成日语读音）。
 6. text 只能是中文或日语，绝不许出现英文单词或字母。
 7. 口语化：可以有"嗯……""诶？""说白了""你猜怎么着"，但不要每行都塞语气词。
-8. 绝不赶进度：讲透一个词比多讲一个词重要。禁止"这个词是XX意思"一句带过。`
+8. 绝不赶进度：讲透一个词比多讲一个词重要。禁止"这个词是XX意思"一句带过。
+9. 节奏要像聊天，不像两篇稿子轮流朗读：每 4—6 行插一句不超过 6 字的捧哏或回应（"嗯。""对。""然后呢？""诶？""没错。"），长短行交错。`
 
 // wordSteps 是每个词的固定讲解模板——用户反馈「像赶时间把词说完」的直接解法：
 // 把"要讲什么"写死成 7 步，LLM 就没有压缩空间。
-const wordSteps = `每个词写 11—15 行，按下面 7 步展开，一步都不许省：
-1) 场景引入（中文 1—2 行）：这个词在什么真实场合会听到、会用到，给一个具体画面。
-2) 首次示范（日语 1 行 + 中文 1 行）：一句含该词的短句，然后中文说清它到底什么意思。
-3) 词义与用法拆解（中文 2—3 行）：词性、常搭的助词或搭配、和中文对应词的差别、中国人常犯的误用。
-4) 变形或搭配示范（日语 1 行 + 中文 1 行）：如动词ます形/て形、常见固定搭配。
-5) 易混对比（中文 1—2 行）：和一个近义词或形近词比，说清什么时候用哪个；实在没有就讲一个使用限制。
-6) 例句精讲（日语原句，超 24 字拆两行 + 中文逐成分拆解 2—3 行 + 整句再听一遍）：把时间、主语、宾语、动词形逐个说清。
-7) 记忆钩子（中文 1 行）：一句场景化联想或口语提示，让听众记住它。
-严格按上面给出的词序讲，一个词讲完再讲下一个；每个词只用自己名下的例句，不要提前用后面词的例句，也不要重复用同一个例句。
+// 2026-11-04 二次反馈「中日切换不对劲，一会一个长中文一会一个长日语」：
+// 日语只给一小口（≤16 字片段）、中文一次一个点（≤26 字）、插捧哏短句带节奏。
+const wordSteps = `每个词写 12—18 行，按下面 7 步展开，一步都不许省：
+1) 场景引入（中文 1—2 行，每行 ≤26 字）：这个词在什么真实场合会听到，给一个具体画面。
+2) 首次示范：中文引子 1 行（"先听一句——"）+ 日语 ≤16 字 1 行 + 中文释义 1 行。
+3) 词义与用法拆解（中文 2—3 行，每行只讲一个点：词性、搭配、和中文对应词的差别）。
+4) 变形或搭配示范：中文引子 1 行 + 日语 ≤16 字 1 行 + 中文点评 1 行。
+5) 易混对比（中文 1—2 行）：和哪个词容易混、什么时候用哪个。
+6) 例句精讲：把例句拆成 2—3 个日语片段（每段 ≤16 字，除最后一段外都以、或，结尾），
+   每个片段后面跟一行中文拆解（这个片段说的是谁/什么时候/什么动作）；整句最多再完整听一遍。
+7) 记忆钩子（中文 1 行）：一句场景化联想或口语提示。
+行与行之间像聊天：适时插一句 ≤6 字的回应（"嗯。""对。""然后呢？"），别让它变成轮流念稿。
+严格按上面给出的词序讲，一个词讲完再讲下一个；每个词只用自己名下的例句，不要提前用后面词的例句。
 词与词之间要有过渡句，不要像报清单。`
 
 // writeSegment 拼一段的 user prompt 并调 LLM。
@@ -385,8 +391,8 @@ func writeSegment(ctx context.Context, in Input, s segment, prevErr error) ([]Li
 			}
 		}
 		sb.WriteString("\n" + wordSteps)
-		sb.WriteString(fmt.Sprintf("\n本段总行数控制在 %d—%d 行之间（含过渡句）。",
-			len(s.words)*12, len(s.words)*20))
+		sb.WriteString(fmt.Sprintf("\n本段总行数控制在 %d—%d 行之间（含过渡句与捧哏短句）。",
+			len(s.words)*12, len(s.words)*18))
 	}
 	if prevErr != nil {
 		sb.WriteString("\n\n上一次输出未通过校验：" + prevErr.Error() + "。请修正后重新输出。")
@@ -619,8 +625,18 @@ func validateSegment(s segment, lines []Line) error {
 				return fmt.Errorf("词「%s」没有在本段出现", w.Surface)
 			}
 		}
+		jaSeen := map[string]int{}
+		for _, l := range lines {
+			if !isJaLine(l.Text) {
+				continue
+			}
+			jaSeen[l.Text]++
+			if jaSeen[l.Text] > maxJaRepeat {
+				return fmt.Errorf("日语句「%s」在本段出现 %d 次（最多 %d 次）：重复听不如拆成片段精讲", l.Text, jaSeen[l.Text], maxJaRepeat)
+			}
+		}
 	}
-	return nil // 行级规则（长度/连排/重复）在 repair 之后由 checkLines 查
+	return nil // 行级规则（长度/引子/连排/重复）在 repair 之后由 checkLines 查
 }
 
 func mentions(lines []Line, surface string) bool {
@@ -649,10 +665,18 @@ func checkLines(lines []Line) error {
 		n := len([]rune(l.Text))
 		if isJaLine(l.Text) {
 			if n > maxJaLineRunes {
-				return fmt.Errorf("第 %d 行日语过长（%d 字 > %d），请拆成两个短句：%s", i, n, maxJaLineRunes, l.Text)
+				return fmt.Errorf("第 %d 行日语过长（%d 字 > %d），拆成更短的片段：%s", i, n, maxJaLineRunes, l.Text)
+			}
+			// 日语行前要有中文引子，不许裸切进来（用户反馈"中日切换不对劲"的根因之一）。
+			// 唯一例外：一句日语被拆成两半，前半以、或，结尾。
+			if i > 0 && isJaLine(lines[i-1].Text) {
+				prev := lines[i-1].Text
+				if !strings.HasSuffix(prev, "、") && !strings.HasSuffix(prev, "，") {
+					return fmt.Errorf("第 %d 行日语前缺中文引子（第 %d 行日语已说完），加一句\"听——\"或\"跟我念\"：%s", i, i-1, l.Text)
+				}
 			}
 		} else if n > maxZhLineRunes {
-			return fmt.Errorf("第 %d 行中文过长（%d 字 > %d），请拆成两句：%s", i, n, maxZhLineRunes, l.Text)
+			return fmt.Errorf("第 %d 行中文过长（%d 字 > %d），一次只说一个点：%s", i, n, maxZhLineRunes, l.Text)
 		}
 		// 中文实质行不许重复（说明模型在凑数）；日语行允许重复——"整句再听一遍"就是教学法。
 		// 短 cue 句（"听——""跟我念一遍"）本来就会重复，只查 10 字以上的行。

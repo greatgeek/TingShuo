@@ -33,7 +33,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const engineVer = "doubao-podcast-v13-kana"
+// engineVer 进缓存 key：改 prompt/校验/音色后 bump，让旧缓存（旧节奏的稿子）不再命中。
+const engineVer = "doubao-podcast-v14-rhythm"
 
 var (
 	genLim   = httpx.NewLimiter(5, 10) // 每用户 5/分钟（播客会话成本高）
