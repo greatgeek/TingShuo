@@ -1790,10 +1790,27 @@ async function loadWordStudyStatus() {
   } catch {}
 }
 
+// ---- 背词一级模式开关：标准/听力 两档（口语位预留、首版不显示），记住上次选择 ----
+let WS_QUIZ_MODE = localStorage.getItem('ts_ws_mode') === 'listening' ? 'listening' : 'standard';
+let WS_HINT_USED = false; // 本卡是否点开了语境提示（弱通过计分用）
+let WS_GRADING = false;   // 作答提交中：挡住连点/回车+按钮双触发
+
+function wsSetMode(m) {
+  if (m === WS_QUIZ_MODE) return;
+  WS_QUIZ_MODE = m;
+  localStorage.setItem('ts_ws_mode', m);
+  goWordStudy(WS_MODE); // 换通道=换题型池，整轮重取
+}
+
+function wsSegBar() {
+  const b = (m, label) => `<button class="${WS_QUIZ_MODE === m ? 'on' : ''}" onclick="wsSetMode('${m}')">${label}</button>`;
+  return `<div class="ws-seg">${b('standard', '标准')}${b('listening', '听力')}</div>`;
+}
+
 async function goWordStudy(mode) {
   WS_MODE = mode;
   try {
-    const r = await api('/word-study/' + (mode === 'new' ? 'new' : 'due'));
+    const r = await api('/word-study/' + (mode === 'new' ? 'new' : 'due') + '?mode=' + WS_QUIZ_MODE);
     WS_ITEMS = r.words || [];
   } catch (e) { alert(e.message); return; }
   if (!WS_ITEMS.length) { alert(mode === 'new' ? '没有待学的新词了。' : '今日没有到期的复习词。'); return; }
@@ -1845,48 +1862,157 @@ async function wsPlaySentence(it, btn) {
   }
 }
 
+// wsTokensHTML 挖空句逐 token 渲染：空白 token 不带振假名（注音即答案）
+function wsTokensHTML(q) {
+  return (q.tokens || []).map(t => t.blank
+    ? '<span class="ws-blank">＿＿＿</span>'
+    : (t.reading ? `<ruby>${esc(t.text)}<rt>${esc(t.reading)}</rt></ruby>` : esc(t.text))).join('');
+}
+
+// 揭晓面把空白填回并高亮目标词
+function wsTokensFullHTML(q, w) {
+  return (q.tokens || []).map(t => t.blank
+    ? `<span class="ws-answord">${esc(w.surface)}</span>`
+    : (t.reading ? `<ruby>${esc(t.text)}<rt>${esc(t.reading)}</rt></ruby>` : esc(t.text))).join('');
+}
+
+function wsOptsHTML(q) {
+  return `<div class="ws-opts">${(q.options || []).map((o, i) =>
+    `<button class="btn ghost ws-opt" data-i="${i}">${esc(o)}</button>`).join('')}</div>`;
+}
+
+// wsPlayQuizSent 挖空卡句子音：课程句走 audio_asset，生词本句走 /audio/say 文本缓存
+async function wsPlayQuizSent(btn) {
+  const w = WS_ITEMS[WS_IDX];
+  const q = w && w.quiz;
+  if (!q || !q.audio) return;
+  try {
+    if (btn) btn.textContent = '⏳';
+    if (q.audio.kind === 'say') { await sayAudio(q.audio.text, btn); return; }
+    wsStopAudio();
+    const url = await audioBlobURL(q.audio.id);
+    WS_AUDIO = new Audio(url);
+    WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🎧'; };
+    await playUnlock(WS_AUDIO);
+  } catch (e) {
+    if (btn) btn.textContent = '🎧';
+  }
+}
+
+function wsHintOpen(d) { if (d.open) WS_HINT_USED = true; }
+
+function wsFrontQuiz(w) {
+  const q = w.quiz;
+  const play = `<button class="ws-mini" onclick="wsPlayQuizSent(this)" title="播放句子">🎧</button>`;
+  const hint = q.hint != null
+    ? `<details class="ws-hint" ontoggle="wsHintOpen(this)"><summary>显示中文语境提示</summary><p>${esc(q.hint)}</p></details>`
+    : '';
+  if (q.type === 'pick_mean') {
+    return `<div class="ws-word-line"><span class="ws-word-txt">${esc(w.surface)}</span></div>
+      <p class="hint">看词选义：它的中文意思是？</p>${wsOptsHTML(q)}`;
+  }
+  if (q.type === 'hear_mean') {
+    return `<div class="ws-word-line"><button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button></div>
+      <p class="hint">听词选义：听音选中文意思</p>${wsOptsHTML(q)}`;
+  }
+  if (q.type === 'cloze_pick') {
+    return `<div class="ws-word-line">${play}</div>
+      <div class="ws-cloze">${wsTokensHTML(q)}</div>${hint}
+      <p class="hint">听句选词：空格里是哪个词？</p>${wsOptsHTML(q)}`;
+  }
+  return `<div class="ws-word-line">${play}</div>
+    <div class="ws-cloze">${wsTokensHTML(q)}</div>${hint}
+    <p class="hint">听句写词：输入空格里的词（假名或汉字均可）</p>
+    <div class="ws-type-row"><input id="ws-type-in" maxlength="40" placeholder="入力…" autocomplete="off" />
+    <button class="btn ghost" onclick="wsTypeConfirm()">确认</button></div>`;
+}
+
+function wsFrontFlip(w) {
+  return `<div class="ws-word-line">
+      <span class="ws-word-txt">${esc(w.surface)}</span>
+      <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
+    </div>
+    <p class="hint">回想它的读音和意思，然后翻面</p>
+    <button class="btn ghost" onclick="wsFlip()">翻面</button>`;
+}
+
+function wsBackFlipHTML(w) {
+  return `<div class="ws-word-line">
+      <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
+      <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
+    </div>
+    <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
+    ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
+    <div id="ws-usage"><p class="hint">加载例句…</p></div>
+    <div id="ws-nb"></div>
+    <div class="rv-actions">
+      <button class="btn" onclick="wsResult('fail')">不认识</button>
+      <button class="btn accent" onclick="wsResult('pass')">认识</button>
+    </div>`;
+}
+
+// 揭晓面两层：词释义第一层、句子翻译第二层；提示使用留痕
+function wsBackQuizHTML(w, ok, chosen) {
+  const q = w.quiz;
+  let mark = '';
+  if (q.type === 'pick_mean' || q.type === 'cloze_pick') {
+    mark = `<div class="ws-opts">${q.options.map((o, i) => {
+      let cls = 'btn ghost ws-opt';
+      if (i === q.answer) cls += ' right'; else if (i === chosen) cls += ' wrong';
+      return `<button class="${cls}" disabled>${esc(o)}</button>`; }).join('')}</div>`;
+  } else if (q.type === 'cloze_type') {
+    mark = `<p class="ws-ans ${ok ? 'ok' : 'no'}">你的输入：${esc(chosen || '（空）')}　正解：${esc(w.surface)}</p>`;
+  }
+  return `<div class="ws-mark ${ok ? 'ok' : 'no'}">${ok ? '答对了' : '答错了'}</div>
+    <div class="ws-word-line">
+      <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
+      <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
+      ${q.audio ? `<button class="ws-mini" onclick="wsPlayQuizSent(this)" title="听整句">🎧</button>` : ''}
+    </div>
+    <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
+    ${q.tokens ? `<div class="ws-cloze ws-cloze-full">${wsTokensFullHTML(q, w)}</div>` : ''}
+    ${q.trans ? `<div class="ws-trans">句子翻译：${esc(q.trans)}</div>` : ''}
+    ${WS_HINT_USED ? '<div class="rv-meta">本次使用了语境提示（弱通过：间隔不增长）</div>' : ''}
+    ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
+    ${mark}
+    <div class="rv-actions"><button class="btn accent" onclick="wsNext()">下一词</button></div>`;
+}
+
 function renderWordStudyItem() {
   wsStopAudio();
   const box = $('wordstudy-content');
   if (WS_IDX >= WS_ITEMS.length) { renderWordStudyDone(); return; }
+  WS_HINT_USED = false;
   const w = WS_ITEMS[WS_IDX];
   const total = WS_ITEMS.length;
+  const q = w.quiz;
+  const isQuiz = q && q.type !== 'flip';
   box.innerHTML = `
+    ${wsSegBar()}
     <div class="card">
       <div class="rv-progress">
         <div class="bar"><i style="width:${(WS_IDX / total * 100)}%"></i></div>
         <span>${WS_IDX + 1} / ${total}</span>
       </div>
-      <div class="ws-front" id="ws-front">
-        <div class="ws-word-line">
-          <span class="ws-word-txt">${esc(w.surface)}</span>
-          <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
-        </div>
-        <p class="hint">回想它的读音和意思，然后翻面</p>
-        <button class="btn ghost" onclick="wsFlip()">翻面</button>
-      </div>
-      <div class="ws-back" id="ws-back" style="display:none">
-        <div class="ws-word-line">
-          <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
-          <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
-        </div>
-        <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
-        ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
-        <div id="ws-usage"><p class="hint">加载例句…</p></div>
-        <div id="ws-nb"></div>
-        <div class="rv-actions">
-          <button class="btn" onclick="wsResult('fail')">不认识</button>
-          <button class="btn accent" onclick="wsResult('pass')">认识</button>
-        </div>
-      </div>
+      <div class="ws-front" id="ws-front">${isQuiz ? wsFrontQuiz(w) : wsFrontFlip(w)}</div>
+      <div class="ws-back" id="ws-back" style="display:none"></div>
     </div>
     <button class="btn ghost" onclick="wsQuit()" style="margin-top:8px">返回首页</button>`;
+  if (!isQuiz) return;
+  box.querySelectorAll('.ws-opt').forEach(b => { b.onclick = () => wsPick(+b.dataset.i); });
+  const inp = $('ws-type-in');
+  if (inp) inp.onkeydown = e => { if (e.key === 'Enter') wsTypeConfirm(); };
+  // 听力题面自动播一次；手势链断了播不动就等用户点 🎧
+  if (q.type === 'hear_mean') wsSpeakWord(w.id, null);
+  if (q.type === 'cloze_pick' || q.type === 'cloze_type') wsPlayQuizSent(null);
 }
 
-// wsFlip 翻面：显示读音释义 + 拉取该词的例句/短语
+// wsFlip 翻面（原翻面卡）：显示读音释义 + 拉取该词的例句/短语
 async function wsFlip() {
   $('ws-front').style.display = 'none';
-  $('ws-back').style.display = 'block';
+  const back = $('ws-back');
+  back.style.display = 'block';
+  back.innerHTML = wsBackFlipHTML(WS_ITEMS[WS_IDX]);
   const w = WS_ITEMS[WS_IDX];
   const box = $('ws-usage');
   try {
@@ -1930,17 +2056,59 @@ async function wsFlip() {
   } catch { nb.innerHTML = ''; }
 }
 
-async function wsResult(result) {
+// wsGrade 只提交不翻页；hint_used 让服务端走弱通过
+async function wsGrade(result) {
   const w = WS_ITEMS[WS_IDX];
-  try {
-    await api('/word-study/' + w.id + '/result', {
-      method: 'POST',
-      body: JSON.stringify({ result }),
-    });
-    if (result === 'pass') WS_PASS++; else WS_FAIL++;
-  } catch (e) { alert(e.message); return; }
+  await api('/word-study/' + w.id + '/result', {
+    method: 'POST',
+    body: JSON.stringify({ result, hint_used: WS_HINT_USED }),
+  });
+  if (result === 'pass') WS_PASS++; else WS_FAIL++;
+}
+
+function wsShowReview(w, ok, chosen) {
+  $('ws-front').style.display = 'none';
+  const back = $('ws-back');
+  back.style.display = 'block';
+  back.innerHTML = wsBackQuizHTML(w, ok, chosen);
+}
+
+function wsNext() { WS_IDX++; renderWordStudyItem(); }
+
+async function wsPick(i) {
+  if (WS_GRADING) return; // 连点防护：一次作答只提交一次
+  WS_GRADING = true;
+  const w = WS_ITEMS[WS_IDX];
+  const ok = i === w.quiz.answer;
+  document.querySelectorAll('#ws-front .ws-opt').forEach(b => { b.disabled = true; });
+  try { await wsGrade(ok ? 'pass' : 'fail'); } catch (e) { WS_GRADING = false; alert(e.message); return; }
+  wsShowReview(w, ok, i);
+  WS_GRADING = false;
+}
+
+function wsNorm(s) { return (s || '').replace(/\s+/g, ''); }
+
+async function wsTypeConfirm() {
+  if (WS_GRADING) return;
+  const inp = $('ws-type-in');
+  if (!inp) return;
+  WS_GRADING = true;
+  const v = inp.value;
+  const w = WS_ITEMS[WS_IDX];
+  const ok = wsNorm(v) === wsNorm(w.surface) || (w.reading && wsNorm(v) === wsNorm(w.reading));
+  inp.disabled = true;
+  try { await wsGrade(ok ? 'pass' : 'fail'); } catch (e) { WS_GRADING = false; alert(e.message); return; }
+  wsShowReview(w, ok, v);
+  WS_GRADING = false;
+}
+
+async function wsResult(result) {
+  if (WS_GRADING) return;
+  WS_GRADING = true;
+  try { await wsGrade(result); } catch (e) { WS_GRADING = false; alert(e.message); return; }
   WS_IDX++;
   renderWordStudyItem();
+  WS_GRADING = false;
 }
 
 function wsQuit() {

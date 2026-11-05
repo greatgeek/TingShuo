@@ -226,6 +226,36 @@ body.no-rt rt { display: none; }
 #ws-usage { text-align: left; margin-top: 10px; }
 .ws-word-txt { font-family: var(--serif); font-size: 40px; line-height: 1.4; }
 
+/* 背词模式开关 + 题型卡：正面只给语境不给答案，背面词释义第一层、句译第二层 */
+.ws-seg { display: flex; gap: 6px; margin: 0 0 8px; }
+.ws-seg button {
+  flex: 1; padding: 7px 0; border: 1px solid var(--line); background: var(--surface);
+  border-radius: 8px; font-size: 13px; color: #556; cursor: pointer;
+}
+.ws-seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ws-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.ws-opt { justify-content: flex-start; text-align: left; }
+.ws-opt.right { border-color: var(--accent); color: var(--accent); background: #eefaf5; }
+.ws-opt.wrong { border-color: #d66; color: #c44; background: #fdefef; }
+.ws-cloze { font-family: var(--serif); font-size: 20px; line-height: 2.1; margin: 10px 0; word-break: break-all; text-align: left; }
+.ws-blank { display: inline-block; min-width: 64px; border-bottom: 2px solid var(--accent); vertical-align: baseline; }
+.ws-cloze-full .ws-answord { color: var(--accent); font-weight: 700; }
+.ws-hint { margin: 8px 0; font-size: 13px; color: #667; text-align: left; }
+.ws-hint summary { cursor: pointer; }
+.ws-hint p { margin: 6px 0 0; padding: 6px 8px; background: #f6f8fa; border-radius: 6px; color: #445; }
+.ws-type-row { display: flex; gap: 8px; margin-top: 10px; }
+.ws-type-row input {
+  flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line);
+  border-radius: 8px; font-size: 15px;
+}
+.ws-mark { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.ws-mark.ok { color: var(--accent); }
+.ws-mark.no { color: #c44; }
+.ws-trans { margin-top: 8px; padding: 8px 10px; background: #f6f8fa; border-radius: 8px; font-size: 14px; color: #445; text-align: left; }
+.ws-ans { margin: 8px 0; font-size: 14px; }
+.ws-ans.ok { color: var(--accent); }
+.ws-ans.no { color: #c44; }
+
 /* ===== 生词本浏览 ===== */
 .nb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .nb-head #nb-title { font-size: 15px; font-weight: 700; }

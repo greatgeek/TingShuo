@@ -90,7 +90,12 @@ func (h *Handler) NewWords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"words": scanWordRows(rows), "mode": "new"})
+	items := scanWordRows(rows)
+	qm := parseMode(r.URL.Query().Get("mode"))
+	for i := range items {
+		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i], i, qm)
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"words": items, "mode": "new", "quiz_mode": string(qm)})
 }
 
 // DueWords GET /word-study/due —— 复习：有卡、未掌握、到期的词，按到期时间排序。
@@ -135,7 +140,11 @@ func (h *Handler) DueWords(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, it)
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"words": items, "mode": "due"})
+	qm := parseMode(r.URL.Query().Get("mode"))
+	for i := range items {
+		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i].word, i, qm)
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"words": items, "mode": "due", "quiz_mode": string(qm)})
 }
 
 // Audio GET /word-study/{word_id}/audio —— 单词发音：命中 word_audio 缓存直接返回，
@@ -257,6 +266,7 @@ type word struct {
 	Meaning *string `json:"meaning"`
 	IsKey   bool    `json:"is_key"`
 	AudioID *string `json:"audio_id"` // 首个可用例句音频（可空）
+	Quiz    *Quiz   `json:"quiz"`     // 模式题型载荷（首版标准/听力）
 }
 
 func scanWordRows(rows pgx.Rows) []word {
@@ -280,7 +290,8 @@ func (h *Handler) Result(w http.ResponseWriter, r *http.Request) {
 	wordID := chi.URLParam(r, "word_id")
 
 	var req struct {
-		Result review.Result `json:"result"`
+		Result   review.Result `json:"result"`
+		HintUsed bool          `json:"hint_used"` // 本卡点开了语境提示
 	}
 	if e := httpx.Decode(r, &req); e != nil {
 		httpx.Err(w, e)
@@ -307,32 +318,35 @@ func (h *Handler) Result(w http.ResponseWriter, r *http.Request) {
 	hasCard := err == nil
 
 	interval, dueDate, errDelta := review.ApplyResult(curInterval, req.Result, time.Now())
+	// 弱通过：点了语境提示又答对 → 间隔不增长、不计错次、不 mastered。
+	// 提示是脚手架不是捷径：用提示换不来调度收益，但也不重罚。
+	weakPass := req.Result == review.Pass && req.HintUsed && hasCard
+	if weakPass {
+		interval, errDelta = curInterval, 0
+		dueDate = time.Now().AddDate(0, 0, curInterval)
+	}
 	if !hasCard {
 		// 新学建卡：首次固定 interval=1、明天到期（与句子复习入池口径一致）；
 		// interval_days 记 1，下次答对 ×2=2 天起步
 		interval = 1
 		dueDate = time.Now().AddDate(0, 0, 1)
 	}
+	mastered := req.Result == review.Pass && !weakPass && interval >= review.MaxIntervalDays
 
-	if hasCard {
-		mastered := req.Result == review.Pass && interval >= review.MaxIntervalDays
-		_, err = h.pool.Exec(r.Context(), `
-			UPDATE word_review_item SET
-				interval_days = $2, due_date = $3::date, last_result = $4,
-				error_count = error_count + $5,
-				status = CASE WHEN $6 THEN 'mastered' ELSE status END,
-				updated_at = now()
-			WHERE word_id = $1`,
-			wordID, interval, dueDate.Format("2006-01-02"), string(req.Result),
-			errDelta, mastered)
-	} else {
-		_, err = h.pool.Exec(r.Context(), `
-			INSERT INTO word_review_item
-				(id, user_id, word_id, interval_days, due_date, last_result, error_count)
-			VALUES ($1, $2, $3, $4, $5::date, $6, $7)`,
-			ulid.MustNew(), userID, wordID, interval,
-			dueDate.Format("2006-01-02"), string(req.Result), errDelta)
-	}
+	// 单语句 upsert：连点/并发提交同一词时，第二个请求不会撞 word_id 唯一约束 500
+	_, err = h.pool.Exec(r.Context(), `
+		INSERT INTO word_review_item
+			(id, user_id, word_id, interval_days, due_date, last_result, error_count)
+		VALUES ($1, $2, $3, $4, $5::date, $6, $7)
+		ON CONFLICT (word_id) DO UPDATE SET
+			interval_days = EXCLUDED.interval_days,
+			due_date = EXCLUDED.due_date,
+			last_result = EXCLUDED.last_result,
+			error_count = word_review_item.error_count + EXCLUDED.error_count,
+			status = CASE WHEN $8 THEN 'mastered' ELSE word_review_item.status END,
+			updated_at = now()`,
+		ulid.MustNew(), userID, wordID, interval,
+		dueDate.Format("2006-01-02"), string(req.Result), errDelta, mastered)
 	if err != nil {
 		httpx.Err(w, httpx.Internal("更新背词状态失败: "+err.Error()))
 		return
@@ -343,7 +357,7 @@ func (h *Handler) Result(w http.ResponseWriter, r *http.Request) {
 	var mastery string
 	if req.Result == review.Fail {
 		mastery = "weak"
-	} else if hasCard && interval >= review.MaxIntervalDays {
+	} else if hasCard && !weakPass && interval >= review.MaxIntervalDays {
 		mastery = "learned"
 	}
 	if mastery != "" {
@@ -358,5 +372,6 @@ func (h *Handler) Result(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"word_id": wordID, "interval_days": interval,
 		"due_date": dueDate.Format("2006-01-02"), "result": string(req.Result),
+		"hint_used": req.HintUsed, "weak_pass": weakPass,
 	})
 }
