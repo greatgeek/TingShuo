@@ -29,6 +29,33 @@ var fixedScript = []podcast.Line{
 	{Role: podcast.RoleA, Text: "下期见！"},
 }
 
+// mixVariants 为"中日混读怎么落地"的对比带（2026-11-05 耳朵选型用）：
+// 同一段教学内容，三种语言排布。已证实双语音色碰到假名会把整句切去日语，
+// 句内混读不成立，所以候选只有"按行分语言"和"句拆成同人连续两行"。
+// Say 预置 = 禁止 FillSay 假名化（中文行保持中文念）；Say 留空 = 走混排。
+var mixVariants = map[string][]podcast.Line{
+	// A：按行分语言——中文行纯中文（词也按中文念），日语读音靠独立示范行
+	"mixA": {
+		{Role: podcast.RoleA, Text: "中国人这个词，自我介绍的时候最常用。", Say: "中国人这个词，自我介绍的时候最常用。"},
+		{Role: podcast.RoleA, Text: "听——", Say: "听——"},
+		{Role: podcast.RoleB, Text: "李さんは中国人です。"},
+		{Role: podcast.RoleB, Text: "意思是：小李是中国人。", Say: "意思是：小李是中国人。"},
+		{Role: podcast.RoleA, Text: "注意，说自己的国籍就用这句。", Say: "注意，说自己的国籍就用这句。"},
+	},
+	// B：句内拆成同一个人连续两行——中文半句 + 日语半句，听觉上像一句里切换
+	"mixB": {
+		{Role: podcast.RoleA, Text: "小李是——", Say: "小李是——"},
+		{Role: podcast.RoleA, Text: "ちゅうごくじん。"},
+		{Role: podcast.RoleA, Text: "自我介绍的时候，最常用这句。", Say: "自我介绍的时候，最常用这句。"},
+		{Role: podcast.RoleB, Text: "对，先说人，再说国籍。", Say: "对，先说人，再说国籍。"},
+	},
+	// C：现在的句内混排（中文行里夹假名）——已知中文部分会被带成日语腔，留作对照
+	"mixC": {
+		{Role: podcast.RoleA, Text: "小李是中国人。自我介绍的时候最常用这句。"},
+		{Role: podcast.RoleB, Text: "对，先说人，再说国籍。", Say: "对，先说人，再说国籍。"},
+	},
+}
+
 // demoInput 为 LLM 出稿模式的演示原料。用「中国人/山田/日本人」这类中日同形词：
 // 它们正是 2026-11-04 语言串味报障的词类（中文行被假名化后整行念成日语），留作回归夹具。
 var demoInput = podcast.Input{
@@ -59,6 +86,14 @@ func main() {
 	}
 
 	script := fixedScript
+	if v := os.Getenv("POD_FIX"); v != "" {
+		vs, ok := mixVariants[v]
+		if !ok {
+			fmt.Fprintln(os.Stderr, "POD_FIX 未知取值: "+v)
+			os.Exit(1)
+		}
+		script = vs
+	}
 	if os.Getenv("POD_SCRIPT_LLM") == "1" {
 		ctx0 := context.Background()
 		t0 := time.Now()

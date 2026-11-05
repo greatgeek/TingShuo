@@ -2026,6 +2026,9 @@ function renderNbStrip() {
       `<div class="nb-strip-row2"><span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span></div>`
     : `<div class="nb-strip-row1"><b>${esc(nb ? nb.name : '生词本')}</b></div>` +
       `<div class="nb-strip-row2"><span class="nb-strip-path">未选目录 · 点我选择</span></div>`;
+  // 没选目录时复制/导出没有对象，藏起来比点了报错好
+  $('nb-copy-btn').hidden = !dir;
+  $('nb-export-btn').hidden = !dir;
 }
 
 // 目录选择面板：横条正下方就地展开/收起（不再底部弹窗）
@@ -2113,6 +2116,70 @@ function renderNbWords() {
     box.appendChild(div);
   });
   $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 点词展开例句（▶ 点播）`;
+}
+
+// ---- 本单元导出/复制：数据已在 NB_WORDS 里（DirWords 接口返回词+例句），纯前端拼装 ----
+function nbExportText() {
+  const items = NB_WORDS[NB_CURDIR] || [];
+  const dir = NB_DIRS.find(x => x.id === NB_CURDIR);
+  const L = [`${dir ? nbDirPath(dir.id) : '生词本'}　共 ${items.length} 词`, ''];
+  items.forEach((w, i) => {
+    L.push(`${i + 1}. ${w.surface}${w.reading ? '（' + w.reading + '）' : ''}${w.pos ? ' ' + w.pos : ''}${w.meaning ? ' ' + w.meaning : ''}`);
+    (w.sentences || []).forEach(s => {
+      L.push(`   ${s.text}`);
+      if (s.translation) L.push(`   ${s.translation}`);
+    });
+    L.push('');
+  });
+  return L.join('\n');
+}
+function nbExportCsv() {
+  const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const rows = [['单词', '假名', '词性', '释义', '例句', '例句翻译'].map(q).join(',')];
+  (NB_WORDS[NB_CURDIR] || []).forEach(w => {
+    const ss = w.sentences || [];
+    rows.push([
+      w.surface, w.reading || '', w.pos || '', w.meaning || '',
+      ss.map(s => s.text).join(' / '), ss.map(s => s.translation || '').join(' / '),
+    ].map(q).join(','));
+  });
+  return '\uFEFF' + rows.join('\r\n'); // BOM：Excel 打开中文不乱码
+}
+function nbFileBase() {
+  const dir = NB_DIRS.find(x => x.id === NB_CURDIR);
+  const name = (dir ? nbDirPath(dir.id) : '生词本').replace(/[\\/:*?"<>|\s]+/g, '-');
+  return `${name}-${new Date().toISOString().slice(0, 10)}`;
+}
+function nbDownload(filename, mime, content) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: mime }));
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+async function nbCopyAll() {
+  if (!NB_CURDIR) { toast('先选择目录'); return; }
+  const txt = nbExportText();
+  const n = (NB_WORDS[NB_CURDIR] || []).length;
+  try {
+    await navigator.clipboard.writeText(txt);
+    toast(`已复制 ${n} 个词和全部例句`);
+  } catch (e) {
+    // 个别手机浏览器拒绝 clipboard API：退到老办法
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    toast(ok ? `已复制 ${n} 个词和全部例句` : '复制失败，请改用导出');
+  }
+}
+function nbExportAll() {
+  if (!NB_CURDIR) { toast('先选择目录'); return; }
+  const base = nbFileBase();
+  nbDownload(base + '.txt', 'text/plain;charset=utf-8', nbExportText());
+  nbDownload(base + '.csv', 'text/csv;charset=utf-8', nbExportCsv());
+  toast('已导出 txt + csv 两个文件');
 }
 
 function nbBuildSents(w) {
@@ -2813,6 +2880,8 @@ $('ai-send').onclick = aiSend;
 $('nb-strip').onclick = openNbPicker;
 $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
 $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
+$('nb-copy-btn').onclick = (e) => { e.stopPropagation(); nbCopyAll(); };
+$('nb-export-btn').onclick = (e) => { e.stopPropagation(); nbExportAll(); };
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
 $('pod-btn').onclick = () => podOpen('lesson', LESSON && LESSON.lesson && LESSON.lesson.id, null);

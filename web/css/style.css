@@ -345,6 +345,8 @@ body.no-rt rt { display: none; }
 .nb-strip-row2{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .nb-strip-row2 .nb-strip-path{font-size:13px}
 .nb-nowbar[hidden]{display:none}
+/* .btn 自带 display，会盖掉 hidden 的默认 none，隐藏态必须显式写一条 */
+.nb-strip .btn[hidden]{display:none}
 
 /* 连播控制条：固定底部，暂停/停止随手可及 */
 .nb-nowbar{position:fixed;left:12px;right:12px;bottom:12px;z-index:40;margin-top:0;box-shadow:0 4px 16px rgba(0,0,0,.12)}
@@ -377,7 +379,8 @@ body.nb-playing #sc-notebook{padding-bottom:80px}
 #pod-gen[hidden]{display:none}
 
 /* 生词本横条四按钮收整：图标按钮等宽、文字按钮紧凑、整体留白均匀 */
-.nb-strip{gap:6px}
+.nb-strip{gap:6px;flex-wrap:wrap;row-gap:6px}
+.nb-strip-btns{display:flex;align-items:center;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
 .nb-strip .btn{flex:0 0 auto}
 .nb-strip .nb-icon{padding:5px 9px;font-size:14px;line-height:1;width:auto}
 .nb-strip #nb-strip-btn{padding:5px 10px;font-size:12px;width:auto}
