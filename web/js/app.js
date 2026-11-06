@@ -2338,7 +2338,14 @@ function renderNbPickerList() {
       row.className = 'nb-dir' + (NB_CURDIR === d.id ? ' on' : '');
       row.style.paddingLeft = (6 + depth * 16) + 'px';
       row.innerHTML = `<span class="tw">${kids.length ? (NBP_OPEN.has(d.id) ? '▾' : '▸') : '·'}</span>` +
-        `<span class="nm">${esc(d.name)}</span><span class="ct">${d.word_count || ''}</span>`;
+        `<span class="nm">${esc(d.name)}</span>` +
+        `<button class="nb-dir-copy" title="${kids.length ? '复制整课的词和例句' : '复制本单元的词和例句'}">⧉</button>` +
+        `<span class="ct">${d.word_count || ''}</span>`;
+      // 复制按钮不能冒泡到行（否则变成展开/打开目录）
+      row.querySelector('.nb-dir-copy').onclick = (e) => {
+        e.stopPropagation();
+        nbCopyDir(d.id, kids.length ? 'subtree' : 'self');
+      };
       row.onclick = (e) => {
         e.stopPropagation(); // 重渲染后 target 脱离 DOM，否则会被外部点击收起逻辑误关
         if (kids.length) {
@@ -2391,12 +2398,20 @@ function renderNbWords() {
 }
 
 // ---- 本单元导出/复制：数据已在 NB_WORDS 里（DirWords 接口返回词+例句），纯前端拼装 ----
-function nbExportText() {
-  const items = NB_WORDS[NB_CURDIR] || [];
-  const dir = NB_DIRS.find(x => x.id === NB_CURDIR);
-  const L = [`${dir ? nbDirPath(dir.id) : '生词本'}　共 ${items.length} 词`, ''];
-  items.forEach((w, i) => {
-    L.push(`${i + 1}. ${w.surface}${w.reading ? '（' + w.reading + '）' : ''}${w.pos ? ' ' + w.pos : ''}${w.meaning ? ' ' + w.meaning : ''}`);
+// nbFormatWords 词+例句纯文本：多目录时按目录分组加小标题（整课复制用）
+function nbFormatWords(title, items) {
+  const L = [`${title}　共 ${items.length} 词`, ''];
+  const dirs = [...new Set(items.map(w => w.dir).filter(Boolean))];
+  const multi = dirs.length > 1;
+  let cur = null;
+  let n = 0;
+  items.forEach((w) => {
+    if (multi && w.dir !== cur) {
+      cur = w.dir;
+      L.push(`【${cur}】`, '');
+    }
+    n++;
+    L.push(`${n}. ${w.surface}${w.reading ? '（' + w.reading + '）' : ''}${w.pos ? ' ' + w.pos : ''}${w.meaning ? ' ' + w.meaning : ''}`);
     (w.sentences || []).forEach(s => {
       L.push(`   ${s.text}`);
       if (s.translation) L.push(`   ${s.translation}`);
@@ -2404,6 +2419,36 @@ function nbExportText() {
     L.push('');
   });
   return L.join('\n');
+}
+function nbExportText() {
+  const items = NB_WORDS[NB_CURDIR] || [];
+  const dir = NB_DIRS.find(x => x.id === NB_CURDIR);
+  return nbFormatWords(dir ? nbDirPath(dir.id) : '生词本', items);
+}
+// nbCopyText 写剪贴板：clipboard API 被拒时退 textarea+execCommand
+async function nbCopyText(txt, n) {
+  try {
+    await navigator.clipboard.writeText(txt);
+    toast(`已复制 ${n} 个词和全部例句`);
+    return true;
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    toast(ok ? `已复制 ${n} 个词和全部例句` : '复制失败，请改用导出');
+    return ok;
+  }
+}
+// nbCopyDir 目录选择面板的复制按钮：课=整课子树，单元=仅本单元
+async function nbCopyDir(dirId, scope) {
+  try {
+    const r = await api('/notebooks/dir/' + dirId + '/copy?scope=' + scope);
+    await nbCopyText(nbFormatWords(r.title, r.items || []), (r.items || []).length);
+  } catch (e) {
+    toast('复制失败：' + e.message);
+  }
 }
 function nbExportCsv() {
   const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
@@ -2431,20 +2476,7 @@ function nbDownload(filename, mime, content) {
 }
 async function nbCopyAll() {
   if (!NB_CURDIR) { toast('先选择目录'); return; }
-  const txt = nbExportText();
-  const n = (NB_WORDS[NB_CURDIR] || []).length;
-  try {
-    await navigator.clipboard.writeText(txt);
-    toast(`已复制 ${n} 个词和全部例句`);
-  } catch (e) {
-    // 个别手机浏览器拒绝 clipboard API：退到老办法
-    const ta = document.createElement('textarea');
-    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
-    document.body.appendChild(ta); ta.select();
-    const ok = document.execCommand('copy');
-    ta.remove();
-    toast(ok ? `已复制 ${n} 个词和全部例句` : '复制失败，请改用导出');
-  }
+  await nbCopyText(nbExportText(), (NB_WORDS[NB_CURDIR] || []).length);
 }
 function nbExportAll() {
   if (!NB_CURDIR) { toast('先选择目录'); return; }

@@ -276,6 +276,12 @@ body.no-rt rt { display: none; }
 .nb-dir .tw { flex: none; width: 16px; color: var(--ink2); font-size: 11px; }
 .nb-dir .nm { flex: 1; }
 .nb-dir .ct { font-size: 11px; color: var(--ink2); }
+.nb-dir-copy {
+  flex: 0 0 auto; width: 24px; height: 22px; margin-right: 8px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--surface); color: #556; font-size: 12px;
+  line-height: 1; cursor: pointer;
+}
+.nb-dir-copy:hover { border-color: var(--accent); color: var(--accent); }
 .nb-dir.on { color: var(--accent); font-weight: 600; }
 .nb-sent {
   display: flex; align-items: flex-start; gap: 8px;

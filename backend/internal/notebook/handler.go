@@ -175,6 +175,81 @@ func (h *Handler) DirWords(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "count": len(items)})
 }
 
+// CopyWords GET /notebooks/dir/{dir_id}/copy?scope=subtree|self —— 目录选择面板的复制按钮：
+// 课节点（scope=subtree）复制整课全部子孙单元的词与例句，单元节点（self）只复制自己。
+// 返回按目录排序的平铺条目（带 dir 名），前端按目录分组拼文本。
+func (h *Handler) CopyWords(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	dirID := chi.URLParam(r, "dir_id")
+	scope := r.URL.Query().Get("scope")
+	if scope != "subtree" {
+		scope = "self"
+	}
+	var title string
+	err := h.pool.QueryRow(r.Context(), `
+		SELECT d.name FROM notebook_dir d
+		JOIN notebook nb ON nb.id = d.notebook_id
+		WHERE d.id = $1 AND nb.user_id = $2`, dirID, userID).Scan(&title)
+	if err != nil {
+		httpx.Err(w, httpx.NotFound("目录不存在或不属于当前用户"))
+		return
+	}
+	rows, err := h.pool.Query(r.Context(), `
+		WITH RECURSIVE ds AS (
+			SELECT id, sort_order FROM notebook_dir WHERE id = $1
+			UNION ALL
+			SELECT c.id, c.sort_order FROM notebook_dir c JOIN ds ON c.parent_id = ds.id
+		)
+		SELECT ds.sort_order, d.name, w.surface, w.reading, w.pos, w.meaning,
+		       s.text, s.translation
+		FROM notebook_word nw
+		JOIN ds ON ds.id = nw.dir_id
+		JOIN notebook_dir d ON d.id = nw.dir_id
+		JOIN word w ON w.id = nw.word_id
+		LEFT JOIN notebook_sentence s ON s.notebook_word_id = nw.id
+		WHERE ($2 = 'subtree' OR nw.dir_id = $1)
+		ORDER BY ds.sort_order, nw.sort_order, w.surface, s.sort_order`, dirID, scope)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer rows.Close()
+	type csent struct {
+		Text        string  `json:"text"`
+		Translation *string `json:"translation"`
+	}
+	type citem struct {
+		Dir       string  `json:"dir"`
+		Surface   string  `json:"surface"`
+		Reading   *string `json:"reading"`
+		Pos       *string `json:"pos"`
+		Meaning   *string `json:"meaning"`
+		Sentences []csent `json:"sentences"`
+	}
+	items := []citem{}
+	seen := map[string]int{} // key = dir+"\x00"+surface 防同词多句重复建条目
+	for rows.Next() {
+		var dirSort int
+		var dir, surface string
+		var reading, pos, meaning, text, trans *string
+		if err := rows.Scan(&dirSort, &dir, &surface, &reading, &pos, &meaning, &text, &trans); err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+		key := dir + "\x00" + surface
+		i, ok := seen[key]
+		if !ok {
+			i = len(items)
+			seen[key] = i
+			items = append(items, citem{Dir: dir, Surface: surface, Reading: reading, Pos: pos, Meaning: meaning, Sentences: []csent{}})
+		}
+		if text != nil && *text != "" {
+			items[i].Sentences = append(items[i].Sentences, csent{Text: *text, Translation: trans})
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"title": title, "count": len(items), "items": items})
+}
+
 func (h *Handler) owns(r *http.Request, nbID, userID string) bool {
 	var n int
 	_ = h.pool.QueryRow(r.Context(),

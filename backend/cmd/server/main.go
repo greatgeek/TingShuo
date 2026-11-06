@@ -158,6 +158,7 @@ func run() error {
 			sec.Get("/notebooks", nbH.List)
 			sec.Get("/notebooks/{id}/tree", nbH.Tree)
 			sec.Get("/notebooks/dir/{dir_id}/words", nbH.DirWords)
+			sec.Get("/notebooks/dir/{dir_id}/copy", nbH.CopyWords)
 
 			sec.Post("/audio/say", ttsH.Say)
 			sec.Post("/podcast/jobs", podH.CreateJob)
