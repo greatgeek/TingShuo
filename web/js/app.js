@@ -78,7 +78,7 @@ async function fetchAuth(url, opts = {}) {
 
 // playUnlock：移动端浏览器可能拒绝手势外的 play()——先静音解锁播放再恢复音量
 async function playUnlock(a) {
-  // 安卓 Chrome 上 'playing' 可能在监听挂载前就触发，导致静音卡死：挂载提前 + 兜底定时解除
+  // 安卓 Chrome 上 'playing' 可能在监听挂载前就触发，导致静音卡死：挂载提前 + 播成后立即解除
   const unmute = () => { a.muted = false; };
   a.addEventListener('playing', unmute, { once: true });
   a.addEventListener('timeupdate', unmute, { once: true });
@@ -88,11 +88,19 @@ async function playUnlock(a) {
     if (e && e.name === 'NotAllowedError') {
       a.muted = true;
       await a.play();
+      a.muted = false; // 播起来就够了，立刻解除，不等事件（事件可能早已错过）
       setTimeout(unmute, 250);
     } else {
       throw e;
     }
   }
+}
+
+// wsAudioDbg 播放状态行：报障时截图即可读出"走字/静音/错误"，免去手机开控制台
+function wsAudioDbg(a, tag) {
+  const el = document.getElementById('ws-dbg');
+  if (!el) return;
+  el.textContent = `${tag} 播放 ${a ? a.currentTime.toFixed(1) : '-'}s · 静音 ${a && a.muted ? '是' : '否'} · 暂停 ${a && a.paused ? '是' : '否'} · 错误 ${a && a.error ? a.error.code : '无'}`;
 }
 
 // doRefresh 用 refresh_token 换新 access_token（并发 401 共享同一次刷新）
@@ -1888,6 +1896,7 @@ function wsSpeakWord(wordId, btn, retry) {
           wsStopAudio(); idbDel('w:' + wordId); wsSpeakWord(wordId, btn, true);
         }
       }, 800);
+      setTimeout(() => wsAudioDbg(a, '词'), 900);
     } catch (e) {
       if (btn) btn.textContent = '🔊';
       toast('词音失败：' + e.message);
@@ -2078,6 +2087,7 @@ function renderWordStudyItem() {
       </div>
       <div class="ws-front" id="ws-front">${isQuiz ? wsFrontQuiz(w) : wsFrontFlip(w)}</div>
       <div class="ws-back" id="ws-back" style="display:none"></div>
+      <div id="ws-dbg" class="hint" style="margin-top:6px"></div>
     </div>
     <button class="btn ghost" onclick="wsQuit()" style="margin-top:8px">返回首页</button>`;
   if (!isQuiz) return;
@@ -2494,6 +2504,7 @@ async function sayAudio(text, btn, retry) {
         wsStopAudio(); idbDel(key); sayAudio(text, btn, true);
       }
     }, 800);
+    setTimeout(() => wsAudioDbg(a, '句'), 900);
   } catch (e) {
     if (btn) btn.textContent = '▶';
     toast('点播失败：' + e.message);
