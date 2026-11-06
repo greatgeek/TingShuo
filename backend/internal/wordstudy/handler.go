@@ -193,8 +193,10 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// OSS 缓存命中（对象 key = word-<word_id>.mp3）；DB 只留元信息
-	key := "word-" + wordID
+	// OSS 缓存命中（对象 key = word-v2-<word_id>.mp3）；DB 只留元信息。
+	// v2 前缀：线上 word-<id> 曾写入坏音频（不同词返回同尺寸静音块，2026-11-06 报障），
+	// 换前缀让旧对象自然弃用；不删对象，回滚只需改回前缀。
+	key := "word-v2-" + wordID
 	if data, ok := fetchOSS(r.Context(), h.store, key); ok {
 		serveMP3(w, data)
 		return

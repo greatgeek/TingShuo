@@ -1350,7 +1350,7 @@ async function idbStats() {
 // 缓存优先取句子音频 blob URL
 async function audioBlobURL(audioId) {
   const hit = await idbGet(audioId);
-  if (hit && hit.blob) { idbPut(audioId, hit.blob); return URL.createObjectURL(hit.blob); }
+  if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(audioId, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/audio/' + audioId + '/file');
   if (!r.ok) throw new Error('音频获取失败 HTTP ' + r.status);
   const blob = await r.blob();
@@ -1361,7 +1361,7 @@ async function audioBlobURL(audioId) {
 async function wordAudioBlobURL(wordId) {
   const key = 'w:' + wordId;
   const hit = await idbGet(key);
-  if (hit && hit.blob) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
+  if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/word-study/' + wordId + '/audio');
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const blob = await r.blob();
@@ -2446,7 +2446,8 @@ async function sayAudio(text, btn) {
     const key = 'say:' + text;
     let url;
     const hit = await idbGet(key);
-    if (hit && hit.blob) {
+    // 小于 1KB 的缓存块视为坏缓存（曾出现空/截断 blob 被照播成"没声音"）：丢弃重取
+    if (hit && hit.blob && hit.blob.size >= 1024) {
       url = URL.createObjectURL(hit.blob);
     } else {
       const r = await fetchAuth('/api/v1/audio/say', {
