@@ -361,7 +361,7 @@ function renderPhrasesView() {
         <p class="hint">为本课每个生词生成一个自然搭配短语（4—14 字符、省略主语的最小表达单位）——
         背搭配比背单词更接近「说」的最小单位（FR-2.15 搭配卡）。<br>
         生成后：点短语即听、可收藏、可连播。</p>
-        <button class="btn accent" onclick="genPhrases()">为 ${LESSON.words.length} 个生词生成短语</button>
+        <button class="btn accent" data-act="gen-phrases">为 ${LESSON.words.length} 个生词生成短语</button>
       </div>`;
     $('learn-hint').textContent = '尚未生成生词短语';
     return;
@@ -1095,7 +1095,7 @@ function renderLearn() {
         <h2>句子模式材料</h2>
         <p class="hint">这门课是「短语模式」生成的，还没有对话/短文。<br>
         每个词自然出现在有场景的完整句子里——可按需补生成（约 3—5 分钟）。</p>
-        <button class="btn accent" onclick="genFull()">生成对话与短文</button>
+        <button class="btn accent" data-act="gen-full">生成对话与短文</button>
       </div>`;
     applyMode();
     $('learn-hint').textContent = '句子模式材料未生成';
@@ -1571,25 +1571,25 @@ function renderReviewItem() {
         <div class="bar"><i style="width:${RV_ITEMS.length ? ((RV_IDX) / RV_ITEMS.length * 100) : 0}%"></i></div>
         <span>${RV_IDX + 1} / ${RV_ITEMS.length}</span>
       </div>
-      <button class="rv-play" id="rv-play-btn" onclick="reviewPlayAudio()">${hasAudio ? '▶' : '…'}</button>
+      <button class="rv-play" id="rv-play-btn" data-act="rv-play">${hasAudio ? '▶' : '…'}</button>
       <div id="rv-detail" style="display:none">
         <div class="rv-text">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
         <div class="rv-zh">${esc(s.translation || '')}</div>
         <div class="rv-meta">${srcLabel[it.source] || it.source} · 间隔 ${it.interval_days} 天 · 错 ${it.error_count} 次</div>
       </div>
       <div class="rv-actions" id="rv-reveal-row" style="display:none">
-        <button class="btn ghost" onclick="reviewReveal()">显示原文</button>
+        <button class="btn ghost" data-act="rv-reveal">显示原文</button>
       </div>
       <div class="rv-actions" id="rv-result-row" style="display:none">
-        <button class="btn" onclick="reviewResult('fail')">不认识</button>
-        <button class="btn accent" onclick="reviewResult('pass')">认识</button>
+        <button class="btn" data-act="rv-fail">不认识</button>
+        <button class="btn accent" data-act="rv-pass">认识</button>
       </div>
       <div style="text-align:center;margin-top:12px">
         <button class="hint" style="background:none;border:none;cursor:pointer;color:var(--ink2);font-size:12px"
-          onclick="reviewMaster()">已掌握，移出复习</button>
+          data-act="rv-master">已掌握，移出复习</button>
       </div>
     </div>
-    <button class="btn ghost" onclick="goHome()" style="margin-top:8px">返回首页</button>`;
+    <button class="btn ghost" data-act="home" style="margin-top:8px">返回首页</button>`;
   if (hasAudio) reviewPlayAudio();
   else $('rv-reveal-row').style.display = 'flex';
 }
@@ -1664,7 +1664,7 @@ function renderReviewDone() {
         <div class="rv-stat fail"><div class="n">${RV_FAIL}</div><div class="l">不认识</div></div>
         <div class="rv-stat"><div class="n">${total}</div><div class="l">总计</div></div>
       </div>
-      <button class="btn accent" onclick="goHome()">返回首页</button>
+      <button class="btn accent" data-act="home">返回首页</button>
     </div>`;
 }
 
@@ -1866,7 +1866,7 @@ async function nbStartTest() {
 }
 
 function wsSegBar() {
-  const b = (m, label) => `<button class="${WS_QUIZ_MODE === m ? 'on' : ''}" onclick="wsSetMode('${m}')">${label}</button>`;
+  const b = (m, label) => `<button class="${WS_QUIZ_MODE === m ? 'on' : ''}" data-act="ws-seg" data-arg="${m}">${label}</button>`;
   return `<div class="ws-seg">${b('standard', '标准')}${b('listening', '听力')}</div>`;
 }
 
@@ -1990,20 +1990,18 @@ async function wsPrefetchSent() {
   } catch (e) { /* 预热失败不碍事，点 🎧 时再取并会报错 */ }
 }
 
-function wsHintOpen(d) { if (d.open) WS_HINT_USED = true; }
-
 function wsFrontQuiz(w) {
   const q = w.quiz;
-  const play = `<button class="ws-mini" onclick="wsPlayQuizSent(this)" title="播放句子">🎧</button>`;
+  const play = `<button class="ws-mini" data-act="ws-sent" title="播放句子">🎧</button>`;
   const hint = q.hint != null
-    ? `<details class="ws-hint" ontoggle="wsHintOpen(this)"><summary>显示中文语境提示</summary><p>${esc(q.hint)}</p></details>`
+    ? `<details class="ws-hint"><summary>显示中文语境提示</summary><p>${esc(q.hint)}</p></details>`
     : '';
   if (q.type === 'pick_mean') {
     return `<div class="ws-word-line"><span class="ws-word-txt">${esc(w.surface)}</span></div>
       <p class="hint">看词选义：它的中文意思是？</p>${wsOptsHTML(q)}`;
   }
   if (q.type === 'hear_mean') {
-    return `<div class="ws-word-line"><button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button></div>
+    return `<div class="ws-word-line"><button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button></div>
       <p class="hint">听词选义：听音选中文意思</p>${wsOptsHTML(q)}`;
   }
   if (q.type === 'cloze_pick') {
@@ -2015,30 +2013,30 @@ function wsFrontQuiz(w) {
     <div class="ws-cloze">${wsTokensHTML(q)}</div>${hint}
     <p class="hint">听句写词：输入空格里的词（假名或汉字均可）</p>
     <div class="ws-type-row"><input id="ws-type-in" maxlength="40" placeholder="入力…" autocomplete="off" />
-    <button class="btn ghost" onclick="wsTypeConfirm()">确认</button></div>`;
+    <button class="btn ghost" data-act="ws-type">确认</button></div>`;
 }
 
 function wsFrontFlip(w) {
   return `<div class="ws-word-line">
       <span class="ws-word-txt">${esc(w.surface)}</span>
-      <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
     </div>
     <p class="hint">回想它的读音和意思，然后翻面</p>
-    <button class="btn ghost" onclick="wsFlip()">翻面</button>`;
+    <button class="btn ghost" data-act="ws-flip">翻面</button>`;
 }
 
 function wsBackFlipHTML(w) {
   return `<div class="ws-word-line">
       <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
-      <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
     <div id="ws-usage"><p class="hint">加载例句…</p></div>
     <div id="ws-nb"></div>
     <div class="rv-actions">
-      <button class="btn" onclick="wsResult('fail')">不认识</button>
-      <button class="btn accent" onclick="wsResult('pass')">认识</button>
+      <button class="btn" data-act="ws-fail">不认识</button>
+      <button class="btn accent" data-act="ws-pass">认识</button>
     </div>`;
 }
 
@@ -2057,8 +2055,8 @@ function wsBackQuizHTML(w, ok, chosen) {
   return `<div class="ws-mark ${ok ? 'ok' : 'no'}">${ok ? '答对了' : '答错了'}</div>
     <div class="ws-word-line">
       <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
-      <button class="ws-mini" onclick="wsSpeakWord('${w.id}', this)" title="听单词发音">🔊</button>
-      ${q.audio ? `<button class="ws-mini" onclick="wsPlayQuizSent(this)" title="听整句">🎧</button>` : ''}
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
+      ${q.audio ? `<button class="ws-mini" data-act="ws-sent" title="听整句">🎧</button>` : ''}
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${q.tokens ? `<div class="ws-cloze ws-cloze-full">${wsTokensFullHTML(q, w)}</div>` : ''}
@@ -2066,7 +2064,7 @@ function wsBackQuizHTML(w, ok, chosen) {
     ${WS_HINT_USED ? '<div class="rv-meta">本次使用了语境提示（弱通过：间隔不增长）</div>' : ''}
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
     ${mark}
-    <div class="rv-actions"><button class="btn accent" onclick="wsNext()">下一词</button></div>`;
+    <div class="rv-actions"><button class="btn accent" data-act="ws-next">下一词</button></div>`;
 }
 
 function renderWordStudyItem() {
@@ -2089,7 +2087,7 @@ function renderWordStudyItem() {
       <div class="ws-back" id="ws-back" style="display:none"></div>
       <div id="ws-dbg" class="hint" style="margin-top:6px"></div>
     </div>
-    <button class="btn ghost" onclick="wsQuit()" style="margin-top:8px">返回首页</button>`;
+    <button class="btn ghost" data-act="ws-quit" style="margin-top:8px">返回首页</button>`;
   if (!isQuiz) return;
   box.querySelectorAll('.ws-opt').forEach(b => { b.onclick = () => wsPick(+b.dataset.i); });
   const inp = $('ws-type-in');
@@ -2221,7 +2219,7 @@ function renderWordStudyDone() {
         <div class="rv-stat"><div class="n">${total}</div><div class="l">总计</div></div>
       </div>
       <p class="hint" style="text-align:center;margin-top:6px">认识的词明天到期，间隔会逐次翻倍；不认识的明天就会再出现。</p>
-      <button class="btn accent" onclick="wsQuit()">返回首页</button>
+      <button class="btn accent" data-act="ws-quit">返回首页</button>
     </div>`;
   loadWordStudyStatus();
 }
@@ -3160,6 +3158,38 @@ $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-copy-btn').onclick = (e) => { e.stopPropagation(); nbCopyAll(); };
 $('nb-export-btn').onclick = (e) => { e.stopPropagation(); nbExportAll(); };
 $('nb-test-btn').onclick = (e) => { e.stopPropagation(); nbStartTest(); };
+
+// ---- 线上 nginx 的 CSP 是 script-src 'self'：内联 onclick/ontoggle 一律被拦（2026-11-06 实锤），
+// 渲染模板只写 data-act/data-arg，这里统一委托绑定 ----
+document.addEventListener('click', (e) => {
+  const el = e.target.closest ? e.target.closest('[data-act]') : null;
+  if (!el) return;
+  const arg = el.dataset.arg || '';
+  switch (el.dataset.act) {
+    case 'gen-phrases': genPhrases(); break;
+    case 'gen-full': genFull(); break;
+    case 'rv-play': reviewPlayAudio(); break;
+    case 'rv-reveal': reviewReveal(); break;
+    case 'rv-fail': reviewResult('fail'); break;
+    case 'rv-pass': reviewResult('pass'); break;
+    case 'rv-master': reviewMaster(); break;
+    case 'home': goHome(); break;
+    case 'ws-seg': wsSetMode(arg); break;
+    case 'ws-sent': wsPlayQuizSent(el); break;
+    case 'ws-speak': wsSpeakWord(arg, el); break;
+    case 'ws-type': wsTypeConfirm(); break;
+    case 'ws-flip': wsFlip(); break;
+    case 'ws-fail': wsResult('fail'); break;
+    case 'ws-pass': wsResult('pass'); break;
+    case 'ws-next': wsNext(); break;
+    case 'ws-quit': wsQuit(); break;
+  }
+});
+// toggle 事件不冒泡：捕获阶段记"用过语境提示"
+document.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (d && d.classList && d.classList.contains('ws-hint') && d.open) WS_HINT_USED = true;
+}, true);
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
 $('pod-btn').onclick = () => podOpen('lesson', LESSON && LESSON.lesson && LESSON.lesson.id, null);
