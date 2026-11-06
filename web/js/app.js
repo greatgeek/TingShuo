@@ -2368,7 +2368,7 @@ function renderNbWords() {
     div.className = 'sent wordrow';
     div.innerHTML = `
       <span class="spk">${i + 1}</span>
-      <div class="wrap"><div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
+      <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens) : `<ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>`}</div>
       <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>
       <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开例句">▾</button>`;

@@ -118,14 +118,15 @@ func (h *Handler) DirWords(w http.ResponseWriter, r *http.Request) {
 		Src         *string         `json:"src"`
 	}
 	type item struct {
-		LinkID    string  `json:"link_id"`
-		WordID    string  `json:"word_id"`
-		Surface   string  `json:"surface"`
-		Reading   *string `json:"reading"`
-		Pos       *string `json:"pos"`
-		Meaning   *string `json:"meaning"`
-		Sort      int     `json:"sort_order"`
-		Sentences []sent  `json:"sentences"`
+		LinkID    string          `json:"link_id"`
+		WordID    string          `json:"word_id"`
+		Surface   string          `json:"surface"`
+		Reading   *string         `json:"reading"`
+		Ruby      json.RawMessage `json:"ruby_tokens"` // 逐块振假名（kagome 切块+本子读音切分）
+		Pos       *string         `json:"pos"`
+		Meaning   *string         `json:"meaning"`
+		Sort      int             `json:"sort_order"`
+		Sentences []sent          `json:"sentences"`
 	}
 	items := []item{}
 	index := map[string]int{}
@@ -134,6 +135,12 @@ func (h *Handler) DirWords(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&it.LinkID, &it.WordID, &it.Surface, &it.Reading, &it.Pos, &it.Meaning, &it.Sort); err != nil {
 			httpx.Err(w, httpx.Internal(err.Error()))
 			return
+		}
+		if it.Reading != nil {
+			if toks := wordRubyTokens(it.Surface, *it.Reading); toks != nil {
+				b, _ := json.Marshal(toks)
+				it.Ruby = b
+			}
 		}
 		it.Sentences = []sent{}
 		index[it.LinkID] = len(items)
