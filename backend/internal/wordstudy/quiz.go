@@ -67,6 +67,8 @@ type Quiz struct {
 	Hint    *string   `json:"hint"`               // 模糊化句子翻译；nil=本卡不提供提示
 	Trans   *string   `json:"trans,omitempty"`    // 背面第二层：完整句子翻译
 	Audio   *sentAudio `json:"audio,omitempty"`
+	BlankText string    `json:"blank_text,omitempty"` // 空白处正解显示文本（句式条目=句式部分）
+	Accept    []string  `json:"accept,omitempty"`     // 输入题可接受答案（词面/读音/句式部分）
 }
 
 // blankTokens 把词面在句中的位置换成单个空白 token 且剥掉读音。
@@ -127,7 +129,7 @@ type sentRow struct {
 }
 
 // pickSentence 挖空素材：生词本句优先（有翻译、导入质检过），回退课程句。
-func pickSentence(ctx context.Context, pool *pgxpool.Pool, userID, wordID, surface string) (*sentRow, error) {
+func pickSentence(ctx context.Context, pool *pgxpool.Pool, userID, wordID, target string) (*sentRow, error) {
 	var r sentRow
 	var ruby []byte
 	err := pool.QueryRow(ctx, `
@@ -153,7 +155,7 @@ func pickSentence(ctx context.Context, pool *pgxpool.Pool, userID, wordID, surfa
 			  AND s.translation IS NOT NULL AND s.text LIKE '%' || $3 || '%'
 			  AND char_length(s.text) BETWEEN 6 AND 40
 			  AND s.text !~ '[〜~…○□?？]'
-		) q ORDER BY src LIMIT 1`, wordID, userID, surface).
+		) q ORDER BY src LIMIT 1`, wordID, userID, target).
 		Scan(&r.Src, &r.Text, &ruby, &r.Trans, &r.Audio)
 	if err != nil {
 		return nil, err
@@ -223,19 +225,32 @@ func buildQuiz(ctx context.Context, pool *pgxpool.Pool, userID string, w word, i
 		return &Quiz{Type: want, Options: opts, Answer: at, Hint: nil}
 	}
 
-	// 听力模式：句式条目（〜さん之类）进听力不明所以，退标准通道；再找句，没句也退
+	// 听力模式：句式条目挖"句式部分"（〜さんのおかげです → さんのおかげです）；
+	// 占位符原句已被 SQL 排除，只有补出来的具体句会被选中；没句就退标准通道
+	target := w.Surface
 	if patternWord(w.Surface) {
-		return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
+		target = patternTail(w.Surface)
+		if target == "" {
+			return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
+		}
 	}
-	sr, err := pickSentence(ctx, pool, userID, w.ID, w.Surface)
+	sr, err := pickSentence(ctx, pool, userID, w.ID, target)
 	if err != nil || sr == nil {
 		return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
 	}
-	tokens := blankTokens(sr.Ruby, sr.Text, w.Surface)
+	tokens := blankTokens(sr.Ruby, sr.Text, target)
 	if tokens == nil {
 		return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
 	}
 	q := &Quiz{Tokens: tokens, Hint: blurHint(sr.Trans, w.Meaning), Trans: sr.Trans}
+	q.BlankText = target
+	q.Accept = []string{w.Surface}
+	if w.Reading != nil && *w.Reading != w.Surface {
+		q.Accept = append(q.Accept, *w.Reading)
+	}
+	if target != w.Surface {
+		q.Accept = append(q.Accept, target)
+	}
 	if sr.Audio != nil {
 		q.Audio = &sentAudio{Kind: "asset", ID: *sr.Audio}
 	} else {

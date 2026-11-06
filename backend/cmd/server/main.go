@@ -147,6 +147,7 @@ func run() error {
 			wsH := wordstudy.NewHandler(pool, azureTTS, store)
 			sec.Get("/word-study/status", wsH.Status)
 			sec.Get("/word-study/dir/{dir_id}/quiz", wsH.DirQuiz)
+			sec.Post("/word-study/dir/{dir_id}/enrich", wsH.EnrichDir)
 			sec.Get("/word-study/new", wsH.NewWords)
 			sec.Get("/word-study/due", wsH.DueWords)
 			sec.Post("/word-study/{word_id}/result", wsH.Result)

@@ -1939,8 +1939,9 @@ function wsTokensHTML(q) {
 
 // 揭晓面把空白填回并高亮目标词
 function wsTokensFullHTML(q, w) {
+  const fill = q.blank_text || w.surface;
   return (q.tokens || []).map(t => t.blank
-    ? `<span class="ws-answord">${esc(w.surface)}</span>`
+    ? `<span class="ws-answord">${esc(fill)}</span>`
     : (t.reading ? `<ruby>${esc(t.text)}<rt>${esc(t.reading)}</rt></ruby>` : esc(t.text))).join('');
 }
 
@@ -2057,7 +2058,7 @@ function wsBackQuizHTML(w, ok, chosen) {
       if (i === q.answer) cls += ' right'; else if (i === chosen) cls += ' wrong';
       return `<button class="${cls}" disabled>${esc(o)}</button>`; }).join('')}</div>`;
   } else if (q.type === 'cloze_type') {
-    mark = `<p class="ws-ans ${ok ? 'ok' : 'no'}">你的输入：${esc(chosen || '（空）')}　正解：${esc(w.surface)}</p>`;
+    mark = `<p class="ws-ans ${ok ? 'ok' : 'no'}">你的输入：${esc(chosen || '（空）')}　正解：${esc(q.blank_text || w.surface)}</p>`;
   }
   return `<div class="ws-mark ${ok ? 'ok' : 'no'}">${ok ? '答对了' : '答错了'}</div>
     <div class="ws-word-line">
@@ -2192,7 +2193,8 @@ async function wsTypeConfirm() {
   WS_GRADING = true;
   const v = inp.value;
   const w = WS_ITEMS[WS_IDX];
-  const ok = wsNorm(v) === wsNorm(w.surface) || (w.reading && wsNorm(v) === wsNorm(w.reading));
+  const acc = (w.quiz && w.quiz.accept && w.quiz.accept.length) ? w.quiz.accept : [w.surface, w.reading || ''];
+  const ok = acc.some(x => wsNorm(v) === wsNorm(x));
   inp.disabled = true;
   try { await wsGrade(ok ? 'pass' : 'fail'); } catch (e) { WS_GRADING = false; alert(e.message); return; }
   wsShowReview(w, ok, v);
@@ -2363,6 +2365,8 @@ async function nbOpenDir(dirId) {
   catch { box.innerHTML = '<p class="hint">加载失败</p>'; return; }
   NB_WORDS[dirId] = r.items || [];
   renderNbWords();
+  // 句式条目（〜さん之类）后台补具体例句：fire-and-forget，补完后听力题才有意义可听
+  api('/word-study/dir/' + dirId + '/enrich', { method: 'POST' }).catch(() => {});
 }
 
 function renderNbWords() {
