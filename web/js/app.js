@@ -1930,10 +1930,13 @@ async function wsPlaySentence(it, btn) {
   }
 }
 
-// wsTokensHTML 挖空句逐 token 渲染：空白 token 不带振假名（注音即答案）
-function wsTokensHTML(q) {
+// wsTokensHTML 挖空句逐 token 渲染：空白 token 不带振假名（注音即答案）；
+// withInput 时空白直接是输入框（用户要求输入框长在空格位置上）
+function wsTokensHTML(q, withInput) {
   return (q.tokens || []).map(t => t.blank
-    ? '<span class="ws-blank">＿＿＿</span>'
+    ? (withInput
+      ? '<input class="ws-inline-in" id="ws-type-in" maxlength="24" autocomplete="off" aria-label="输入空格里的词">'
+      : '<span class="ws-blank">＿＿＿</span>')
     : (t.reading ? `<ruby>${esc(t.text)}<rt>${esc(t.reading)}</rt></ruby>` : esc(t.text))).join('');
 }
 
@@ -2018,10 +2021,9 @@ function wsFrontQuiz(w) {
       <p class="hint">听句选词：空格里是哪个词？</p>${wsOptsHTML(q)}`;
   }
   return `<div class="ws-word-line">${play}</div>
-    <div class="ws-cloze">${wsTokensHTML(q)}</div>${hint}
-    <p class="hint">听句写词：输入空格里的词（假名或汉字均可）</p>
-    <div class="ws-type-row"><input id="ws-type-in" maxlength="40" placeholder="入力…" autocomplete="off" />
-    <button class="btn ghost" data-act="ws-type">确认</button></div>`;
+    <div class="ws-cloze">${wsTokensHTML(q, true)}</div>${hint}
+    <p class="hint">听句写词：在空格里直接输入（假名或汉字均可），回车或点确认</p>
+    <div class="ws-type-confirm"><button class="btn ghost" data-act="ws-type">确认</button></div>`;
 }
 
 function wsFrontFlip(w) {
