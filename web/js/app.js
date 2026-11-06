@@ -1829,11 +1829,12 @@ function wsSetMode(m) {
   if (m === WS_QUIZ_MODE) return;
   WS_QUIZ_MODE = m;
   localStorage.setItem('ts_ws_mode', m);
-  wsRestart(); // 换通道=换题型池，按当前来源整轮重取
+  wsRestart(true); // 换通道=换题型池，进度与对错保留
 }
 
 // WS_SRC 会话来源：new/due 走记忆卡池，dir 走生词本目录整版
 let WS_SRC = { kind: 'new' };
+let WS_DONE = new Set(); // 本会话已计分的词 id：切模式不重复答
 
 async function wsLoadItems() {
   const path = WS_SRC.kind === 'dir'
@@ -1843,7 +1844,11 @@ async function wsLoadItems() {
   return r.words || [];
 }
 
-async function wsRestart() {
+async function wsRestart(keepProgress) {
+  const from = keepProgress ? WS_IDX : 0;
+  const pass = keepProgress ? WS_PASS : 0;
+  const fail = keepProgress ? WS_FAIL : 0;
+  if (!keepProgress) WS_DONE = new Set();
   try {
     WS_ITEMS = await wsLoadItems();
   } catch (e) { alert(e.message); return; }
@@ -1852,9 +1857,17 @@ async function wsRestart() {
       : WS_SRC.kind === 'due' ? '今日没有到期的复习词。' : '这个目录没有可测的词。');
     return;
   }
-  WS_IDX = 0; WS_PASS = 0; WS_FAIL = 0;
+  // 切模式只换题型不换进度：位置/对错保留，已答过的词跳过不重复计分
+  WS_PASS = pass; WS_FAIL = fail;
+  WS_IDX = wsNextUndone(Math.min(from, WS_ITEMS.length - 1));
   go('wordstudy');
   renderWordStudyItem();
+}
+
+// wsNextUndone 从 i 起找第一个本会话没答过的词；全答完返回 items.length
+function wsNextUndone(i) {
+  while (i < WS_ITEMS.length && WS_DONE.has(WS_ITEMS[i].id)) i++;
+  return i;
 }
 
 // nbStartTest 生词本目录横条「测」：本目录全部词一次过完，成绩照进记忆卡排期。
@@ -1865,7 +1878,7 @@ async function nbStartTest() {
   localStorage.setItem('ts_ws_mode', WS_QUIZ_MODE);
   WS_MODE = 'dir';
   WS_SRC = { kind: 'dir', id: NB_CURDIR };
-  await wsRestart();
+  await wsRestart(false);
 }
 
 function wsSegBar() {
@@ -1876,7 +1889,7 @@ function wsSegBar() {
 async function goWordStudy(mode) {
   WS_MODE = mode;
   WS_SRC = { kind: mode };
-  await wsRestart();
+  await wsRestart(false);
 }
 
 function wsStopAudio() { if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; } }
@@ -2164,6 +2177,7 @@ async function wsGrade(result) {
     method: 'POST',
     body: JSON.stringify({ result, hint_used: WS_HINT_USED }),
   });
+  WS_DONE.add(w.id);
   if (result === 'pass') WS_PASS++; else WS_FAIL++;
 }
 
@@ -2174,7 +2188,7 @@ function wsShowReview(w, ok, chosen) {
   back.innerHTML = wsBackQuizHTML(w, ok, chosen);
 }
 
-function wsNext() { WS_IDX++; renderWordStudyItem(); }
+function wsNext() { WS_IDX = wsNextUndone(WS_IDX + 1); renderWordStudyItem(); }
 
 async function wsPick(i) {
   if (WS_GRADING) return; // 连点防护：一次作答只提交一次
