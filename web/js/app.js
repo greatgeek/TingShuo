@@ -78,13 +78,17 @@ async function fetchAuth(url, opts = {}) {
 
 // playUnlock：移动端浏览器可能拒绝手势外的 play()——先静音解锁播放再恢复音量
 async function playUnlock(a) {
+  // 安卓 Chrome 上 'playing' 可能在监听挂载前就触发，导致静音卡死：挂载提前 + 兜底定时解除
+  const unmute = () => { a.muted = false; };
+  a.addEventListener('playing', unmute, { once: true });
+  a.addEventListener('timeupdate', unmute, { once: true });
   try {
     await a.play();
   } catch (e) {
     if (e && e.name === 'NotAllowedError') {
       a.muted = true;
       await a.play();
-      a.addEventListener('playing', () => { a.muted = false; }, { once: true });
+      setTimeout(unmute, 250);
     } else {
       throw e;
     }
@@ -1925,8 +1929,34 @@ async function wsPlayQuizSent(btn) {
     WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🎧'; };
     await playUnlock(WS_AUDIO);
   } catch (e) {
+    //  formerly 静默吞错：用户点 🎧 没声音也没提示，无法报障定位（2026-11-06）
     if (btn) btn.textContent = '🎧';
+    toast('句子播放失败：' + e.message);
   }
+}
+
+function wsPrefetchWord(wordId) { wordAudioBlobURL(wordId).catch(() => {}); }
+
+// wsPrefetchSent 渲染时只预热音频缓存不播放：无手势的自动播在安卓上易被静音卡死，
+// 预热后用户点 🎧 走本地缓存，play() 落在点击手势内，声音才出得来
+async function wsPrefetchSent() {
+  const q = WS_ITEMS[WS_IDX] && WS_ITEMS[WS_IDX].quiz;
+  if (!q || !q.audio) return;
+  try {
+    if (q.audio.kind === 'say') {
+      const key = 'say:' + q.audio.text;
+      const hit = await idbGet(key);
+      if (hit && hit.blob) return;
+      const r = await fetchAuth('/api/v1/audio/say', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: q.audio.text }),
+      });
+      if (r.ok) idbPut(key, await r.blob());
+    } else {
+      await audioBlobURL(q.audio.id);
+    }
+  } catch (e) { /* 预热失败不碍事，点 🎧 时再取并会报错 */ }
 }
 
 function wsHintOpen(d) { if (d.open) WS_HINT_USED = true; }
@@ -2032,9 +2062,9 @@ function renderWordStudyItem() {
   box.querySelectorAll('.ws-opt').forEach(b => { b.onclick = () => wsPick(+b.dataset.i); });
   const inp = $('ws-type-in');
   if (inp) inp.onkeydown = e => { if (e.key === 'Enter') wsTypeConfirm(); };
-  // 听力题面自动播一次；手势链断了播不动就等用户点 🎧
-  if (q.type === 'hear_mean') wsSpeakWord(w.id, null);
-  if (q.type === 'cloze_pick' || q.type === 'cloze_type') wsPlayQuizSent(null);
+  // 听力题面不自动播（无手势易被安卓静音卡死）：只预热缓存，等用户点 🎧
+  if (q.type === 'hear_mean') wsPrefetchWord(w.id);
+  if (q.type === 'cloze_pick' || q.type === 'cloze_type') wsPrefetchSent();
 }
 
 // wsFlip 翻面（原翻面卡）：显示读音释义 + 拉取该词的例句/短语
