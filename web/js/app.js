@@ -2777,11 +2777,18 @@ function userScrolled() {
   PL.autoScrolling = false;
   PL.follow = false;
 }
-// 跟随时把正在播放的词/句平滑滚到屏幕中央；用户手动滚动过（follow=false）就完全不动
+// 跟随时把正在播放的词/句平滑滚到屏幕中央。
+// 手动滚动接管后（follow=false）只要播放项还在视口里就不打扰；
+// 一旦播放项跑出视口（接管所致或列表推进），立即拉回中央并恢复跟随——
+// 手机上轻微划动就会触发接管，旧逻辑会让后半程彻底失去居中（2026-11-06 报障）。
 function nbScrollToPlaying(el) {
-  if (!PL || !PL.follow) return;
+  if (!PL) return;
+  const r = el.getBoundingClientRect();
+  const inView = r.top >= 0 && r.bottom <= innerHeight;
+  if (!PL.follow && inView) return;
   beginAutoScroll();
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  PL.follow = true;
 }
 
 // 播放中点词跳转：从该词第一条音频开始继续往后播
