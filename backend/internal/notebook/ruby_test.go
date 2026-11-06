@@ -13,15 +13,32 @@ func TestBuildWordRubySplitsByKagomeBounds(t *testing.T) {
 	}
 }
 
-// 送り仮名对不齐（词典音字数和 reading 不符）→ 整词一块，宁整勿错
+// 送り仮名对不齐时靠剥离兜底：多い/おおい → 多(おお)+い；单 token 词直接整块
 func TestBuildWordRubyFallbackWhole(t *testing.T) {
 	got := buildWordRuby("多い", "おおい")
-	if len(got) != 1 || got[0][1] != "おおい" {
-		t.Errorf("应整词一块: %v", got)
+	if len(got) != 2 || got[0][0] != "多" || got[0][1] != "おお" || got[1][0] != "い" {
+		t.Errorf("多い 应剥送假名: %v", got)
 	}
 	// 单 token 词直接整块
 	if g2 := buildWordRuby("切符", "きっぷ"); len(g2) != 1 || g2[0][1] != "きっぷ" {
 		t.Errorf("单块词应整块: %v", g2)
+	}
+}
+
+// 送假名剥离：食べる/たべる → 食(た)+べる；大人/おとな 剥不出保持整块
+func TestSplitOkurigana(t *testing.T) {
+	got := buildWordRuby("食べる", "たべる")
+	if len(got) != 2 || got[0][0] != "食" || got[0][1] != "た" || got[1][0] != "べる" || got[1][1] != nil {
+		t.Errorf("食べる 应剥送假名: %v", got)
+	}
+	if g2 := buildWordRuby("増える", "ふえる"); len(g2) != 2 || g2[0][0] != "増" || g2[0][1] != "ふ" || g2[1][0] != "える" {
+		t.Errorf("増える 应剥送假名: %v", g2)
+	}
+	if g3 := buildWordRuby("大人", "おとな"); len(g3) != 1 || g3[0][1] != "おとな" {
+		t.Errorf("大人 应整块: %v", g3)
+	}
+	if g4 := buildWordRuby("切符", "きっぷ"); len(g4) != 1 || g4[0][1] != "きっぷ" {
+		t.Errorf("切符 应整块: %v", g4)
 	}
 }
 

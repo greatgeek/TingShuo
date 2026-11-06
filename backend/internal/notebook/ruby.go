@@ -26,7 +26,7 @@ func wordRubyTokens(surface, reading string) [][]any {
 }
 
 func buildWordRuby(surface, reading string) [][]any {
-	whole := [][]any{{surface, reading}}
+	whole := splitOkurigana([]any{surface, reading})
 	toks := generate.BuildRubyTokens(surface)
 	if len(toks) <= 1 {
 		return whole
@@ -56,5 +56,42 @@ func buildWordRuby(surface, reading string) [][]any {
 	if off != len(runes) {
 		return whole
 	}
-	return out
+	refined := make([][]any, 0, len(out))
+	for _, t := range out {
+		refined = append(refined, splitOkurigana(t)...)
+	}
+	return refined
+}
+
+// splitOkurigana 送假名剥离：表面形与读音的公共假名尾部不属于汉字注音。
+// 食べる/たべる → 食(た) + べる；剥不出（大人/おとな）或剥空就保持整块。
+func splitOkurigana(t []any) [][]any {
+	s, _ := t[0].(string)
+	r, _ := t[1].(string)
+	if r == "" {
+		return [][]any{t}
+	}
+	sr, rr := []rune(s), []rune(r)
+	i, j := len(sr), len(rr)
+	for i > 0 && j > 0 && sr[i-1] == rr[j-1] && isKana(sr[i-1]) {
+		i--
+		j--
+	}
+	if i == 0 || j == 0 || i == len(sr) || !containsKanjiRun(sr[:i]) {
+		return [][]any{t}
+	}
+	return [][]any{{string(sr[:i]), string(rr[:j])}, {string(sr[i:]), nil}}
+}
+
+func isKana(r rune) bool {
+	return (r >= 0x3041 && r <= 0x3096) || (r >= 0x30A1 && r <= 0x30FA)
+}
+
+func containsKanjiRun(rs []rune) bool {
+	for _, r := range rs {
+		if r >= 0x4E00 && r <= 0x9FFF {
+			return true
+		}
+	}
+	return false
 }
