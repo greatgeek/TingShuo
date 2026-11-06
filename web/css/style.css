@@ -233,21 +233,25 @@ body.no-rt rt { display: none; }
   border-radius: 8px; font-size: 13px; color: #556; cursor: pointer;
 }
 .ws-seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-.ws-opts { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-.ws-opt { justify-content: flex-start; text-align: left; }
+.ws-opts { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.ws-opt { justify-content: flex-start; text-align: left; padding: 12px 16px; font-size: 16px; }
 .ws-opt.right { border-color: var(--accent); color: var(--accent); background: #eefaf5; }
 .ws-opt.wrong { border-color: #d66; color: #c44; background: #fdefef; }
-.ws-cloze { font-family: var(--serif); font-size: 20px; line-height: 2.1; margin: 10px 0; word-break: break-all; text-align: left; }
-.ws-blank { display: inline-block; min-width: 64px; border-bottom: 2px solid var(--accent); vertical-align: baseline; }
+.ws-cloze { font-family: var(--serif); font-size: 22px; line-height: 2.2; margin: 14px 0 6px; word-break: break-all; text-align: left; }
+.ws-blank { display: inline-block; min-width: 72px; border-bottom: 2px solid var(--accent); vertical-align: baseline; }
 .ws-cloze-full .ws-answord { color: var(--accent); font-weight: 700; }
-.ws-hint { margin: 8px 0; font-size: 13px; color: #667; text-align: left; }
+.ws-playbtn { width: 52px; height: 52px; font-size: 20px; background: #eefaf5; border-color: #bfe3d4; }
+.ws-hint { margin: 10px 0; font-size: 13px; color: #667; text-align: left; }
 .ws-hint summary { cursor: pointer; }
-.ws-hint p { margin: 6px 0 0; padding: 6px 8px; background: #f6f8fa; border-radius: 6px; color: #445; }
-.ws-type-row { display: flex; gap: 8px; margin-top: 10px; }
+.ws-hint p { margin: 6px 0 0; padding: 8px 10px; background: #f6f8fa; border-radius: 8px; color: #445; }
+.ws-type-row { display: flex; gap: 8px; margin-top: 12px; }
 .ws-type-row input {
-  flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line);
-  border-radius: 8px; font-size: 15px;
+  flex: 1 1 auto; min-width: 0; padding: 11px 14px; border: 1px solid var(--line);
+  border-radius: 10px; font-size: 16px; background: var(--surface);
 }
+.ws-type-row input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+/* .btn 全局 width:100%，在 flex 行里会把输入框挤成细条：这里必须收回 auto */
+.ws-type-row .btn { width: auto; flex: 0 0 auto; padding: 10px 22px; margin-top: 0; }
 .ws-mark { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
 .ws-mark.ok { color: var(--accent); }
 .ws-mark.no { color: #c44; }

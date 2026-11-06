@@ -96,11 +96,14 @@ async function playUnlock(a) {
   }
 }
 
-// wsAudioDbg 播放状态行：报障时截图即可读出"走字/静音/错误"，免去手机开控制台
+// wsAudioDbg 播放状态行：只在异常时显示（静音/报错/不走字），正常播放不打扰界面
 function wsAudioDbg(a, tag) {
   const el = document.getElementById('ws-dbg');
   if (!el) return;
-  el.textContent = `${tag} 播放 ${a ? a.currentTime.toFixed(1) : '-'}s · 静音 ${a && a.muted ? '是' : '否'} · 暂停 ${a && a.paused ? '是' : '否'} · 错误 ${a && a.error ? a.error.code : '无'}`;
+  const bad = a && (a.muted || a.error || (!a.paused && a.currentTime < 0.05) || (a.paused && a.currentTime > 0 && !a.ended));
+  el.textContent = bad
+    ? `${tag} 播放 ${a.currentTime.toFixed(1)}s · 静音 ${a.muted ? '是' : '否'} · 暂停 ${a.paused ? '是' : '否'} · 错误 ${a.error ? a.error.code : '无'}`
+    : '';
 }
 
 // doRefresh 用 refresh_token 换新 access_token（并发 401 共享同一次刷新）
@@ -1953,7 +1956,11 @@ async function wsPlayQuizSent(btn) {
   if (!q || !q.audio) return;
   try {
     if (btn) btn.textContent = '⏳';
-    if (q.audio.kind === 'say') { await sayAudio(q.audio.text, btn); return; }
+    if (q.audio.kind === 'say') {
+      await sayAudio(q.audio.text, btn);
+      if (btn) btn.textContent = '🎧'; // sayAudio 结束会写回 ▶，句子按钮保持 🎧
+      return;
+    }
     wsStopAudio();
     const url = await audioBlobURL(q.audio.id);
     WS_AUDIO = new Audio(url);
@@ -1992,7 +1999,7 @@ async function wsPrefetchSent() {
 
 function wsFrontQuiz(w) {
   const q = w.quiz;
-  const play = `<button class="ws-mini" data-act="ws-sent" title="播放句子">🎧</button>`;
+  const play = `<button class="ws-mini ws-playbtn" data-act="ws-sent" title="播放句子">🎧</button>`;
   const hint = q.hint != null
     ? `<details class="ws-hint"><summary>显示中文语境提示</summary><p>${esc(q.hint)}</p></details>`
     : '';
