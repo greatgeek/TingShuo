@@ -1313,6 +1313,21 @@ async function idbGet(id) {
     });
   } catch { return null; }
 }
+async function idbDel(id) {
+  try {
+    const db = await idbOpen();
+    await new Promise(res => {
+      const tx = db.transaction(AUDIO_STORE, 'readwrite');
+      tx.objectStore(AUDIO_STORE).delete(id);
+      tx.oncomplete = res; tx.onerror = res; tx.onabort = res;
+    });
+  } catch {}
+}
+// 报障诊断钩子：控制台执行 __tsDbg().then(console.log) 打印本地音频缓存各键尺寸
+window.__tsDbg = async () => {
+  const all = await _idbAll();
+  return all.map(x => ({ k: String(x.id).slice(0, 30), size: x.size || (x.blob && x.blob.size) || 0 }));
+};
 async function idbPut(id, blob) {
   try {
     const db = await idbOpen();
@@ -1856,16 +1871,23 @@ async function goWordStudy(mode) {
 function wsStopAudio() { if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; } }
 
 // wsSpeakWord 单词发音：后端 /word-study/{id}/audio（首次合成落库，之后直接用缓存）
-function wsSpeakWord(wordId, btn) {
+function wsSpeakWord(wordId, btn, retry) {
   return new Promise(async resolve => {
     try {
       if (btn) { btn.textContent = '⏳'; }
       const url = await wordAudioBlobURL(wordId);
       wsStopAudio();
       WS_AUDIO = new Audio(url);
+      const a = WS_AUDIO;
       WS_AUDIO.onended = () => { if (btn) btn.textContent = '🔊'; resolve(); };
       WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🔊'; toast('播放失败：音频解码错误'); resolve(); };
-      await playUnlock(WS_AUDIO);
+      await playUnlock(a);
+      // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
+      setTimeout(() => {
+        if (!retry && WS_AUDIO === a && !a.paused && a.currentTime < 0.05) {
+          wsStopAudio(); idbDel('w:' + wordId); wsSpeakWord(wordId, btn, true);
+        }
+      }, 800);
     } catch (e) {
       if (btn) btn.textContent = '🔊';
       toast('词音失败：' + e.message);
@@ -2440,7 +2462,7 @@ function nbToggleWord(w, div) {
 }
 
 // sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
-async function sayAudio(text, btn) {
+async function sayAudio(text, btn, retry) {
   try {
     if (btn) btn.textContent = '⏳';
     const key = 'say:' + text;
@@ -2462,9 +2484,16 @@ async function sayAudio(text, btn) {
     }
     wsStopAudio();
     WS_AUDIO = new Audio(url);
+    const a = WS_AUDIO;
     WS_AUDIO.onended = () => { if (btn) btn.textContent = '▶'; };
     WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; toast('播放失败：音频解码错误'); };
-    await playUnlock(WS_AUDIO);
+    await playUnlock(a);
+    // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
+    setTimeout(() => {
+      if (!retry && WS_AUDIO === a && !a.paused && a.currentTime < 0.05) {
+        wsStopAudio(); idbDel(key); sayAudio(text, btn, true);
+      }
+    }, 800);
   } catch (e) {
     if (btn) btn.textContent = '▶';
     toast('点播失败：' + e.message);
