@@ -2008,7 +2008,8 @@ function wsFrontQuiz(w) {
     ? `<details class="ws-hint"><summary>显示中文语境提示</summary><p>${esc(q.hint)}</p></details>`
     : '';
   if (q.type === 'pick_mean') {
-    return `<div class="ws-word-line"><span class="ws-word-txt">${esc(w.surface)}</span></div>
+    return `<div class="ws-word-line"><span class="ws-word-txt">${esc(w.surface)}</span>` +
+      `<button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button></div>
       <p class="hint">看词选义：它的中文意思是？</p>${wsOptsHTML(q)}`;
   }
   if (q.type === 'hear_mean') {
