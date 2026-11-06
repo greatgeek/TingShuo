@@ -147,6 +147,36 @@ func (h *Handler) DueWords(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"words": items, "mode": "due", "quiz_mode": string(qm)})
 }
 
+// DirQuiz GET /word-study/dir/{dir_id}/quiz?mode= —— 生词本目录整版测试：
+// 目录内全部词（按挂载顺序）带 quiz 载荷，一次过完一版；成绩仍走 /result 进记忆卡排期。
+func (h *Handler) DirQuiz(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	dirID := chi.URLParam(r, "dir_id")
+	rows, err := h.pool.Query(r.Context(), `
+		SELECT w.id, w.surface, w.reading, w.pos, w.meaning,
+		       COALESCE(BOOL_OR(lw.is_key), false), NULL::text AS audio_id
+		FROM notebook_word nw
+		JOIN notebook nb ON nb.id = nw.notebook_id
+		JOIN word w      ON w.id = nw.word_id
+		LEFT JOIN lesson_word lw ON lw.word_id = w.id
+		WHERE nw.dir_id = $1 AND nb.user_id = $2
+		GROUP BY w.id
+		ORDER BY min(nw.sort_order)`, dirID, userID)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer rows.Close()
+	items := scanWordRows(rows)
+	qm := parseMode(r.URL.Query().Get("mode"))
+	for i := range items {
+		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i], i, qm)
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"words": items, "mode": "dir", "quiz_mode": string(qm), "dir_id": dirID,
+	})
+}
+
 // Audio GET /word-study/{word_id}/audio —— 单词发音：命中 word_audio 缓存直接返回，
 // 未命中合成（词面文本，若带读音注音则用读音保证发音准确）后落库再返回。
 func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {

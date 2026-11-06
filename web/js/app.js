@@ -1799,7 +1799,43 @@ function wsSetMode(m) {
   if (m === WS_QUIZ_MODE) return;
   WS_QUIZ_MODE = m;
   localStorage.setItem('ts_ws_mode', m);
-  goWordStudy(WS_MODE); // 换通道=换题型池，整轮重取
+  wsRestart(); // 换通道=换题型池，按当前来源整轮重取
+}
+
+// WS_SRC 会话来源：new/due 走记忆卡池，dir 走生词本目录整版
+let WS_SRC = { kind: 'new' };
+
+async function wsLoadItems() {
+  const path = WS_SRC.kind === 'dir'
+    ? '/word-study/dir/' + WS_SRC.id + '/quiz?mode=' + WS_QUIZ_MODE
+    : '/word-study/' + WS_SRC.kind + '?mode=' + WS_QUIZ_MODE;
+  const r = await api(path);
+  return r.words || [];
+}
+
+async function wsRestart() {
+  try {
+    WS_ITEMS = await wsLoadItems();
+  } catch (e) { alert(e.message); return; }
+  if (!WS_ITEMS.length) {
+    alert(WS_SRC.kind === 'new' ? '没有待学的新词了。'
+      : WS_SRC.kind === 'due' ? '今日没有到期的复习词。' : '这个目录没有可测的词。');
+    return;
+  }
+  WS_IDX = 0; WS_PASS = 0; WS_FAIL = 0;
+  go('wordstudy');
+  renderWordStudyItem();
+}
+
+// nbStartTest 生词本目录横条「测」：本目录全部词一次过完，成绩照进记忆卡排期。
+// 用户要的就是"句子挖空测"，入口直接落到听力档（seg 仍可切回标准）。
+async function nbStartTest() {
+  if (!NB_CURDIR) { toast('先选择目录'); return; }
+  WS_QUIZ_MODE = 'listening';
+  localStorage.setItem('ts_ws_mode', WS_QUIZ_MODE);
+  WS_MODE = 'dir';
+  WS_SRC = { kind: 'dir', id: NB_CURDIR };
+  await wsRestart();
 }
 
 function wsSegBar() {
@@ -1809,14 +1845,8 @@ function wsSegBar() {
 
 async function goWordStudy(mode) {
   WS_MODE = mode;
-  try {
-    const r = await api('/word-study/' + (mode === 'new' ? 'new' : 'due') + '?mode=' + WS_QUIZ_MODE);
-    WS_ITEMS = r.words || [];
-  } catch (e) { alert(e.message); return; }
-  if (!WS_ITEMS.length) { alert(mode === 'new' ? '没有待学的新词了。' : '今日没有到期的复习词。'); return; }
-  WS_IDX = 0; WS_PASS = 0; WS_FAIL = 0;
-  go('wordstudy');
-  renderWordStudyItem();
+  WS_SRC = { kind: mode };
+  await wsRestart();
 }
 
 function wsStopAudio() { if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; } }
@@ -2119,7 +2149,7 @@ function wsQuit() {
 
 function renderWordStudyDone() {
   const total = WS_PASS + WS_FAIL;
-  const label = WS_MODE === 'new' ? '新学完成' : '复习完成';
+  const label = WS_MODE === 'new' ? '新学完成' : WS_MODE === 'dir' ? '目录测试完成' : '复习完成';
   $('wordstudy-content').innerHTML = `
     <div class="card rv-done-card">
       <h2>${label}</h2>
@@ -2194,9 +2224,10 @@ function renderNbStrip() {
       `<div class="nb-strip-row2"><span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span></div>`
     : `<div class="nb-strip-row1"><b>${esc(nb ? nb.name : '生词本')}</b></div>` +
       `<div class="nb-strip-row2"><span class="nb-strip-path">未选目录 · 点我选择</span></div>`;
-  // 没选目录时复制/导出没有对象，藏起来比点了报错好
+  // 没选目录时复制/导出/测试没有对象，藏起来比点了报错好
   $('nb-copy-btn').hidden = !dir;
   $('nb-export-btn').hidden = !dir;
+  $('nb-test-btn').hidden = !dir;
 }
 
 // 目录选择面板：横条正下方就地展开/收起（不再底部弹窗）
@@ -3050,6 +3081,7 @@ $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
 $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-copy-btn').onclick = (e) => { e.stopPropagation(); nbCopyAll(); };
 $('nb-export-btn').onclick = (e) => { e.stopPropagation(); nbExportAll(); };
+$('nb-test-btn').onclick = (e) => { e.stopPropagation(); nbStartTest(); };
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
 $('pod-btn').onclick = () => podOpen('lesson', LESSON && LESSON.lesson && LESSON.lesson.id, null);
