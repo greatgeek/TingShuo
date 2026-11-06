@@ -59,6 +59,20 @@ func TestBlankTokensMissingSurface(t *testing.T) {
 	}
 }
 
+// 句式条目（〜さん/…）不进听力通道：念出来不明所以（2026-11-06 报障）
+func TestPatternWord(t *testing.T) {
+	for _, s := range []string{"〜さんのおかげです", "〜てください", "…でもいい"} {
+		if !patternWord(s) {
+			t.Errorf("%q 应判为句式条目", s)
+		}
+	}
+	for _, s := range []string{"切符", "増える", "何曜日"} {
+		if patternWord(s) {
+			t.Errorf("%q 不应判为句式条目", s)
+		}
+	}
+}
+
 func TestBlurHint(t *testing.T) {
 	tr, mg := "他每天早上喝咖啡。", "咖啡"
 	h := blurHint(&tr, &mg)

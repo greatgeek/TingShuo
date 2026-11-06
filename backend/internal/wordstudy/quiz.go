@@ -8,6 +8,7 @@ package wordstudy
 import (
 	"encoding/json"
 	"math/rand"
+	"regexp"
 	"strings"
 
 	"context"
@@ -16,6 +17,12 @@ import (
 )
 
 type quizType string
+
+// patternMark 句式条目占位符（〜さん/…/○）：这类"词"念出来不明所以，
+// 不能进听力通道（2026-11-06 用户报障"〜さん 在听力句子里不明所以"）。
+var patternMarkRe = regexp.MustCompile(`[〜~…○□?？]`)
+
+func patternWord(s string) bool { return patternMarkRe.MatchString(s) }
 
 const (
 	qFlip      quizType = "flip"       // 兜底：原翻面卡（无合适选项/句子时）
@@ -132,6 +139,7 @@ func pickSentence(ctx context.Context, pool *pgxpool.Pool, userID, wordID, surfa
 			WHERE nw.word_id = $1 AND nb.user_id = $2
 			  AND s.translation IS NOT NULL AND s.text LIKE '%' || $3 || '%'
 			  AND char_length(s.text) BETWEEN 6 AND 40
+			  AND s.text !~ '[〜~…○□?？]' -- 句式占位符句子念出来不明所以，不出听力题
 			UNION ALL
 			SELECT '2ls', s.text, s.ruby_tokens, s.translation, a.id
 			FROM word_sentence ws
@@ -144,6 +152,7 @@ func pickSentence(ctx context.Context, pool *pgxpool.Pool, userID, wordID, surfa
 			WHERE ws.word_id = $1
 			  AND s.translation IS NOT NULL AND s.text LIKE '%' || $3 || '%'
 			  AND char_length(s.text) BETWEEN 6 AND 40
+			  AND s.text !~ '[〜~…○□?？]'
 		) q ORDER BY src LIMIT 1`, wordID, userID, surface).
 		Scan(&r.Src, &r.Text, &ruby, &r.Trans, &r.Audio)
 	if err != nil {
@@ -199,7 +208,8 @@ func buildQuiz(ctx context.Context, pool *pgxpool.Pool, userID string, w word, i
 
 	if mode == ModeStandard {
 		want := qPickMean
-		if idx%2 == 1 {
+		// 句式条目（〜さん之类）念出来不明所以：只看不听
+		if idx%2 == 1 && !patternWord(w.Surface) {
 			want = qHearMean
 		}
 		if meaning == "" {
@@ -213,7 +223,10 @@ func buildQuiz(ctx context.Context, pool *pgxpool.Pool, userID string, w word, i
 		return &Quiz{Type: want, Options: opts, Answer: at, Hint: nil}
 	}
 
-	// 听力模式：先找句，没句就退标准通道
+	// 听力模式：句式条目（〜さん之类）进听力不明所以，退标准通道；再找句，没句也退
+	if patternWord(w.Surface) {
+		return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
+	}
 	sr, err := pickSentence(ctx, pool, userID, w.ID, w.Surface)
 	if err != nil || sr == nil {
 		return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
