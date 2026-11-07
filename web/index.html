@@ -3,28 +3,53 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>听说 TingShuo · 桌面版</title>
+<meta name="theme-color" content="#F5F1E8">
+<title>听说 TingShuo · 日语精听</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div class="frame">
   <header>
-    <button class="nav-home" id="nav-back" style="display:none">‹ 返回</button>
-    <button class="nav-home" id="nav-home">⌂ 首页</button>
-    <span class="t">听说 <em>TingShuo</em></span>
-    <span class="s" id="userchip">桌面前端（开发版）</span>
-    <button class="nav-home" id="logout-btn" style="display:none">登出</button>
+    <div class="hdr-side">
+      <button class="nav-btn" id="nav-back" style="display:none" title="返回" aria-label="返回">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <button class="nav-btn" id="nav-home" title="首页" aria-label="首页">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/></svg>
+      </button>
+    </div>
+    <div class="brand">
+      <span class="brand-seal">听</span>
+      <span class="brand-name">听说<em>TingShuo</em></span>
+    </div>
+    <div class="hdr-side right">
+      <span class="s" id="userchip">未登录</span>
+      <button class="nav-btn text" id="logout-btn" style="display:none" title="登出">退出</button>
+    </div>
   </header>
 
   <!-- 登录 -->
   <section class="screen on" id="sc-login">
-    <div class="card">
-      <h2>登录 / 注册</h2>
-      <p class="hint">邮箱 + 密码。新邮箱自动注册，老邮箱直接登录。</p>
-      <div style="margin-top:10px"><input id="login-email" placeholder="邮箱，如 test@dev" autocomplete="off"></div>
-      <div style="margin-top:8px"><input id="login-pass" type="password" placeholder="密码（≥6 位）"></div>
-      <button class="btn accent" id="login-btn">进入</button>
-      <div class="err" id="login-err"></div>
+    <div class="login-wrap">
+      <div class="login-hero">
+        <div class="login-seal">听</div>
+        <h1>把今天的声音<br>听成自己的日语</h1>
+        <p>逐句精听 · 振假名 · 生词本 · 间隔复习</p>
+      </div>
+      <div class="card login-card">
+        <h2>登录 / 注册</h2>
+        <p class="hint">邮箱 + 密码。新邮箱自动注册，老邮箱直接登录。</p>
+        <div class="field">
+          <label class="field-label" for="login-email">邮箱</label>
+          <input id="login-email" placeholder="you@example.com" autocomplete="username">
+        </div>
+        <div class="field">
+          <label class="field-label" for="login-pass">密码</label>
+          <input id="login-pass" type="password" placeholder="至少 8 位" autocomplete="current-password">
+        </div>
+        <button class="btn accent" id="login-btn">进入</button>
+        <div class="err" id="login-err"></div>
+      </div>
     </div>
   </section>
 
@@ -35,50 +60,67 @@
       <p class="hint" id="gen-status-text"></p>
       <button class="btn accent" id="gen-status-btn">查看进度</button>
     </div>
-    <div class="card">
-      <h2>今日课程</h2>
+
+    <div class="card hero">
+      <div class="hero-top">
+        <div>
+          <span class="hero-overline">DAILY LESSON</span>
+          <h2>今日课程</h2>
+        </div>
+        <div class="hero-date">
+          <span class="bignum" id="lesson-date">—</span>
+          <span class="hero-date-label">今日</span>
+        </div>
+      </div>
       <span class="status-chip" id="lesson-chip">未创建</span>
-      <div class="bignum" id="lesson-date">—</div>
       <p class="hint" id="lesson-desc">还没有今天的课程。1 个词也可以生成一课。</p>
       <button class="btn accent" id="home-main-btn">创建今日课程</button>
       <button class="btn ghost" id="home-new-btn" style="display:none">✎ 新建词单（重做今日）</button>
       <div class="err" id="home-err"></div>
     </div>
-    <div class="card" id="review-card" style="display:none">
+
+    <div class="card review-card" id="review-card" style="display:none">
       <h2>复习</h2>
       <p class="hint" id="review-desc">有句子需要复习</p>
       <button class="btn accent" id="review-btn">开始复习</button>
     </div>
-    <div class="card">
+
+    <div class="card study-card">
       <h2>背词</h2>
       <p class="hint" id="wordstudy-desc">提交过的词单会自动累积到这里。</p>
-      <div class="row2" style="margin-top:12px">
-        <button class="btn ghost" id="ws-due-btn" style="margin-top:0">复习</button>
-        <button class="btn accent" id="ws-new-btn" style="margin-top:0">新学</button>
+      <div class="row2 action-row">
+        <button class="btn ghost" id="ws-due-btn">复习</button>
+        <button class="btn accent" id="ws-new-btn">新学</button>
       </div>
-      <p class="hint" style="margin-top:10px">
-        <a href="#" id="lib-link" style="color:var(--accent)">进入生词库 →</a>
-      </p>
+      <a class="text-link" href="#" id="lib-link">进入生词库 <span>→</span></a>
     </div>
+
     <div class="card">
       <h2>历史课程</h2>
       <div id="history-list"></div>
     </div>
-    <div class="card">
-      <h2>生词本</h2>
-      <p class="hint" id="nb-desc">按目录浏览导入的生词与例句。</p>
-      <button class="btn ghost" id="home-nb-btn">浏览生词本</button>
+
+    <div class="card compact">
+      <div class="compact-main">
+        <h2>生词本</h2>
+        <p class="hint" id="nb-desc">按目录浏览导入的生词与例句。</p>
+      </div>
+      <button class="btn ghost compact-btn" id="home-nb-btn">浏览 →</button>
     </div>
-    <div class="card">
-      <h2>本地音频缓存</h2>
-      <p class="hint" id="cache-desc">尚未缓存音频，播放过的句子会自动存到本地。</p>
-      <button class="btn ghost" id="cache-clear-btn">清理缓存</button>
+
+    <div class="card compact">
+      <div class="compact-main">
+        <h2>本地音频缓存</h2>
+        <p class="hint" id="cache-desc">尚未缓存音频，播放过的句子会自动存到本地。</p>
+      </div>
+      <button class="btn ghost compact-btn" id="cache-clear-btn">清理</button>
     </div>
-    <div class="card">
-      <h2>使用流程</h2>
+
+    <details class="card flow">
+      <summary>使用流程</summary>
       <p class="hint">① 粘贴今天的词单（哪怕 1 个词也行，推荐每天 20 个）→ ② AI 生成材料（约 2—5 分钟）→
       ③ 一键配音（Azure TTS，逐句生成）→ ④ 点句播放、看振り仮名跟读。</p>
-    </div>
+    </details>
   </section>
 
   <!-- 词单 -->
@@ -87,20 +129,28 @@
       <h2>今天的词单</h2>
       <p class="hint">每行一词：<code>单词｜读音｜词性｜中文</code>（读音可空）。重点词标 <code>★</code>（材料中出现 2 次）。</p>
       <textarea id="words-input" placeholder="精算｜せいさん｜名詞｜一起结账 ★&#10;駅｜えき｜名詞｜车站"></textarea>
-      <div style="margin-top:8px" class="hint" id="words-count">0 词</div>
-      <div style="margin-top:12px" class="hint">生成模式：</div>
+      <div class="textarea-foot"><span class="hint" id="words-count">0 词</span></div>
+      <div class="field-label" style="margin-top:14px">生成模式</div>
       <div class="modebar" style="margin-top:6px">
         <button id="mode-full" class="on">句子模式</button>
         <button id="mode-phrases">短语模式</button>
       </div>
       <p class="hint" id="mode-desc" style="margin:6px 0 0">对话 + 短文：每个词自然出现在有场景的完整句子里（约 3—5 分钟）</p>
-      <div class="row2" style="margin-top:10px">
-        <select id="sel-level"><option>N5</option><option selected>N4</option><option>N3</option></select>
-        <select id="sel-voice"><option value="Nanami" selected>Nanami（女声）</option><option value="Keita">Keita（男声）</option></select>
+      <div class="row2 field-row">
+        <div class="field">
+          <span>难度</span>
+          <select id="sel-level"><option>N5</option><option selected>N4</option><option>N3</option></select>
+        </div>
+        <div class="field">
+          <span>朗读音色</span>
+          <select id="sel-voice"><option value="Nanami" selected>Nanami（女声）</option><option value="Keita">Keita（男声）</option></select>
+        </div>
       </div>
       <button class="btn accent" id="submit-words-btn">提交并生成材料</button>
-      <button class="btn ghost" id="open-picker-btn">从生词库选词</button>
-      <button class="btn ghost" id="fill-sample-btn">填入示例 20 词</button>
+      <div class="row2 action-row">
+        <button class="btn ghost" id="open-picker-btn">从生词库选词</button>
+        <button class="btn ghost" id="fill-sample-btn">填入示例 20 词</button>
+      </div>
       <div class="err" id="create-err"></div>
     </div>
   </section>
@@ -135,7 +185,7 @@
       <button id="vw-full" class="on">句子模式</button>
     </div>
     <div class="tabs" id="mat-tabs"></div>
-    <div class="row2" style="margin-bottom:10px">
+    <div class="row2 learn-actions" style="margin-bottom:10px">
       <button class="btn ghost" id="play-all-btn">▶ 整段连播</button>
       <button class="btn ghost" id="pod-btn" title="本课中日双语播客">🎙 播客</button>
       <button class="btn accent" id="tts-btn">为全部句子配音</button>
@@ -194,13 +244,23 @@
     <div class="card nb-strip" id="nb-strip">
       <div class="nb-strip-main" id="nb-strip-text">生词本</div>
       <div class="nb-strip-btns">
-      <button class="btn ghost" id="nb-strip-btn">更换</button>
-      <button class="btn ghost nb-icon" id="nb-pod-btn" title="用本单元的词和句子生成播客">🎙</button>
-      <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置">⚙</button>
-      <button class="btn ghost nb-icon" id="nb-copy-btn" title="复制本单元全部词和句子">⧉</button>
-      <button class="btn ghost nb-icon" id="nb-export-btn" title="导出本单元词和句子（txt + csv）">⇩</button>
-      <button class="btn ghost nb-icon" id="nb-test-btn" title="测试本目录全部词（句子挖空为主）">测</button>
-      <button class="btn accent" id="nb-play-all" title="按设置连播本目录全部词与例句">▶ 全播</button>
+        <button class="btn ghost" id="nb-strip-btn">更换</button>
+        <span class="nb-tool-sep"></span>
+        <button class="btn ghost nb-icon" id="nb-pod-btn" title="用本单元的词和句子生成播客" aria-label="生成播客">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>
+        </button>
+        <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置" aria-label="播放设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/></svg>
+        </button>
+        <button class="btn ghost nb-icon" id="nb-copy-btn" title="复制本单元全部词和句子" aria-label="复制本单元">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
+        </button>
+        <button class="btn ghost nb-icon" id="nb-export-btn" title="导出本单元词和句子（txt + csv）" aria-label="导出本单元">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        </button>
+        <button class="btn ghost nb-icon nb-test" id="nb-test-btn" title="测试本目录全部词（句子挖空为主）" aria-label="测试本目录">测</button>
+        <span class="nb-tool-sep"></span>
+        <button class="btn accent" id="nb-play-all" title="按设置连播本目录全部词与例句">▶ 全播</button>
       </div>
     </div>
     <!-- 目录选择面板紧跟横条：播客面板可能很高（生成中日志+几百行列表），

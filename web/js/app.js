@@ -49,7 +49,7 @@ function goBack() {
 
 function updateBackBtn() {
   const b = $('nav-back');
-  if (b) b.style.display = (CUR_SCREEN === 'home' || CUR_SCREEN === 'login') ? 'none' : 'inline-block';
+  if (b) b.style.display = (CUR_SCREEN === 'home' || CUR_SCREEN === 'login') ? 'none' : 'inline-flex';
 }
 function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.display = 'block'; }
 function hideErr(id) { $(id).style.display = 'none'; }
@@ -206,7 +206,7 @@ async function afterLogin() {
     } catch {}
   }
   $('userchip').textContent = EMAIL;
-  $('logout-btn').style.display = 'block';
+  $('logout-btn').style.display = 'inline-flex';
   hideErr('home-err');
   CFG = await api('/config').catch(() => ({}));
   await loadFavs();
@@ -684,6 +684,7 @@ async function resumeActiveGen() {
 async function loadHome() {
   if (!TOKEN) { go('login'); return; } // 未登录防御：绝不停留在需鉴权的屏
   const today = new Date().toISOString().slice(0, 10);
+  const heroDate = (d) => d.slice(5).replace('-', '.');
   let lessons = [];
   try {
     const list = await api('/lessons');
@@ -708,7 +709,8 @@ async function loadHome() {
 
   if (todayIt && todayIt.status === 'ready') {
     chip.textContent = '可学习'; chip.classList.add('ready');
-    $('lesson-date').textContent = todayIt.date;
+    $('lesson-date').textContent = heroDate(todayIt.date);
+    $('lesson-date').title = todayIt.date;
     $('lesson-desc').textContent = `今日课程已就绪（${todayIt.word_count} 词）`;
     btn.textContent = '▶ 继续学习';
     btn.onclick = openLesson(todayIt.lesson_id);
@@ -716,14 +718,16 @@ async function loadHome() {
     $('home-new-btn').style.display = 'block';
   } else if (todayIt) {
     chip.textContent = '准备中'; chip.classList.remove('ready');
-    $('lesson-date').textContent = todayIt.date;
+    $('lesson-date').textContent = heroDate(todayIt.date);
+    $('lesson-date').title = todayIt.date;
     $('lesson-desc').textContent = '今日课程草稿就绪，可继续提交词单生成。';
     btn.textContent = '继续提交词单';
     btn.onclick = () => go('create');
     $('home-new-btn').style.display = 'none';
   } else {
     chip.textContent = '未创建'; chip.classList.remove('ready');
-    $('lesson-date').textContent = '—';
+    $('lesson-date').textContent = heroDate(today);
+    $('lesson-date').title = today;
     $('lesson-desc').textContent = '还没有今天的课程。1 个词也可以生成一课。';
     btn.textContent = '创建今日课程';
     btn.onclick = () => go('create');
@@ -2351,7 +2355,7 @@ function renderNbPickerList() {
       const kids = nbChildren(d.id);
       const row = document.createElement('div');
       row.className = 'nb-dir' + (NB_CURDIR === d.id ? ' on' : '');
-      row.style.paddingLeft = (6 + depth * 16) + 'px';
+      row.style.paddingLeft = (12 + depth * 18) + 'px';
       row.innerHTML = `<span class="tw">${kids.length ? (NBP_OPEN.has(d.id) ? '▾' : '▸') : '·'}</span>` +
         `<span class="nm">${esc(d.name)}</span>` +
         `<button class="nb-dir-copy" title="${kids.length ? '复制整课的词和例句' : '复制本单元的词和例句'}">⧉</button>` +
