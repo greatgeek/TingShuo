@@ -2780,6 +2780,22 @@ let PL = null;
 
 const ZH_VOICE = 'zh-CN-XiaoxiaoNeural'; // 中文含义/翻译专用音色
 
+// zhSpeechText 全播朗读中文含义前的清洗：词义里混着音调（⓪①②）、词性（[名、他Ⅲ]）、
+// 日语读法/词源夹注，中文 TTS 不该念出来。显示仍用原文，只清洗送合成的文本。
+function zhSpeechText(s) {
+  let t = String(s || '');
+  t = t.replace(/[\u24EA\u2460-\u2473]/g, ' ');                       // 音调 ⓪①②…
+  t = t.replace(/\[[^\]]*\]|［[^］]*］/g, ' ');                        // 词性等方括号标记
+  t = t.replace(/[（(][^）)]*[）)]/g,
+    m => /[\u3041-\u3096\u30A1-\u30FA\u30FC A-Za-z]/.test(m) ? ' ' : m); // 含假名/拉丁的夹注
+  t = t.replace(/〔[^〕]*〕/g, ' ');                                   // 语源括注
+  t = t.replace(/[\u3041-\u3096\u30A1-\u30FA\u30FC]+/g, ' ');         // 残留假名
+  t = t.replace(/[A-Za-z][A-Za-z .'’-]*/g, ' ');                      // 英文/罗马字
+  t = t.replace(/[·・｜|]/g, ' ').replace(/\s+/g, ' ').trim();
+  t = t.replace(/\s+([，。；：、！？,;:.!?])/g, '$1');
+  return t.replace(/^[,，、;；:：.。\-—]+|[,，、;；:：.。\-—]+$/g, '').trim();
+}
+
 async function sayBlobURL(text, voice) {
   const key = 'say:' + (voice || '') + ':' + text;
   const hit = await idbGet(key);
@@ -2799,7 +2815,8 @@ function nbPlayItems() {
   (NB_WORDS[NB_CURDIR] || []).forEach(w => {
     for (let k = 0; k < PL_CFG.word; k++) {
       items.push({ kind: 'word', w });
-      if (PL_CFG.wmean && w.meaning) items.push({ kind: 'wmean', w });
+      const say = zhSpeechText(w.meaning);
+      if (PL_CFG.wmean && say) items.push({ kind: 'wmean', w, say });
     }
     (w.sentences || []).forEach((s, si) => {
       for (let k = 0; k < PL_CFG.sent; k++) {
@@ -2933,7 +2950,7 @@ function nbPlayHighlight(it) {
     nbScrollToPlaying(row);
   }
   const wi = words.indexOf(it.w) + 1;
-  const zh = it.kind === 'wmean' ? ` · 中文：${(it.w.meaning || '').slice(0, 14)}`
+  const zh = it.kind === 'wmean' ? ` · 中文：${(it.say || '').slice(0, 14)}`
     : it.kind === 'smean' ? ` · 中文：${(it.s.translation || '').slice(0, 14)}` : '';
   const sent = eff === 'sent' ? ` · 句 ${it.si + 1}/${(it.w.sentences || []).length}：${it.s.text.slice(0, 18)}` : ' · 单词';
   $('nb-now-text').textContent = `遍 ${PL.loop + 1}/${PL_CFG.loop} · 词 ${wi}/${words.length} ${it.w.surface}${sent}${zh}`;
@@ -2946,7 +2963,7 @@ async function nbPlayStep() {
   try {
     let url;
     if (it.kind === 'word') url = await wordAudioBlobURL(it.w.word_id);
-    else if (it.kind === 'wmean') url = await sayBlobURL(it.w.meaning, ZH_VOICE);
+    else if (it.kind === 'wmean') url = await sayBlobURL(it.say, ZH_VOICE);
     else if (it.kind === 'smean') url = await sayBlobURL(it.s.translation, ZH_VOICE);
     else url = await sayBlobURL(it.s.text);
     if (!PL) return;
