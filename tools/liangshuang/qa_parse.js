@@ -7,7 +7,15 @@ const [summaryDir, jp] = process.argv.slice(2);
 const d = Q.loadCorpus(jp);
 const q = Q.loadQ();
 
-let bind = 0, reading = 0, dup = 0, hallucinate = 0;
+// 数字后残留假名读音（1いってんはちキロ / 3さんびゃくきゅう９…）：TTS 会读错，必须人工修正后再导
+const NUM_RUBY = /[0-9０-９]([ぁ-ん]{2,})(?=[0-9０-９一-鿿ァ-ヶ])/;
+const NUM_STOP = new Set(['から', 'まで', 'より', 'など', 'くらい', 'ぐらい', 'ほど', 'だけ', 'しか', 'でも', 'ても', 'ながら', 'です', 'でした', 'でしょう', 'だった', 'なら', 'とき', 'ごろ', 'ずつ', 'おき', 'ぶり']);
+const numRuby = t => {
+  const m = t.match(NUM_RUBY);
+  return !!m && !NUM_STOP.has(m[1]);
+};
+
+let bind = 0, reading = 0, dup = 0, hallucinate = 0, numeric = 0;
 const stats = {};
 const bindCand = [];
 for (const L of d.lessons) {
@@ -23,6 +31,12 @@ for (const L of d.lessons) {
       const seen = new Set();
       for (const s of w.sentences) {
         ss++;
+        if (numRuby(s.text)) {
+          console.log('  [num-ruby] 数字残留注音:', s.text);
+          Q.addQ(q, { stage: 'parse', reason: 'num-ruby', surface: w.surface, text: s.text, lesson: L.lesson });
+          numeric++;
+          continue;
+        }
         if (seen.has(s.text)) {
           Q.addQ(q, { stage: 'parse', reason: 'dup', surface: w.surface, text: s.text, lesson: L.lesson });
           dup++;
@@ -55,7 +69,7 @@ for (const L of d.lessons) {
 }
 Q.saveQ(q);
 console.log('每课统计:', JSON.stringify(stats, null, 0).slice(0, 1200));
-console.log(`qa_parse 初筛: bind候选=${bindCand.length} reading=${reading} dup=${dup} hallucinate=${hallucinate}`);
+console.log(`qa_parse 初筛: bind候选=${bindCand.length} reading=${reading} dup=${dup} hallucinate=${hallucinate} num-ruby=${numeric}`);
 
 // bind 候选送 LLM 复核（活用形/近义词例句属正常），确认无关才隔离
 (async () => {
