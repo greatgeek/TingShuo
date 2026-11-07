@@ -2192,7 +2192,21 @@ function wsShowReview(w, ok, chosen) {
   back.innerHTML = wsBackQuizHTML(w, ok, chosen);
 }
 
-function wsNext() { WS_IDX = wsNextUndone(WS_IDX + 1); renderWordStudyItem(); }
+// wsAutoPlayFront 下一词落位后主动播一次题面音频：听力题播句子，其余播单词。
+// 只在「下一词」点击手势里调用；首次渲染不自动播（无手势时安卓易被静音卡住）。
+function wsAutoPlayFront() {
+  if (WS_IDX >= WS_ITEMS.length) return;
+  const it = WS_ITEMS[WS_IDX];
+  const q = it.quiz;
+  const front = $('ws-front');
+  if (q && (q.type === 'cloze_pick' || q.type === 'cloze_type')) {
+    if (q.audio) wsPlayQuizSent(front.querySelector('.ws-playbtn'));
+    return;
+  }
+  wsSpeakWord(it.id, front.querySelector('[data-act="ws-speak"]'));
+}
+
+function wsNext() { WS_IDX = wsNextUndone(WS_IDX + 1); renderWordStudyItem(); wsAutoPlayFront(); }
 
 async function wsPick(i) {
   if (WS_GRADING) return; // 连点防护：一次作答只提交一次
