@@ -382,8 +382,9 @@ body.no-rt rt { display: none; }
 #nb-words .playing{background:#eaf7f2;box-shadow:inset 3px 0 0 #0a8f6a}
 .nb-cfg-mask{align-items:center}
 .nb-cfg{max-width:340px;margin:0 auto;border-radius:16px}
-.nb-cfg label{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0;font-size:14px}
-.nb-cfg input{width:70px;padding:6px 8px;border:1px solid #dde1e6;border-radius:8px;text-align:center}
+.nb-cfg label{display:flex;align-items:center;justify-content:flex-start;gap:8px;margin:10px 0;font-size:14px}
+.nb-cfg input{width:56px;padding:6px 8px;border:1px solid #dde1e6;border-radius:8px;text-align:center}
+.nb-cfg .cfg-gaplab{margin-left:auto;font-size:13px;color:#556;white-space:nowrap}
 .nb-cfg label.cfg-check{justify-content:flex-start}
 .nb-cfg label.cfg-check input{width:auto;margin:0}
 

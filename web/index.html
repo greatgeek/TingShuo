@@ -234,11 +234,9 @@
 <div class="picker-mask nb-cfg-mask" id="nb-cfg-mask" style="display:none">
   <div class="picker card nb-cfg">
     <h2>播放设置</h2>
-    <label>单词播放次数<input type="number" id="cfg-word" min="1" max="9" value="2"></label>
-    <label>句子播放次数<input type="number" id="cfg-sent" min="1" max="9" value="1"></label>
+    <label>单词播放次数<input type="number" id="cfg-word" min="1" max="9" value="2"><span class="cfg-gaplab">播放间隔</span><input type="number" id="cfg-wgap" min="0" max="10" value="1"></label>
+    <label>句子播放次数<input type="number" id="cfg-sent" min="1" max="9" value="1"><span class="cfg-gaplab">播放间隔</span><input type="number" id="cfg-sgap" min="0" max="10" value="1"></label>
     <label>本列表循环次数<input type="number" id="cfg-loop" min="1" max="9" value="1"></label>
-    <label>单词播放间隔（秒）<input type="number" id="cfg-wgap" min="0" max="10" value="1"></label>
-    <label>句子播放间隔（秒）<input type="number" id="cfg-sgap" min="0" max="10" value="1"></label>
     <label class="cfg-check"><input type="checkbox" id="cfg-wmean" checked>单词后播中文含义</label>
     <label class="cfg-check"><input type="checkbox" id="cfg-smean" checked>句子后播中文翻译</label>
     <p class="hint">单词按读音读、例句按原文读；勾选后每条读完跟读一遍中文含义/翻译。间隔为每条音频之间的停顿秒数。设置自动保存。</p>
