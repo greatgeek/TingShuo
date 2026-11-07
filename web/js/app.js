@@ -2975,7 +2975,7 @@ function nbPlayHighlight(it) {
   $('nb-now-text').textContent = `遍 ${PL.loop + 1}/${PL_CFG.loop} · 词 ${wi}/${words.length} ${it.w.surface}${sent}${zh}`;
 }
 
-async function nbPlayStep() {
+async function nbPlayStep(autoplay = true) {
   if (!PL) return;
   const it = PL.items[PL.i];
   nbPlayHighlight(it);
@@ -2987,7 +2987,7 @@ async function nbPlayStep() {
     else url = await sayBlobURL(it.s.text);
     if (!PL) return;
     PL.audio.src = url;
-    await playUnlock(PL.audio);
+    if (autoplay) await playUnlock(PL.audio);
   } catch (e) {
     toast('获取音频失败，跳过：' + e.message);
     nbPlayNext();
@@ -3013,6 +3013,7 @@ function openNbCfg() {
 function saveNbCfg() {
   const c = v => Math.min(9, Math.max(1, parseInt(v, 10) || 1));
   const g = v => Math.min(10, Math.max(0, parseInt(v, 10) || 0));
+  const prev = PL_CFG;
   PL_CFG = {
     word: c($('cfg-word').value), sent: c($('cfg-sent').value), loop: c($('cfg-loop').value),
     wgap: g($('cfg-wgap').value), sgap: g($('cfg-sgap').value),
@@ -3021,6 +3022,33 @@ function saveNbCfg() {
   localStorage.setItem('ts_nb_play_cfg', JSON.stringify(PL_CFG));
   $('nb-cfg-mask').style.display = 'none';
   toast(`已保存：词 ×${PL_CFG.word} · 句 ×${PL_CFG.sent} · 循环 ×${PL_CFG.loop} · 间隔 ${PL_CFG.wgap}/${PL_CFG.sgap}s · 中文 ${PL_CFG.wmean || PL_CFG.smean ? '开' : '关'}`);
+  const changed = prev.word !== PL_CFG.word || prev.sent !== PL_CFG.sent ||
+    !!prev.wmean !== !!PL_CFG.wmean || !!prev.smean !== !!PL_CFG.smean;
+  if (changed) nbPlayApplyCfg();
+  else if (PL) nbPlayHighlight(PL.items[PL.i]); // 只改进度类设置时刷新「遍 x/y」显示
+}
+
+// 全播中改播放设置：按新配置重建序列，从当前所在的词/句块重新开始（间隔与循环次数本就实时生效）
+function nbPlayApplyCfg() {
+  if (!PL) return;
+  const cur = PL.items[PL.i];
+  const items = nbPlayItems();
+  if (!items.length) { nbPlayStop(); return; }
+  PL.items = items;
+  let idx = -1;
+  if (cur) {
+    if (cur.kind === 'word' || cur.kind === 'wmean')
+      idx = items.findIndex(x => x.kind === 'word' && x.w === cur.w);
+    else
+      idx = items.findIndex(x => x.kind === 'sent' && x.w === cur.w && x.si === cur.si);
+  }
+  if (idx < 0) idx = Math.min(PL.i, items.length - 1);
+  clearTimeout(PL.gapTimer);
+  PL.gapPending = false;
+  PL.i = idx;
+  PL.follow = true;
+  try { PL.audio.pause(); } catch (e) {}
+  nbPlayStep(!PL.paused);
 }
 
 // ============ 本课/本单元播客（v13：思思+xudong 单场双语） ============
