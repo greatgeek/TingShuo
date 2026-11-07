@@ -2523,10 +2523,14 @@ function nbBuildSents(w) {
   const wrap = document.createElement('div');
   wrap.className = 'nb-sents';
   if (!w.sentences.length) wrap.innerHTML = '<p class="hint" style="margin-left:26px">暂无例句</p>';
-  w.sentences.forEach(s => {
+  w.sentences.forEach((s, si) => {
     const row = document.createElement('div');
     row.className = 'nb-sent';
     row.innerHTML = `<div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div></div>`;
+    row.onclick = (e) => {
+      e.stopPropagation();
+      if (PL) nbPlayJumpToSent(w, si);
+    };
     const ask = document.createElement('button');
     ask.className = 'ai-ask'; ask.textContent = '问AI'; ask.title = '就这句问 AI';
     ask.onclick = (e) => { e.stopPropagation(); openAiAsk(s, w); };
@@ -2910,13 +2914,28 @@ function nbPlayJumpTo(w) {
   if (!PL) return false;
   const idx = PL.items.findIndex(it => it.w === w);
   if (idx < 0) return false;
+  nbPlayJumpToIndex(idx);
+  return true;
+}
+
+// 播放中点句跳转：从该句音频开始继续往后播
+function nbPlayJumpToSent(w, si) {
+  if (!PL) return false;
+  const idx = PL.items.findIndex(it => it.kind === 'sent' && it.w === w && it.si === si);
+  if (idx < 0) return false;
+  nbPlayJumpToIndex(idx);
+  return true;
+}
+
+function nbPlayJumpToIndex(idx) {
   PL.i = idx;
   PL.follow = true;
   PL.paused = false;
+  PL.gapPending = false;
+  clearTimeout(PL.gapTimer);
   $('nb-now-pause').textContent = '⏸ 暂停';
   try { PL.audio.pause(); } catch (e) {}
   nbPlayStep();
-  return true;
 }
 
 // 暂停/继续：同一 Audio 元素 pause/play，续播即从暂停处继续
