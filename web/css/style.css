@@ -449,6 +449,9 @@ ruby rt {
 body.no-rt rt { display: none; }
 
 .wordrow .txt ruby rt { font-size: 10.5px; }
+/* 生词行可换行：展开的用法面板独占整行，避免把词义/首见信息挤成竖排（用户红框） */
+.sent.wordrow { flex-wrap: wrap; }
+.sent.wordrow .usage { flex: 1 0 100%; width: auto; }
 .usage { width: 100%; background: var(--surface-2); border-radius: 12px; padding: 10px; margin-top: 8px; }
 .usage-head {
   font-size: 10.5px; font-weight: 700; color: var(--accent);
