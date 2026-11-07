@@ -36,6 +36,13 @@ var kanaOnlyReadingRe = regexp.MustCompile(`^[ぁ-ゖァ-ヺー・]+$`)
 
 func kanaOnlyReading(s string) bool { return kanaOnlyReadingRe.MatchString(s) }
 
+// speakTextOverrides 个别词改用词面合成：Nanami 把孤立的「てん」读成近似「せん」
+// （起音是 7-8kHz 摩擦而非 t 爆破，2026-11-07 报障），读汉字「点」则正常。
+// 键为 surface + "|" + 读音。
+var speakTextOverrides = map[string]string{
+	"点|てん": "点",
+}
+
 type Handler struct {
 	pool  *pgxpool.Pool
 	azure *ttsclient.Client
@@ -193,10 +200,11 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// OSS 缓存命中（对象 key = word-v2-<word_id>.mp3）；DB 只留元信息。
+	// OSS 缓存命中（对象 key = word-v3-<word_id>.mp3）；DB 只留元信息。
 	// v2 前缀：线上 word-<id> 曾写入坏音频（不同词返回同尺寸静音块，2026-11-06 报障），
 	// 换前缀让旧对象自然弃用；不删对象，回滚只需改回前缀。
-	key := "word-v2-" + wordID
+	// v3 前缀：v2 里「点/てん」按假名合成被 Nanami 读成近似「せん」，换前缀强制重合成。
+	key := "word-v3-" + wordID
 	if data, ok := fetchOSS(r.Context(), h.store, key); ok {
 		serveMP3(w, data)
 		return
@@ -209,6 +217,9 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 		// 模式词记法（-じん / George 等）不是可读假名：回退读 surface，避免坏配音
 		if r != "" && kanaOnlyReading(r) {
 			speakText = r
+			if v, ok := speakTextOverrides[surface+"|"+r]; ok {
+				speakText = v
+			}
 		}
 	}
 	audio, err := h.azure.Synthesize(r.Context(), speakText, defaultVoice, defaultRate)

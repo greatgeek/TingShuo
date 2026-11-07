@@ -1387,9 +1387,10 @@ async function audioBlobURL(audioId) {
   idbPut(audioId, blob);
   return URL.createObjectURL(blob);
 }
-// 缓存优先取单词发音 blob URL（key 加 w: 前缀与句子音频区分）
+// 缓存优先取单词发音 blob URL（key 加 w2: 前缀与句子音频区分；w2 使旧词音缓存全部失效，
+// 2026-11-07 修复「点/てん」被读成近似「せん」后需要重新拉取）
 async function wordAudioBlobURL(wordId) {
-  const key = 'w:' + wordId;
+  const key = 'w2:' + wordId;
   const hit = await idbGet(key);
   if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/word-study/' + wordId + '/audio');
@@ -1913,7 +1914,7 @@ function wsSpeakWord(wordId, btn, retry) {
       // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
       setTimeout(() => {
         if (!retry && WS_AUDIO === a && !a.paused && a.currentTime < 0.05) {
-          wsStopAudio(); idbDel('w:' + wordId); wsSpeakWord(wordId, btn, true);
+          wsStopAudio(); idbDel('w2:' + wordId); wsSpeakWord(wordId, btn, true);
         }
       }, 800);
       setTimeout(() => wsAudioDbg(a, '词'), 900);
