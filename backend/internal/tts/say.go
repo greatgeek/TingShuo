@@ -38,6 +38,11 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	if req.Voice == "" {
 		req.Voice = "Nanami"
 	}
+	// 音色白名单：日语 Nanami + 中文晓晓（连播"播中文含义"用）；其余一律拒，防乱传音色刷费用
+	if req.Voice != "Nanami" && req.Voice != "zh-CN-XiaoxiaoNeural" {
+		httpx.Err(w, httpx.BadRequest("VOICE_INVALID", "不支持的音色"))
+		return
+	}
 	if req.Rate == 0 {
 		req.Rate = 1.0
 	}
@@ -45,7 +50,8 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.BadRequest("TEXT_TOO_LONG", "文本过长（>200 字）"))
 		return
 	}
-	if generate.HasSimplifiedChinese(req.Text) {
+	// 中文音色就是来合成中文的；日语音色仍拒中文（避免串味坏音频落缓存）
+	if req.Voice == "Nanami" && generate.HasSimplifiedChinese(req.Text) {
 		httpx.Err(w, httpx.BadRequest("TEXT_NOT_JA", "文本含中文，拒绝合成"))
 		return
 	}

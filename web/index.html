@@ -237,7 +237,11 @@
     <label>单词播放次数<input type="number" id="cfg-word" min="1" max="9" value="2"></label>
     <label>句子播放次数<input type="number" id="cfg-sent" min="1" max="9" value="1"></label>
     <label>本列表循环次数<input type="number" id="cfg-loop" min="1" max="9" value="1"></label>
-    <p class="hint">仅播放日语音频：单词按读音读、例句按原文读。设置自动保存。</p>
+    <label>单词播放间隔（秒）<input type="number" id="cfg-wgap" min="0" max="10" value="1"></label>
+    <label>句子播放间隔（秒）<input type="number" id="cfg-sgap" min="0" max="10" value="1"></label>
+    <label class="cfg-check"><input type="checkbox" id="cfg-wmean" checked>单词后播中文含义</label>
+    <label class="cfg-check"><input type="checkbox" id="cfg-smean" checked>句子后播中文翻译</label>
+    <p class="hint">单词按读音读、例句按原文读；勾选后每条读完跟读一遍中文含义/翻译。间隔为每条音频之间的停顿秒数。设置自动保存。</p>
     <div class="row2">
       <button class="btn accent" id="cfg-save">保存</button>
       <button class="btn ghost" id="cfg-cancel">取消</button>

@@ -2754,17 +2754,21 @@ async function aiSend() {
 // ============ 列表连播（▶ 全播）============
 // 顺序：每词读 word 次 → 其例句逐句各读 sent 次；整表循环 loop 次。仅日语音频。
 let PL_CFG = (() => {
-  try { return Object.assign({ word: 2, sent: 1, loop: 1 }, JSON.parse(localStorage.getItem('ts_nb_play_cfg') || '{}')); }
-  catch { return { word: 2, sent: 1, loop: 1 }; }
+  const def = { word: 2, sent: 1, loop: 1, wgap: 1, sgap: 1, wmean: true, smean: true };
+  try { return Object.assign(def, JSON.parse(localStorage.getItem('ts_nb_play_cfg') || '{}')); }
+  catch { return def; }
 })();
 let PL = null;
 
-async function sayBlobURL(text) {
-  const key = 'say:' + text;
+const ZH_VOICE = 'zh-CN-XiaoxiaoNeural'; // 中文含义/翻译专用音色
+
+async function sayBlobURL(text, voice) {
+  const key = 'say:' + (voice || '') + ':' + text;
   const hit = await idbGet(key);
-  if (hit && hit.blob) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
+  if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/audio/say', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(voice ? { text, voice } : { text }),
   });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const blob = await r.blob();
@@ -2775,9 +2779,15 @@ async function sayBlobURL(text) {
 function nbPlayItems() {
   const items = [];
   (NB_WORDS[NB_CURDIR] || []).forEach(w => {
-    for (let k = 0; k < PL_CFG.word; k++) items.push({ kind: 'word', w });
+    for (let k = 0; k < PL_CFG.word; k++) {
+      items.push({ kind: 'word', w });
+      if (PL_CFG.wmean && w.meaning) items.push({ kind: 'wmean', w });
+    }
     (w.sentences || []).forEach((s, si) => {
-      for (let k = 0; k < PL_CFG.sent; k++) items.push({ kind: 'sent', w, s, si });
+      for (let k = 0; k < PL_CFG.sent; k++) {
+        items.push({ kind: 'sent', w, s, si });
+        if (PL_CFG.smean && s.translation) items.push({ kind: 'smean', w, s, si });
+      }
     });
   });
   return items;
@@ -2798,7 +2808,7 @@ async function nbPlayStart() {
 }
 
 function nbPlayStop() {
-  if (PL) { try { PL.audio.pause(); } catch (e) {} PL = null; }
+  if (PL) { clearTimeout(PL.gapTimer); try { PL.audio.pause(); } catch (e) {} PL = null; }
   document.querySelectorAll('#nb-words .playing').forEach(x => x.classList.remove('playing'));
   const bar = $('nb-nowbar');
   if (bar) bar.hidden = true;
@@ -2807,13 +2817,24 @@ function nbPlayStop() {
 
 async function nbPlayNext() {
   if (!PL) return;
+  const gap = gapFor(PL.items[PL.i]);
   PL.i++;
   if (PL.i >= PL.items.length) {
     PL.loop++;
     if (PL.loop >= PL_CFG.loop) { nbPlayStop(); toast('播放完成'); return; }
     PL.i = 0;
   }
-  await nbPlayStep();
+  // 停顿用定时器实现；暂停时挂起，继续时立刻补上推进
+  clearTimeout(PL.gapTimer);
+  if (gap > 0) {
+    PL.gapTimer = setTimeout(() => {
+      if (!PL) return;
+      if (PL.paused) { PL.gapPending = true; return; }
+      nbPlayStep();
+    }, gap * 1000);
+  } else {
+    await nbPlayStep();
+  }
 }
 
 // 程序滚动窗口按"静默期"续期而非定时长：smooth 滚动实测可达 ~1s，
@@ -2869,6 +2890,7 @@ function nbPlayPause() {
   if (PL.paused) {
     PL.paused = false;
     $('nb-now-pause').textContent = '⏸ 暂停';
+    if (PL.gapPending) { PL.gapPending = false; nbPlayStep(); return; } // 停顿中暂停：继续时直接推进
     playUnlock(PL.audio).catch(() => nbPlayNext());
   } else {
     PL.paused = true;
@@ -2885,15 +2907,18 @@ function nbPlayHighlight(it) {
   row.classList.add('playing');
   // 播放期只展开不折叠：向下增长不拉动视口，折叠上方内容才会造成跳动
   if (!row.querySelector('.nb-sents')) row.appendChild(nbBuildSents(it.w));
-  if (it.kind === 'sent') {
+  const eff = it.kind === 'wmean' ? 'word' : it.kind === 'smean' ? 'sent' : it.kind;
+  if (eff === 'sent') {
     const sr = row.querySelectorAll('.nb-sent')[it.si];
     if (sr) { sr.classList.add('playing'); nbScrollToPlaying(sr); }
   } else {
     nbScrollToPlaying(row);
   }
   const wi = words.indexOf(it.w) + 1;
-  const sent = it.kind === 'sent' ? ` · 句 ${it.si + 1}/${(it.w.sentences || []).length}：${it.s.text.slice(0, 18)}` : ' · 单词';
-  $('nb-now-text').textContent = `遍 ${PL.loop + 1}/${PL_CFG.loop} · 词 ${wi}/${words.length} ${it.w.surface}${sent}`;
+  const zh = it.kind === 'wmean' ? ` · 中文：${(it.w.meaning || '').slice(0, 14)}`
+    : it.kind === 'smean' ? ` · 中文：${(it.s.translation || '').slice(0, 14)}` : '';
+  const sent = eff === 'sent' ? ` · 句 ${it.si + 1}/${(it.w.sentences || []).length}：${it.s.text.slice(0, 18)}` : ' · 单词';
+  $('nb-now-text').textContent = `遍 ${PL.loop + 1}/${PL_CFG.loop} · 词 ${wi}/${words.length} ${it.w.surface}${sent}${zh}`;
 }
 
 async function nbPlayStep() {
@@ -2901,7 +2926,11 @@ async function nbPlayStep() {
   const it = PL.items[PL.i];
   nbPlayHighlight(it);
   try {
-    const url = it.kind === 'word' ? await wordAudioBlobURL(it.w.word_id) : await sayBlobURL(it.s.text);
+    let url;
+    if (it.kind === 'word') url = await wordAudioBlobURL(it.w.word_id);
+    else if (it.kind === 'wmean') url = await sayBlobURL(it.w.meaning, ZH_VOICE);
+    else if (it.kind === 'smean') url = await sayBlobURL(it.s.translation, ZH_VOICE);
+    else url = await sayBlobURL(it.s.text);
     if (!PL) return;
     PL.audio.src = url;
     await playUnlock(PL.audio);
@@ -2911,18 +2940,33 @@ async function nbPlayStep() {
   }
 }
 
+// gapFor 每条音频播完后的停顿秒数：词系/句系分开配
+function gapFor(it) {
+  if (!it) return 0;
+  return (it.kind === 'word' || it.kind === 'wmean') ? (PL_CFG.wgap || 0) : (PL_CFG.sgap || 0);
+}
+
 function openNbCfg() {
   $('cfg-word').value = PL_CFG.word;
   $('cfg-sent').value = PL_CFG.sent;
   $('cfg-loop').value = PL_CFG.loop;
+  $('cfg-wgap').value = PL_CFG.wgap == null ? 1 : PL_CFG.wgap;
+  $('cfg-sgap').value = PL_CFG.sgap == null ? 1 : PL_CFG.sgap;
+  $('cfg-wmean').checked = !!PL_CFG.wmean;
+  $('cfg-smean').checked = !!PL_CFG.smean;
   $('nb-cfg-mask').style.display = 'flex';
 }
 function saveNbCfg() {
   const c = v => Math.min(9, Math.max(1, parseInt(v, 10) || 1));
-  PL_CFG = { word: c($('cfg-word').value), sent: c($('cfg-sent').value), loop: c($('cfg-loop').value) };
+  const g = v => Math.min(10, Math.max(0, parseInt(v, 10) || 0));
+  PL_CFG = {
+    word: c($('cfg-word').value), sent: c($('cfg-sent').value), loop: c($('cfg-loop').value),
+    wgap: g($('cfg-wgap').value), sgap: g($('cfg-sgap').value),
+    wmean: $('cfg-wmean').checked, smean: $('cfg-smean').checked,
+  };
   localStorage.setItem('ts_nb_play_cfg', JSON.stringify(PL_CFG));
   $('nb-cfg-mask').style.display = 'none';
-  toast(`已保存：词 ×${PL_CFG.word} · 句 ×${PL_CFG.sent} · 循环 ×${PL_CFG.loop}`);
+  toast(`已保存：词 ×${PL_CFG.word} · 句 ×${PL_CFG.sent} · 循环 ×${PL_CFG.loop} · 间隔 ${PL_CFG.wgap}/${PL_CFG.sgap}s · 中文 ${PL_CFG.wmean || PL_CFG.smean ? '开' : '关'}`);
 }
 
 // ============ 本课/本单元播客（v13：思思+xudong 单场双语） ============

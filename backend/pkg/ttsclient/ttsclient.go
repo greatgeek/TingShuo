@@ -29,13 +29,24 @@ func New(apiKey, region string) *Client {
 
 // Synthesize 按句生成 MP3（§8.4 SSML 模板；P0 不带 express-as 风格）。
 func (c *Client) Synthesize(ctx context.Context, text, voice string, rate float64) ([]byte, error) {
-	if voice == "" {
-		voice = "ja-JP-NanamiNeural" // FR-3.1 默认音色
+	// voice 既支持短名（Nanami → ja-JP-NanamiNeural）也支持完整 locale 名
+	// （zh-CN-XiaoxiaoNeural → 语言取前两段），中文含义播报靠后者
+	lang, name := "ja-JP", "ja-JP-NanamiNeural"
+	if voice != "" {
+		if strings.Contains(voice, "-") {
+			name = voice
+			parts := strings.SplitN(voice, "-", 3)
+			if len(parts) >= 2 {
+				lang = parts[0] + "-" + parts[1]
+			}
+		} else {
+			name = "ja-JP-" + voice + "Neural"
+		}
 	}
 	ratePct := fmt.Sprintf("%g%%", (rate-1)*100) // 0.85 → -15%，1.15 → +15%
-	ssml := fmt.Sprintf(`<speak version="1.0" xml:lang="ja-JP" xmlns="http://www.w3.org/2001/10/synthesis">`+
-		`<voice name="ja-JP-%sNeural"><prosody rate="%s">%s</prosody></voice></speak>`,
-		voice, ratePct, escapeXML(text))
+	ssml := fmt.Sprintf(`<speak version="1.0" xml:lang="%s" xmlns="http://www.w3.org/2001/10/synthesis">`+
+		`<voice name="%s"><prosody rate="%s">%s</prosody></voice></speak>`,
+		lang, name, ratePct, escapeXML(text))
 
 	endpoint := fmt.Sprintf("https://%s.tts.speech.microsoft.com/cognitiveservices/v1", c.region)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(ssml))
