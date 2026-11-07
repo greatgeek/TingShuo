@@ -253,9 +253,6 @@
         <button class="btn ghost nb-icon" id="nb-pod-btn" title="用本单元的词和句子生成播客" aria-label="生成播客">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>
         </button>
-        <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置" aria-label="播放设置">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/></svg>
-        </button>
         <button class="btn ghost nb-icon" id="nb-copy-btn" title="复制本单元全部词和句子" aria-label="复制本单元">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
         </button>
@@ -263,8 +260,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
         </button>
         <button class="btn ghost nb-icon nb-test" id="nb-test-btn" title="测试本目录全部词（句子挖空为主）" aria-label="测试本目录">测</button>
-        <span class="nb-tool-sep"></span>
-        <button class="btn accent" id="nb-play-all" title="按设置连播本目录全部词与例句">▶ 全播</button>
+        <div class="nb-play-group">
+          <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置" aria-label="播放设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/></svg>
+          </button>
+          <button class="btn accent" id="nb-play-all" title="按设置连播本目录全部词与例句">▶ 全播</button>
+        </div>
       </div>
     </div>
     <!-- 目录选择面板紧跟横条：播客面板可能很高（生成中日志+几百行列表），
