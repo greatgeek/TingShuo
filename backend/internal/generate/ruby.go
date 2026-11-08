@@ -135,6 +135,25 @@ func BuildRubyTokens(text string) [][]any {
 	return out
 }
 
+// Reading 返回整句假名读音：有读音用读音，无读音的词元（假名/标点）用字面；
+// 听写判分用它把用户的汉字写法折回读音，再与课文读音比对。
+func Reading(text string) string {
+	var b strings.Builder
+	for _, tok := range BuildRubyTokens(text) {
+		if len(tok) < 2 {
+			continue
+		}
+		if rd, ok := tok[1].(string); ok && rd != "" {
+			b.WriteString(rd)
+			continue
+		}
+		if s, ok := tok[0].(string); ok {
+			b.WriteString(s)
+		}
+	}
+	return b.String()
+}
+
 // KanaCrossCheck 交叉校验（FR-2.11 简化版）：kagome 词典读音拼接 vs LLM 整句假名。
 // 两串规范化（片→平、剥离数字/标点/空白）后按 LCS 比例相似，返回 [0,1]。
 // M1 仅产出 warning；<0.5 视为明显异常。

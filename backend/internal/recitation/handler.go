@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
+	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/pkg/storage"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -138,6 +139,26 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"lesson": lesson, "lines": lines})
+}
+
+type readingReq struct {
+	Text string `json:"text"`
+}
+
+// Reading POST /recitation/reading：把任意日文写法折成假名读音。
+// 听写时课文写假名、用户写汉字（如「いろいろ」vs「色々」）的情况交给 kagome 折回后比对。
+func (h *Handler) Reading(w http.ResponseWriter, r *http.Request) {
+	var req readingReq
+	if e := httpx.Decode(r, &req); e != nil {
+		httpx.Err(w, e)
+		return
+	}
+	text := strings.TrimSpace(req.Text)
+	if text == "" || len([]rune(text)) > 200 {
+		httpx.Err(w, httpx.BadRequest("BAD_TEXT", "文本为空或过长"))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"reading": generate.Reading(text)})
 }
 
 type progressReq struct {

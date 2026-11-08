@@ -3071,6 +3071,7 @@ let REC_FOLLOW = true;
 let REC_RAF = 0;
 let REC_DICT_TRIES = 0;
 let REC_DICT_LOCK = false;
+let REC_DICT_CHECKING = false;
 let REC_DICT_TIMER = 0;
 let REC_ROLE = '';          // 当前扮演的角色（按课文记住）
 let REC_ROLE_ACTIVE = false;
@@ -3179,6 +3180,7 @@ function recRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 // 课文用假名书写、但常用汉字写法也应判对的词（读音相同）。
 const REC_ALT_WORDS = [
   ['かに座', '蟹座'],
+  ['いろいろ', '色々'],
 ];
 // recAltTexts 返回原文及等价写法，供判对与差异对照使用。
 function recAltTexts(text) {
@@ -3231,6 +3233,11 @@ function recFoldMap() {
     if (/[^\u3041-\u3096\u30fc]/.test(r)) continue;
     pairs.push([s, r]);
   }
+  // 课文假名 ↔ 常用汉字写法也按读音折叠，供汉字/假名混写时整句比对
+  for (const [base, alt] of REC_ALT_WORDS) {
+    const s = recNorm(alt), r = recNorm(base);
+    if (s && r && s !== r) pairs.push([s, r]);
+  }
   pairs.sort((a, b) => b[0].length - a[0].length);
   REC_FOLD = { n: LIB_WORDS.length, pairs };
   return pairs;
@@ -3265,6 +3272,29 @@ function recGrade(l, input) {
     }
   }
   return { pass: false };
+}
+// 服务端兜底：kagome 把用户写的汉字折回读音（如「色々」→いろいろ），
+// 与课文读音一致即判对；离线或超时则按普通错处理。
+async function recReadingMatch(l, input) {
+  const toks = recTokens(l);
+  if (!toks.length) return false;
+  const want = recNorm(toks.map(t => t[1] || t[0]).join(''));
+  if (!want) return false;
+  const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), 4000) : 0;
+  try {
+    const body = await api('/recitation/reading', {
+      method: 'POST',
+      body: JSON.stringify({ text: input }),
+      signal: ctl ? ctl.signal : undefined,
+    });
+    const got = recNorm(body && body.reading);
+    return !!got && got === want;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 function recEdits(a, b) {
   const n = a.length, m = b.length;
@@ -3730,6 +3760,7 @@ function setRecMode(mode) {
   REC_REVEAL = false;
   REC_DICT_TRIES = 0;
   REC_DICT_LOCK = false;
+  REC_DICT_CHECKING = false;
   REC_ROLE_REVEAL = false;
   clearTimeout(REC_DICT_TIMER);
   clearTimeout(REC_ROLE_TIMER);
@@ -3825,6 +3856,7 @@ function renderDict() {
   if (!l) return;
   REC_DICT_TRIES = 0;
   REC_DICT_LOCK = false;
+  REC_DICT_CHECKING = false;
   $('rec-focus').innerHTML = `
     <div class="rec-focus">
       <div class="rec-focus-top">
@@ -3848,45 +3880,64 @@ function renderDict() {
     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); recCheckDict(); }
   });
 }
-function recCheckDict() {
-  if (!REC || REC_MODE !== 'dict' || REC_DICT_LOCK) return;
+async function recCheckDict() {
+  if (!REC || REC_MODE !== 'dict' || REC_DICT_LOCK || REC_DICT_CHECKING) return;
   const inp = $('rec-input');
   if (!inp) return;
   const val = inp.value.trim();
   if (!val) { toast('先输入听到的句子'); inp.focus(); return; }
   const l = recLine();
   if (!l) return;
-  const g = recGrade(l, val);
-  if (g.pass) {
-    REC_DICT_LOCK = true;
-    if (!l.dict_ok && !l.dict_reading) {
-      if (g.kind === 'ok') l.dict_ok = true; else l.dict_reading = true;
-      recPost(l.line_no, 'dict', g.kind);
+  let g = recGrade(l, val);
+  // 本地不认识的汉字写法，交给服务端折读音再比一次（课文写假名的情况）
+  if (!g.pass && /[\u4e00-\u9fff々]/.test(val)) {
+    REC_DICT_CHECKING = true;
+    const btn = $('rec-check');
+    if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
+    try {
+      if (recLine() === l && REC_MODE === 'dict' && await recReadingMatch(l, val)) {
+        g = { pass: true, kind: 'reading' };
+      }
+    } finally {
+      REC_DICT_CHECKING = false;
+      const b = $('rec-check');
+      if (b) { b.disabled = false; b.textContent = '检查'; }
     }
-    inp.disabled = true;
-    const fb = $('rec-feedback');
-    fb.className = 'rec-feedback ok';
-    fb.textContent = g.kind === 'ok' ? '正确！' : '正确（读音一致）';
-    $('rec-diff').innerHTML = '';
-    $('rec-answer').innerHTML = recAnswerHTML(l, true);
-    $('rec-dict-mark').textContent = recMark(l);
-    $('rec-f-next').onclick = () => { clearTimeout(REC_DICT_TIMER); recFocusAdvance(); };
-    REC_DICT_TIMER = setTimeout(recFocusAdvance, 2400);
-  } else {
-    REC_DICT_TRIES++;
-    const fb = $('rec-feedback');
-    fb.className = 'rec-feedback bad';
-    fb.textContent = REC_DICT_TRIES >= 2
-      ? '还不完全对。答案已给出，可以照着打一遍。'
-      : '还不完全对，再听一遍试试。';
-    $('rec-diff').innerHTML = recDiffHTML(val, l);
-    if (REC_DICT_TRIES >= 2 && !$('rec-answer').innerHTML) {
-      $('rec-answer').innerHTML = recAnswerHTML(l, true);
-      $('rec-f-next').onclick = () => recFocusAdvance();
-    }
-    inp.select();
-    recPlayAt(REC_IDX, false, true);
+    if (!REC || REC_MODE !== 'dict' || recLine() !== l || REC_DICT_LOCK) return;
   }
+  if (g.pass) recDictPass(l, g.kind, inp);
+  else recDictFail(l, val, inp);
+}
+function recDictPass(l, kind, inp) {
+  REC_DICT_LOCK = true;
+  if (!l.dict_ok && !l.dict_reading) {
+    if (kind === 'ok') l.dict_ok = true; else l.dict_reading = true;
+    recPost(l.line_no, 'dict', kind);
+  }
+  inp.disabled = true;
+  const fb = $('rec-feedback');
+  fb.className = 'rec-feedback ok';
+  fb.textContent = kind === 'ok' ? '正确！' : '正确（读音一致）';
+  $('rec-diff').innerHTML = '';
+  $('rec-answer').innerHTML = recAnswerHTML(l, true);
+  $('rec-dict-mark').textContent = recMark(l);
+  $('rec-f-next').onclick = () => { clearTimeout(REC_DICT_TIMER); recFocusAdvance(); };
+  REC_DICT_TIMER = setTimeout(recFocusAdvance, 2400);
+}
+function recDictFail(l, val, inp) {
+  REC_DICT_TRIES++;
+  const fb = $('rec-feedback');
+  fb.className = 'rec-feedback bad';
+  fb.textContent = REC_DICT_TRIES >= 2
+    ? '还不完全对。答案已给出，可以照着打一遍。'
+    : '还不完全对，再听一遍试试。';
+  $('rec-diff').innerHTML = recDiffHTML(val, l);
+  if (REC_DICT_TRIES >= 2 && !$('rec-answer').innerHTML) {
+    $('rec-answer').innerHTML = recAnswerHTML(l, true);
+    $('rec-f-next').onclick = () => recFocusAdvance();
+  }
+  inp.select();
+  recPlayAt(REC_IDX, false, true);
 }
 function recFocusAdvance() {
   clearTimeout(REC_DICT_TIMER);
@@ -3897,6 +3948,7 @@ function recFocusAdvance() {
   REC_REVEAL = false;
   REC_DICT_TRIES = 0;
   REC_DICT_LOCK = false;
+  REC_DICT_CHECKING = false;
   if (REC_MODE === 'recite') {
     renderRecite();
   } else {

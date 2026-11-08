@@ -164,6 +164,7 @@ func run() error {
 			recH := recitation.NewHandler(pool, store)
 			sec.Get("/recitation/lessons", recH.List)
 			sec.Get("/recitation/lessons/{id}", recH.Detail)
+			sec.Post("/recitation/reading", recH.Reading)
 			sec.Get("/recitation/lessons/{id}/audio", recH.Audio)
 			sec.Post("/recitation/lessons/{id}/progress", recH.Progress)
 

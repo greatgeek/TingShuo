@@ -40,6 +40,25 @@ func TestBuildRubyTokens(t *testing.T) {
 	}
 }
 
+func TestReading(t *testing.T) {
+	cases := map[string]string{
+		"色々":  "いろいろ",
+		"中村":  "なかむら",
+		"かに座": "かにざ",
+	}
+	for in, want := range cases {
+		if got := Reading(in); got != want {
+			t.Fatalf("Reading(%q) = %q, want %q", in, got, want)
+		}
+	}
+	// 课文写假名、用户写汉字：整句读音应一致（听写判对的服务端兜底）
+	base := Reading("いえ、中村さんのおかげですよ。いろいろありがとう。")
+	alt := Reading("いえ、なかむらさんのおかげですよ。色々ありがとう。")
+	if base == "" || base != alt {
+		t.Fatalf("整句读音不一致:\nbase=%q\nalt =%q", base, alt)
+	}
+}
+
 func TestKataToHira(t *testing.T) {
 	if got := kataToHira("カイケイ"); got != "かいけい" {
 		t.Fatalf("片→平转换错误: %q", got)
