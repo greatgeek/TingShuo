@@ -3176,15 +3176,83 @@ function recNorm(s) {
 }
 function recRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-// recGrade 通过条件：整句原文，或整句读音，或逐词「汉字|读音」混写。
+// 课文用假名书写、但常用汉字写法也应判对的词（读音相同）。
+const REC_ALT_WORDS = [
+  ['かに座', '蟹座'],
+];
+// recAltTexts 返回原文及等价写法，供判对与差异对照使用。
+function recAltTexts(text) {
+  let out = [text];
+  for (const [base, alt] of REC_ALT_WORDS) {
+    if (!out.some(t => t.includes(base))) continue;
+    out = [...new Set(out.flatMap(t => t.includes(base) ? [t, t.split(base).join(alt)] : [t]))];
+  }
+  return out;
+}
+// 等价写法的对照词表：被替换的整段并成一个 token，保留原有读音变体。
+function recAltTokens(l, altText) {
+  const toks = recTokens(l).map(t => [t[0], t[1]]);
+  let text = l.text;
+  for (const [base, alt] of REC_ALT_WORDS) {
+    const at = text.indexOf(base);
+    if (at < 0 || !altText.includes(alt)) continue;
+    let pos = 0, i0 = -1, i1 = -1;
+    for (let i = 0; i < toks.length; i++) {
+      const n = String(toks[i][0] || '').length;
+      if (pos + n > at && pos < at + base.length) {
+        if (i0 < 0) i0 = i;
+        i1 = i;
+      }
+      pos += n;
+    }
+    if (i0 < 0) continue;
+    let head = 0, span = 0;
+    for (let i = 0; i < i0; i++) head += String(toks[i][0] || '').length;
+    for (let i = i0; i <= i1; i++) span += String(toks[i][0] || '').length;
+    if (head !== at || head + span !== at + base.length) continue;
+    const rd = toks.slice(i0, i1 + 1).map(t => t[1] || t[0]).join('');
+    toks.splice(i0, i1 - i0 + 1, [alt, rd === alt ? null : rd]);
+    text = text.slice(0, at) + alt + text.slice(at + base.length);
+  }
+  return text === altText ? toks : [];
+}
+// 词库汉字词按读音折叠：用户写「蟹座」而课文写「かに座」时按读音判对。
+let REC_FOLD = { n: -1, pairs: [] };
+function recFoldMap() {
+  if (REC_FOLD.n === LIB_WORDS.length) return REC_FOLD.pairs;
+  const pairs = [];
+  for (const w of LIB_WORDS) {
+    if (!w || !w.surface || !w.reading) continue;
+    if (!/[\u4e00-\u9fff々]/.test(w.surface)) continue;
+    // 只收词条，避免把词库里的整句和带占位符的短语折出错误读音
+    if (Array.from(w.surface).length > 4 || /[\s、。〜]/.test(w.surface)) continue;
+    const s = recNorm(w.surface), r = recNorm(w.reading);
+    if (!s || !r || s === r) continue;
+    if (/[^\u3041-\u3096\u30fc]/.test(r)) continue;
+    pairs.push([s, r]);
+  }
+  pairs.sort((a, b) => b[0].length - a[0].length);
+  REC_FOLD = { n: LIB_WORDS.length, pairs };
+  return pairs;
+}
+function recFoldReading(s) {
+  let out = s;
+  for (const [sur, rd] of recFoldMap()) {
+    if (out.includes(sur)) out = out.split(sur).join(rd);
+  }
+  return out;
+}
+
+// recGrade 通过条件：整句原文/等价写法，或整句读音，或逐词「汉字|读音」混写。
 function recGrade(l, input) {
   const got = recNorm(input);
   if (!got) return { pass: false };
-  if (got === recNorm(l.text)) return { pass: true, kind: 'ok' };
+  if (recAltTexts(l.text).some(t => got === recNorm(t))) return { pass: true, kind: 'ok' };
   const toks = recTokens(l);
   if (toks.length) {
     const reading = recNorm(toks.map(t => t[1] || t[0]).join(''));
     if (reading && got === reading) return { pass: true, kind: 'reading' };
+    if (reading && recFoldReading(got) === reading) return { pass: true, kind: 'reading' };
     const pat = toks.map(t => {
       const alts = [...new Set([recNorm(t[0]), recNorm(t[1] || t[0])].filter(Boolean))];
       if (!alts.length) return '';
@@ -3235,6 +3303,15 @@ function recDiffHTML(input, l) {
     .map(c => ({ c, n: recNorm(c) }))
     .filter(x => x.n);
   const N = raw.length;
+  // 输入更接近某个等价写法时按它对照，避免把写对的「蟹座」标成错。
+  let target = l.text, baseToks = recTokens(l);
+  const gn = recNorm(input);
+  let best = recEdits(Array.from(recNorm(l.text)), Array.from(gn)).dist;
+  for (const alt of recAltTexts(l.text)) {
+    if (alt === l.text) continue;
+    const d = recEdits(Array.from(recNorm(alt)), Array.from(gn)).dist;
+    if (d < best) { best = d; target = alt; baseToks = recAltTokens(l, alt); }
+  }
   const mkTok = (surface, reading) => {
     const mk = str => {
       const cs = [], orig = [];
@@ -3255,8 +3332,8 @@ function recDiffHTML(input, l) {
     if (!variants.length) return null;
     return { surface, variants, minLen: Math.min(...variants.map(v => v.chars.length)) };
   };
-  let toks = recTokens(l).map(t => mkTok(t[0] || '', t[1] || '')).filter(Boolean);
-  if (!toks.length) toks = Array.from(l.text).map(c => mkTok(c, '')).filter(Boolean);
+  let toks = baseToks.map(t => mkTok(t[0] || '', t[1] || '')).filter(Boolean);
+  if (!toks.length) toks = Array.from(target).map(c => mkTok(c, '')).filter(Boolean);
   const T = toks.length;
   const INF = 1e9;
   const dp = Array.from({ length: T + 1 }, () => new Array(N + 1).fill(INF));
@@ -3789,7 +3866,7 @@ function recCheckDict() {
     inp.disabled = true;
     const fb = $('rec-feedback');
     fb.className = 'rec-feedback ok';
-    fb.textContent = g.kind === 'ok' ? '正确！' : '正确（假名读音对）';
+    fb.textContent = g.kind === 'ok' ? '正确！' : '正确（读音一致）';
     $('rec-diff').innerHTML = '';
     $('rec-answer').innerHTML = recAnswerHTML(l, true);
     $('rec-dict-mark').textContent = recMark(l);
