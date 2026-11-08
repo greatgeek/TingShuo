@@ -1240,6 +1240,7 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 .rec-feedback.bad { color: var(--danger); }
 .rec-diff { margin-top: 8px; font-family: var(--serif); font-size: 15px; line-height: 1.8; word-break: break-all; }
 .rec-diff .hit { color: var(--jade); }
+.rec-diff .near { color: var(--ink); text-decoration: underline wavy var(--gold); text-underline-offset: 3px; }
 .rec-diff .miss { color: var(--danger); text-decoration: underline wavy; text-underline-offset: 3px; }
 .rec-diff-tip { margin-top: 3px; font-family: var(--sans); font-size: 12px; color: var(--danger); }
 .rec-answer {

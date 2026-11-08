@@ -3198,49 +3198,142 @@ function recGrade(l, input) {
   }
   return { pass: false };
 }
-function recDiffOps(a, b) {
+function recEdits(a, b) {
   const n = a.length, m = b.length;
-  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
-  for (let i = n - 1; i >= 0; i--) {
-    for (let j = m - 1; j >= 0; j--) {
-      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = 0; i <= n; i++) dp[i][0] = i;
+  for (let j = 0; j <= m; j++) dp[0][j] = j;
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
     }
   }
   const ops = [];
-  let i = 0, j = 0;
-  while (i < n && j < m) {
-    if (a[i] === b[j]) { ops.push({ t: 'match', bi: j }); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: 'del', ai: i }); i++; }
-    else { ops.push({ t: 'ins', bi: j }); j++; }
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)) {
+      ops.push({ t: a[i - 1] === b[j - 1] ? 'match' : 'sub', ai: i - 1, bi: j - 1 });
+      i--; j--;
+    } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+      ops.push({ t: 'del', ai: i - 1 });
+      i--;
+    } else {
+      ops.push({ t: 'ins', bi: j - 1 });
+      j--;
+    }
   }
-  while (i < n) ops.push({ t: 'del', ai: i++ });
-  while (j < m) ops.push({ t: 'ins', bi: j++ });
-  return ops;
+  ops.reverse();
+  return { dist: dp[n][m], ops };
 }
+// 听写对照按词对齐：每个词接受汉字面或读音两种写法，只有真正缺/错/多的部分标色。
 function recDiffHTML(input, l) {
-  const ans = Array.from(l.text).map(c => ({ c, n: recNorm(c) })).filter(x => x.n);
-  const raw = Array.from(String(input).replace(/[\s\u3000]+/g, '')).map(c => ({ c, n: recNorm(c) })).filter(x => x.n);
-  const ops = recDiffOps(ans.map(x => x.n), raw.map(x => x.n));
-  const state = new Array(raw.length).fill('miss');
-  const missing = [], extra = [];
-  let runDel = [], runIns = [];
-  const flushRun = () => {
-    const pairs = Math.min(runDel.length, runIns.length);
-    missing.push(...runDel.slice(pairs));
-    extra.push(...runIns.slice(pairs));
-    runDel = []; runIns = [];
+  const raw = Array.from(String(input).replace(/[\s\u3000]+/g, ''))
+    .map(c => ({ c, n: recNorm(c) }))
+    .filter(x => x.n);
+  const N = raw.length;
+  const mkTok = (surface, reading) => {
+    const mk = str => {
+      const cs = [], orig = [];
+      for (const ch of Array.from(str)) {
+        const n = recNorm(ch);
+        if (!n) continue;
+        for (const nc of Array.from(n)) { cs.push(nc); orig.push(ch); }
+      }
+      return { chars: cs, orig };
+    };
+    const variants = [];
+    const sv = mk(surface);
+    if (sv.chars.length) variants.push({ chars: sv.chars, orig: sv.orig });
+    const rv = mk(reading);
+    if (rv.chars.length && rv.chars.join('') !== sv.chars.join('')) {
+      variants.push({ chars: rv.chars, orig: rv.orig });
+    }
+    if (!variants.length) return null;
+    return { surface, variants, minLen: Math.min(...variants.map(v => v.chars.length)) };
   };
-  ops.forEach(op => {
-    if (op.t === 'match') { flushRun(); state[op.bi] = 'hit'; }
-    else if (op.t === 'del') runDel.push(ans[op.ai].c);
-    else runIns.push(raw[op.bi].c);
-  });
-  flushRun();
-  const chars = raw.map((x, i) => `<span class="${state[i]}">${esc(x.c)}</span>`).join('');
-  const tip = missing.length
-    ? `少了「${esc(missing.slice(0, 8).join(''))}」`
-    : (extra.length ? `多了「${esc(extra.slice(0, 8).join(''))}」` : '');
-  return `<div class="rec-diff">你的输入：${chars || '（空）'}${tip ? `<div class="rec-diff-tip">${tip}</div>` : ''}</div>`;
+  let toks = recTokens(l).map(t => mkTok(t[0] || '', t[1] || '')).filter(Boolean);
+  if (!toks.length) toks = Array.from(l.text).map(c => mkTok(c, '')).filter(Boolean);
+  const T = toks.length;
+  const INF = 1e9;
+  const dp = Array.from({ length: T + 1 }, () => new Array(N + 1).fill(INF));
+  const prev = Array.from({ length: T + 1 }, () => new Array(N + 1).fill(null));
+  dp[0][0] = 0;
+  const relax = (i, j, ni, nj, cost, how) => {
+    const v = dp[i][j] + cost;
+    if (v < dp[ni][nj]) { dp[ni][nj] = v; prev[ni][nj] = Object.assign({ i, j }, how); }
+  };
+  for (let i = 0; i <= T; i++) {
+    for (let j = 0; j <= N; j++) {
+      if (dp[i][j] >= INF) continue;
+      if (i < T) relax(i, j, i + 1, j, toks[i].minLen * 10 + 1, { type: 'skipTok', ti: i });
+      if (j < N) relax(i, j, i, j + 1, 6, { type: 'skipChar', bi: j });
+      if (i < T) {
+        const t = toks[i];
+        const maxL = Math.min(N - j, Math.max(...t.variants.map(v => v.chars.length)) + 2);
+        for (let L = 1; L <= maxL; L++) {
+          const seg = raw.slice(j, j + L).map(x => x.n);
+          t.variants.forEach((v, vi) => {
+            const ed = recEdits(v.chars, seg);
+            relax(i, j, i + 1, j + L, ed.dist * 10 + 1, { type: 'match', ti: i, L, vi, ed });
+          });
+        }
+      }
+    }
+  }
+  const actions = [];
+  let i = T, j = N;
+  while (i > 0 || j > 0) {
+    const p = prev[i][j];
+    if (!p) break;
+    actions.push(p);
+    i = p.i; j = p.j;
+  }
+  actions.reverse();
+  const state = new Array(N).fill('miss');
+  const missingWhole = [], missingChars = [], wrongChars = [], extraChars = [];
+  for (const a of actions) {
+    if (a.type === 'skipTok') {
+      missingWhole.push(toks[a.ti].surface);
+    } else if (a.type === 'skipChar') {
+      extraChars.push(raw[a.bi].c);
+    } else {
+      const t = toks[a.ti];
+      const v = t.variants[a.vi];
+      if (a.ed.dist === 0) {
+        for (let k = 0; k < a.L; k++) state[a.j + k] = 'hit';
+        continue;
+      }
+      for (let k = 0; k < a.L; k++) state[a.j + k] = 'near';
+      for (const op of a.ed.ops) {
+        if (op.t === 'ins') {
+          state[a.j + op.bi] = 'miss';
+          extraChars.push(raw[a.j + op.bi].c);
+        } else if (op.t === 'sub') {
+          state[a.j + op.bi] = 'miss';
+          wrongChars.push({ got: raw[a.j + op.bi].c, want: v.orig[op.ai] || v.chars[op.ai] });
+        } else if (op.t === 'del') {
+          missingChars.push({ ch: v.orig[op.ai] || v.chars[op.ai], token: t.surface });
+        }
+      }
+    }
+  }
+  const tips = [];
+  if (missingChars.length) {
+    const uniq = [...new Set(missingChars.map(x => x.ch))].slice(0, 8).join('');
+    const tok = [...new Set(missingChars.map(x => x.token))].slice(0, 2).join('、');
+    tips.push(`少了「${esc(uniq)}」${tok ? `（${esc(tok)}）` : ''}`);
+  }
+  if (wrongChars.length) {
+    tips.push(wrongChars.slice(0, 4).map(x => `「${esc(x.got)}」应为「${esc(x.want)}」`).join(''));
+  }
+  if (missingWhole.length) tips.push(`少了「${esc(missingWhole.slice(0, 4).join('、'))}」`);
+  if (extraChars.length) tips.push(`多了「${esc(extraChars.slice(0, 8).join(''))}」`);
+  const shown = N ? raw.map((x, k) => `<span class="${state[k]}">${esc(x.c)}</span>`).join('') : '（空）';
+  return `<div class="rec-diff">你的输入：${shown}${tips.length ? `<div class="rec-diff-tip">${tips.slice(0, 2).join('；')}</div>` : ''}</div>`;
 }
 function recAnswerHTML(l, withNext) {
   const next = withNext
