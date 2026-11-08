@@ -3750,9 +3750,12 @@ function renderDict() {
   REC_DICT_LOCK = false;
   $('rec-focus').innerHTML = `
     <div class="rec-focus">
-      <div class="rec-focus-top"><span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 听写</span><span id="rec-dict-mark">${recMark(l)}</span></div>
-      <div class="rec-focus-actions">
-        <button class="btn ghost auto" id="rec-f-play">▶ 播放本句</button>
+      <div class="rec-focus-top">
+        <span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 听写</span>
+        <span class="rec-dict-tools">
+          <span id="rec-dict-mark">${recMark(l)}</span>
+          <button class="btn ghost rec-top-btn" id="rec-f-play">▶ 播放本句</button>
+        </span>
       </div>
       <div class="rec-dict">
         <input id="rec-input" type="text" lang="ja" placeholder="听音频，输入这句日语…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">

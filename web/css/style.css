@@ -1126,6 +1126,11 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 }
 .rec-focus-actions .btn.wide { flex: 1.4 1 0; }
 .rec-focus-actions .btn.auto { flex: 0 0 auto; padding-left: 18px; padding-right: 18px; }
+.rec-dict-tools { display: inline-flex; align-items: center; gap: 10px; flex: none; }
+.rec-focus-top .rec-top-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: auto; margin: 0; padding: 6px 12px; font-size: 12px; border-radius: 999px; flex: none;
+}
 
 /* 对戏 */
 .rec-role-switch {
