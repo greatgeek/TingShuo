@@ -39,6 +39,9 @@ func main() {
 		{"sentence",
 			`SELECT id, text FROM sentence WHERE ruby_tokens IS NULL`,
 			`UPDATE sentence SET ruby_tokens = $1 WHERE id = $2`},
+		{"recitation_line",
+			`SELECT id, text FROM recitation_line WHERE ruby_tokens IS NULL`,
+			`UPDATE recitation_line SET ruby_tokens = $1 WHERE id = $2`},
 	}
 	type item struct {
 		id   string

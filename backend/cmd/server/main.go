@@ -23,6 +23,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/lesson"
 	"github.com/greatgeek/TingShuo/backend/internal/notebook"
 	"github.com/greatgeek/TingShuo/backend/internal/podcast"
+	"github.com/greatgeek/TingShuo/backend/internal/recitation"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
@@ -159,6 +160,12 @@ func run() error {
 			sec.Get("/notebooks/{id}/tree", nbH.Tree)
 			sec.Get("/notebooks/dir/{dir_id}/words", nbH.DirWords)
 			sec.Get("/notebooks/dir/{dir_id}/copy", nbH.CopyWords)
+
+			recH := recitation.NewHandler(pool, store)
+			sec.Get("/recitation/lessons", recH.List)
+			sec.Get("/recitation/lessons/{id}", recH.Detail)
+			sec.Get("/recitation/lessons/{id}/audio", recH.Audio)
+			sec.Post("/recitation/lessons/{id}/progress", recH.Progress)
 
 			sec.Post("/audio/say", ttsH.Say)
 			sec.Post("/podcast/jobs", podH.CreateJob)

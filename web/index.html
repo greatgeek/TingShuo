@@ -114,6 +114,14 @@
 
     <div class="card compact">
       <div class="compact-main">
+        <h2>课文本</h2>
+        <p class="hint" id="rec-desc">跟着原声课文背诵（第 5—9 课）。</p>
+      </div>
+      <button class="btn ghost compact-btn" id="home-rec-btn">打开 →</button>
+    </div>
+
+    <div class="card compact">
+      <div class="compact-main">
         <h2>本地音频缓存</h2>
         <p class="hint" id="cache-desc">尚未缓存音频，播放过的句子会自动存到本地。</p>
       </div>
@@ -284,6 +292,46 @@
     </div>
     <div class="sents" id="nb-words"></div>
     <p class="hint" id="nb-hint" style="margin-top:12px"></p>
+  </section>
+
+  <!-- 课文本列表 -->
+  <section class="screen" id="sc-recite">
+    <div class="card">
+      <h2>课文本</h2>
+      <p class="hint">练口语课文原声。选一课，逐句听读、背诵或听写。</p>
+      <div id="rec-list"></div>
+      <p class="hint" id="rec-list-hint" style="margin-top:12px"></p>
+    </div>
+  </section>
+
+  <!-- 课文本练习 -->
+  <section class="screen" id="sc-recite-play">
+    <div class="card rec-head">
+      <h2 id="rec-title">—</h2>
+      <div class="modebar rec-modes" id="rec-modes">
+        <button data-mode="read" class="on">听读</button>
+        <button data-mode="recite">背诵</button>
+        <button data-mode="dict">听写</button>
+        <button data-mode="listen">连听</button>
+      </div>
+      <p class="hint" id="rec-mode-desc"></p>
+    </div>
+    <div id="rec-lines"></div>
+    <div id="rec-focus" hidden></div>
+    <div class="rec-player" id="rec-player" hidden>
+      <div class="rec-bar"><div id="rec-bar-fill"></div></div>
+      <div class="rec-ctrls">
+        <button class="rec-btn" id="rec-prev" aria-label="上一句">⏮</button>
+        <button class="rec-btn main" id="rec-play" aria-label="播放">▶</button>
+        <button class="rec-btn" id="rec-repeat" aria-label="重播本句">↻</button>
+        <button class="rec-btn" id="rec-next" aria-label="下一句">⏭</button>
+        <select id="rec-rate" aria-label="播放速度">
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+        </select>
+      </div>
+    </div>
   </section>
 </div>
 <!-- 生词库选词层（创建课程页用） -->

@@ -24,3 +24,6 @@ app/.idea/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# ===== 课文本导入产物（含教材音频，不入公开仓库）=====
+tools/recitation/out/

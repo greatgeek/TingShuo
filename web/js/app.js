@@ -27,6 +27,7 @@ const NAV_PARENT = {
   home: null, login: null,
   create: 'home', learn: 'home', review: 'home',
   library: 'home', wordstudy: 'home', notebook: 'home',
+  recite: 'home', 'recite-play': 'recite',
   aiask: 'notebook',
 };
 let CUR_SCREEN = 'login';
@@ -34,6 +35,7 @@ let GEN_FROM = 'create';
 
 function go(name) {
   if (name === 'gen') GEN_FROM = CUR_SCREEN; // 记录中转页来源
+  if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
   CUR_SCREEN = name;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   $('sc-' + name).classList.add('on');
@@ -697,6 +699,7 @@ async function loadHome() {
   loadWordStudyStatus(); // 首页背词卡片状态（不阻塞主流程）
   loadLibCount();    // 首页显示生词库数量（不阻塞主流程）
   loadNbCount();     // 首页显示生词本概览（不阻塞主流程）
+  loadRecCount();    // 首页显示课文本数量（不阻塞主流程）
   updateCacheStats(); // 首页本地音频缓存占用（不阻塞主流程）
 
   const chip = $('lesson-chip'), btn = $('home-main-btn');
@@ -3052,6 +3055,582 @@ function nbPlayApplyCfg() {
   nbPlayStep(!PL.paused);
 }
 
+// ============ 课文本（练口语课文：听读/背诵/听写/连听）============
+// 参照 DashPlayer：整课一条原声音频 + SRT 行时间轴。当前句只由时间轴决定，
+// 点句 seek、句末自动停（听读），连续播放自动高亮（连听）。
+let REC_LIST = [];
+let REC = null;            // {lesson, lines[]}
+let REC_IDX = 0;
+let REC_MODE = 'read';
+let REC_REVEAL = false;
+let REC_RATE = parseFloat(localStorage.getItem('ts_rec_rate') || '1') || 1;
+let REC_AUDIO = null, REC_AUDIO_LESSON = null, REC_AUDIO_URL = '';
+let REC_AUDIO_P = null, REC_AUDIO_P_ID = null;
+let REC_STOP_AT = null;    // 秒；null = 连续播放
+let REC_FOLLOW = true;
+let REC_RAF = 0;
+let REC_DICT_TRIES = 0;
+let REC_DICT_LOCK = false;
+let REC_DICT_TIMER = 0;
+
+const REC_DESC = {
+  read: '点任意一句从头播放，句末自动停；点 ↻ 重听本句。',
+  recite: '先听一句，再凭首字提示回忆整句。想不起来可看答案，背完点「会背了」。',
+  dict: '听整句，输入日语原文后按回车检查。汉字写对或假名读音写对都算通过。',
+  listen: '整段连续播放，当前句自动高亮。手动滚动页面会暂停跟随，点播放恢复。',
+};
+
+function recFmt(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+function recTitle(x) {
+  const t = x.title || '';
+  return /^第\s*\d+\s*[课課]/.test(t) ? t : `第${x.lesson_no}課 · ${t}`;
+}
+function recLine() { return REC && REC.lines[REC_IDX]; }
+function recTokens(l) {
+  return Array.isArray(l.ruby_tokens)
+    ? l.ruby_tokens.filter(t => Array.isArray(t) && t.length >= 2)
+    : [];
+}
+function recJP(l) {
+  const t = recTokens(l);
+  return t.length ? rubyHTML(t) : esc(l.text);
+}
+function recMark(l) {
+  if (l.dict_ok) return '听写 ✓';
+  if (l.dict_reading) return '读音 ✓';
+  return '';
+}
+function recSavePos() {
+  if (REC) localStorage.setItem('ts_rec_pos_' + REC.lesson.id, String(REC.lines[REC_IDX].line_no));
+}
+
+// recNorm 听写比对用：去空白/标点、片假名转平假名、全角转半角；
+// 保留长音ー、促音っ与浊音，避免把「びょういん」和「びよういん」判成一样。
+function recNorm(s) {
+  return String(s || '')
+    .normalize('NFKC')
+    .replace(/[\s\u3000]+/g, '')
+    .replace(/[、。，．！？!?,.・「」『』（）()\[\]【】〈〉《》…‥:：;；~〜\-—–]/g, '')
+    .replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .toLowerCase();
+}
+function recRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// recGrade 通过条件：整句原文，或整句读音，或逐词「汉字|读音」混写。
+function recGrade(l, input) {
+  const got = recNorm(input);
+  if (!got) return { pass: false };
+  if (got === recNorm(l.text)) return { pass: true, kind: 'ok' };
+  const toks = recTokens(l);
+  if (toks.length) {
+    const reading = recNorm(toks.map(t => t[1] || t[0]).join(''));
+    if (reading && got === reading) return { pass: true, kind: 'reading' };
+    const pat = toks.map(t => {
+      const alts = [...new Set([recNorm(t[0]), recNorm(t[1] || t[0])].filter(Boolean))];
+      if (!alts.length) return '';
+      return alts.length === 1 ? recRe(alts[0]) : '(?:' + alts.map(recRe).join('|') + ')';
+    }).join('');
+    if (pat) {
+      try {
+        if (new RegExp('^' + pat + '$').test(got)) return { pass: true, kind: 'reading' };
+      } catch {}
+    }
+  }
+  return { pass: false };
+}
+function recDiffHTML(input, l) {
+  const ans = Array.from(recNorm(l.text));
+  const raw = Array.from(String(input).replace(/[\s\u3000]+/g, ''));
+  const chars = raw.map((c, i) => {
+    const cn = recNorm(c);
+    return `<span class="${cn && cn === ans[i] ? 'hit' : 'miss'}">${esc(c)}</span>`;
+  }).join('');
+  return `<div class="rec-diff">你的输入：${chars || '（空）'}</div>`;
+}
+function recAnswerHTML(l, withNext) {
+  const next = withNext
+    ? '<button class="btn accent" id="rec-f-next" style="width:auto;margin-top:12px">下一句 →</button>'
+    : '';
+  return `<div class="rec-answer">${recJP(l)}<span class="zh">${esc(l.translation)}</span></div>${next}`;
+}
+async function recPost(lineNo, kind, result) {
+  try {
+    await api('/recitation/lessons/' + REC.lesson.id + '/progress', {
+      method: 'POST',
+      body: JSON.stringify({ line_no: lineNo, kind, result }),
+    });
+  } catch (e) { toast('进度保存失败：' + e.message); }
+}
+
+// ---- 整课音频：fetch 带 Bearer 取回 blob，缓存到 IndexedDB（离线可听） ----
+function recStopLoop() {
+  if (REC_RAF) cancelAnimationFrame(REC_RAF);
+  REC_RAF = 0;
+}
+function recDropAudio() {
+  recStopLoop();
+  if (REC_AUDIO) {
+    const a = REC_AUDIO;
+    REC_AUDIO = null;
+    try { a.pause(); } catch {}
+    a.removeAttribute('src');
+    try { a.load(); } catch {}
+  }
+  if (REC_AUDIO_URL) URL.revokeObjectURL(REC_AUDIO_URL);
+  REC_AUDIO = null; REC_AUDIO_LESSON = null; REC_AUDIO_URL = '';
+  REC_AUDIO_P = null; REC_AUDIO_P_ID = null;
+  REC_STOP_AT = null;
+}
+async function recAudio() {
+  const id = REC.lesson.id;
+  if (REC_AUDIO && REC_AUDIO_LESSON === id) return REC_AUDIO;
+  if (REC_AUDIO_P && REC_AUDIO_P_ID === id) return REC_AUDIO_P;
+  const p = (async () => {
+    let blob;
+    const hit = await idbGet('lec:' + id);
+    if (hit && hit.blob && hit.blob.size > 1024) {
+      blob = hit.blob;
+      idbPut('lec:' + id, blob);
+    } else {
+      const r = await fetchAuth('/api/v1/recitation/lessons/' + id + '/audio');
+      if (!r.ok) throw new Error('音频获取失败 HTTP ' + r.status);
+      blob = await r.blob();
+      idbPut('lec:' + id, blob);
+    }
+    if (!REC || REC.lesson.id !== id) throw new Error('已切换课文');
+    const url = URL.createObjectURL(blob);
+    const a = new Audio();
+    a.preload = 'auto';
+    a.src = url;
+    a.playbackRate = REC_RATE;
+    a.addEventListener('play', () => {
+      if (REC_AUDIO !== a) return;
+      syncRecPlayBtn();
+      recStartLoop();
+    });
+    a.addEventListener('pause', () => {
+      if (REC_AUDIO !== a) return;
+      syncRecPlayBtn();
+      recStopLoop();
+    });
+    a.addEventListener('timeupdate', () => { if (REC_AUDIO === a) recTick(); });
+    a.addEventListener('ended', () => {
+      if (REC_AUDIO !== a) return;
+      REC_STOP_AT = null;
+      syncRecPlayBtn();
+      recStopLoop();
+    });
+    REC_AUDIO = a; REC_AUDIO_LESSON = id; REC_AUDIO_URL = url;
+    return a;
+  })();
+  REC_AUDIO_P = p; REC_AUDIO_P_ID = id;
+  try {
+    return await p;
+  } finally {
+    if (REC_AUDIO_P === p) { REC_AUDIO_P = null; REC_AUDIO_P_ID = null; }
+  }
+}
+function recStartLoop() {
+  recStopLoop();
+  const step = () => {
+    if (!REC_AUDIO || REC_AUDIO.paused) { REC_RAF = 0; return; }
+    recTick();
+    REC_RAF = requestAnimationFrame(step);
+  };
+  REC_RAF = requestAnimationFrame(step);
+}
+function recIdxAt(t) {
+  let lo = 0, hi = REC.lines.length - 1, ans = 0;
+  while (lo <= hi) {
+    const m = (lo + hi) >> 1;
+    if (REC.lines[m].start_ms / 1000 <= t + 0.08) { ans = m; lo = m + 1; }
+    else hi = m - 1;
+  }
+  return ans;
+}
+function recTick() {
+  if (!REC || !REC_AUDIO) return;
+  const a = REC_AUDIO;
+  const dur = a.duration || 0;
+  $('rec-bar-fill').style.width = dur ? Math.min(100, a.currentTime / dur * 100) + '%' : '0%';
+  if (REC_STOP_AT != null && a.currentTime >= REC_STOP_AT) {
+    REC_STOP_AT = null;
+    a.pause();
+    return;
+  }
+  if (REC_MODE === 'listen' && !a.paused) {
+    const idx = recIdxAt(a.currentTime);
+    if (idx !== REC_IDX) {
+      REC_IDX = idx;
+      recSavePos();
+      recHighlight(idx, true);
+    }
+  }
+}
+function syncRecPlayBtn() {
+  const b = $('rec-play');
+  if (b) b.textContent = REC_AUDIO && !REC_AUDIO.paused ? '⏸' : '▶';
+}
+function recHighlight(idx, scroll) {
+  const box = $('rec-lines');
+  const els = box.querySelectorAll('.rec-line');
+  els.forEach((el, i) => el.classList.toggle('on', i === idx));
+  if (scroll && REC_FOLLOW && els[idx]) {
+    els[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+}
+
+// ---- 播放控制 ----
+function recLineStop(idx, a) {
+  const l = REC.lines[idx];
+  let stop = (l.end_ms + 80) / 1000;
+  const nl = REC.lines[idx + 1];
+  if (nl && nl.start_ms / 1000 < stop) {
+    stop = Math.max(l.start_ms / 1000 + 0.15, nl.start_ms / 1000 - 0.02);
+  }
+  return Math.min(stop, (a && a.duration) || Infinity);
+}
+async function recPlayAt(idx, continuous, silent) {
+  if (!REC) return;
+  idx = Math.max(0, Math.min(REC.lines.length - 1, idx));
+  REC_IDX = idx;
+  REC_FOLLOW = true;
+  recSavePos();
+  if (REC_MODE === 'read' || REC_MODE === 'listen') recHighlight(idx, true);
+  let a;
+  try {
+    a = await recAudio();
+  } catch (e) {
+    if (!silent) toast(e.message);
+    return;
+  }
+  if (!REC || REC.lines[idx] !== recLine()) return; // 等待期间用户已切到别的句子
+  const l = REC.lines[idx];
+  REC_STOP_AT = continuous ? null : recLineStop(idx, a);
+  a.currentTime = l.start_ms / 1000;
+  a.playbackRate = REC_RATE;
+  try {
+    await playUnlock(a);
+    syncRecPlayBtn();
+  } catch (e) {
+    if (!silent) toast('播放失败：' + e.message);
+  }
+}
+async function recResumeLine() {
+  const l = recLine();
+  if (!l) return;
+  let a;
+  try { a = await recAudio(); } catch (e) { toast(e.message); return; }
+  const t = a.currentTime * 1000;
+  if (t >= l.start_ms - 100 && t < l.end_ms) {
+    REC_STOP_AT = recLineStop(REC_IDX, a);
+    try { await playUnlock(a); syncRecPlayBtn(); } catch (e) { toast('播放失败：' + e.message); }
+    return;
+  }
+  recPlayAt(REC_IDX, false);
+}
+async function recToggle() {
+  if (!REC) return;
+  if (REC_AUDIO && !REC_AUDIO.paused) { REC_AUDIO.pause(); return; }
+  if (REC_MODE === 'listen') {
+    if (REC_AUDIO && REC_AUDIO.currentTime > 0 && !REC_AUDIO.ended) {
+      REC_STOP_AT = null;
+      REC_FOLLOW = true;
+      try { await playUnlock(REC_AUDIO); syncRecPlayBtn(); } catch (e) { toast('播放失败：' + e.message); }
+      return;
+    }
+    recPlayAt(REC_IDX, true);
+    return;
+  }
+  recResumeLine();
+}
+function recPrev() {
+  if (REC) recPlayAt(Math.max(0, REC_IDX - 1), REC_MODE === 'listen');
+}
+function recNext() {
+  if (REC) recPlayAt(Math.min(REC.lines.length - 1, REC_IDX + 1), REC_MODE === 'listen');
+}
+
+// ---- 列表与页面 ----
+function recRenderList() {
+  const box = $('rec-list');
+  if (!REC_LIST.length) {
+    box.innerHTML = '<p class="hint">还没有课文内容。</p>';
+    $('rec-list-hint').textContent = '';
+    return;
+  }
+  box.innerHTML = REC_LIST.map(it => {
+    const pctR = it.line_count ? Math.round(it.recited_count / it.line_count * 100) : 0;
+    const pctD = it.line_count ? Math.round(it.dict_count / it.line_count * 100) : 0;
+    return `<button class="rec-item" data-id="${esc(it.id)}">
+      <div class="rec-item-top">
+        <span class="rec-item-title">${esc(recTitle(it))}</span>
+        <span class="rec-item-meta">${recFmt(it.duration_ms)} · ${it.line_count} 句</span>
+      </div>
+      <div class="rec-stat"><span>背诵</span><div class="track"><i class="recited" style="width:${pctR}%"></i></div><span>${it.recited_count}/${it.line_count}</span></div>
+      <div class="rec-stat"><span>听写</span><div class="track"><i class="dict" style="width:${pctD}%"></i></div><span>${it.dict_count}/${it.line_count}</span></div>
+    </button>`;
+  }).join('');
+  $('rec-list-hint').textContent = '进度按行记在账号里，换设备登录也会同步。';
+}
+async function loadRecCount() {
+  try {
+    REC_LIST = (await api('/recitation/lessons')).items || [];
+    const n = REC_LIST.reduce((s, x) => s + x.line_count, 0);
+    $('rec-desc').textContent = REC_LIST.length
+      ? `共 ${REC_LIST.length} 课 · ${n} 句 · 跟着原声逐句听读、背诵、听写。`
+      : '还没有课文内容。';
+  } catch {}
+}
+async function goRecite() {
+  stopPlay();
+  go('recite');
+  const box = $('rec-list');
+  if (!REC_LIST.length) box.innerHTML = '<p class="hint">载入中…</p>';
+  try {
+    REC_LIST = (await api('/recitation/lessons')).items || [];
+  } catch (e) {
+    if (!REC_LIST.length) box.innerHTML = `<p class="hint">载入失败：${esc(e.message)}</p>`;
+    return;
+  }
+  recRenderList();
+}
+async function openRec(id) {
+  stopPlay();
+  let d;
+  try {
+    d = await api('/recitation/lessons/' + id);
+  } catch (e) { toast(e.message); return; }
+  if (REC && REC.lesson.id !== id) recDropAudio();
+  REC = d;
+  const saved = parseInt(localStorage.getItem('ts_rec_pos_' + id) || '0', 10);
+  const idx = REC.lines.findIndex(l => l.line_no === saved);
+  REC_IDX = idx >= 0 ? idx : 0;
+  REC_REVEAL = false;
+  REC_DICT_TRIES = 0;
+  REC_DICT_LOCK = false;
+  $('rec-title').textContent = recTitle(d.lesson);
+  go('recite-play');
+  setRecMode('read');
+  window.scrollTo(0, 0);
+  recAudio().catch(() => {});
+}
+function recLeave() {
+  clearTimeout(REC_DICT_TIMER);
+  REC_STOP_AT = null;
+  recStopLoop();
+  if (REC_AUDIO) { try { REC_AUDIO.pause(); } catch {} }
+  document.body.classList.remove('rec-playing');
+  const p = $('rec-player');
+  if (p) p.hidden = true;
+  if (REC) {
+    const it = REC_LIST.find(x => x.id === REC.lesson.id);
+    if (it) {
+      it.recited_count = REC.lines.filter(l => l.recited).length;
+      it.dict_count = REC.lines.filter(l => l.dict_ok || l.dict_reading).length;
+      recRenderList();
+    }
+  }
+}
+
+// ---- 听读 / 连听 ----
+function renderRecLines() {
+  if (!REC) return;
+  $('rec-lines').innerHTML = REC.lines.map((l, i) => {
+    const marks = (l.recited ? '<span class="done">背✓</span>' : '') +
+      ((l.dict_ok || l.dict_reading) ? '<span class="done dict">听✓</span>' : '');
+    return `<div class="rec-line" data-idx="${i}">
+      <div class="n">${i + 1}</div>
+      <div class="jp">${recJP(l)}${marks}<div class="zh">${esc(l.translation)}</div></div>
+    </div>`;
+  }).join('');
+}
+function setRecMode(mode) {
+  if (!REC) return;
+  REC_MODE = mode;
+  REC_REVEAL = false;
+  REC_DICT_TRIES = 0;
+  REC_DICT_LOCK = false;
+  clearTimeout(REC_DICT_TIMER);
+  document.querySelectorAll('#rec-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
+  $('rec-mode-desc').textContent = REC_DESC[mode] || '';
+  const listMode = mode === 'read' || mode === 'listen';
+  $('rec-lines').hidden = !listMode;
+  $('rec-focus').hidden = listMode;
+  $('rec-player').hidden = !listMode;
+  document.body.classList.toggle('rec-playing', listMode);
+  if (REC_AUDIO) { try { REC_AUDIO.pause(); } catch {} }
+  REC_STOP_AT = null;
+  if (listMode) {
+    renderRecLines();
+    $('rec-lines').querySelectorAll('.rec-line').forEach(el => el.classList.toggle('showzh', mode === 'read'));
+    recHighlight(REC_IDX, false);
+    syncRecPlayBtn();
+  } else if (mode === 'recite') {
+    renderRecite();
+    recPlayAt(REC_IDX, false, true);
+  } else {
+    renderDict();
+    recPlayAt(REC_IDX, false, true);
+  }
+}
+
+// ---- 背诵 ----
+function recHidden(l) {
+  const chars = Array.from(l.text || '');
+  if (!chars.length) return '';
+  const hint = chars.find(c => !/[\s、。，．！？!?「」『』（）()…]/.test(c)) || chars[0];
+  const rest = Math.max(0, chars.length - 1);
+  const marks = '○'.repeat(Math.min(rest, 18)) + (rest > 18 ? '…' : '');
+  return esc(hint) + (marks ? `<span class="blank-hint">${marks}</span>` : '');
+}
+function renderRecite() {
+  const l = recLine();
+  if (!l) return;
+  REC_REVEAL = false;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus">
+      <div class="rec-focus-top"><span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 背诵</span><span>${l.recited ? '已背 ✓' : ''}</span></div>
+      <div class="rec-focus-jp" id="rec-focus-jp">${recHidden(l)}</div>
+      <div class="rec-focus-zh hide" id="rec-focus-zh">${esc(l.translation)}</div>
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-f-play">▶ 播放本句</button>
+        <button class="btn ghost" id="rec-f-show">看答案</button>
+        <button class="btn accent wide" id="rec-f-done">会背了</button>
+      </div>
+    </div>`;
+  $('rec-f-play').onclick = () => recPlayAt(REC_IDX, false);
+  $('rec-f-show').onclick = recToggleAnswer;
+  $('rec-f-done').onclick = recReciteDone;
+}
+function recToggleAnswer() {
+  const l = recLine();
+  if (!l) return;
+  REC_REVEAL = !REC_REVEAL;
+  $('rec-focus-jp').innerHTML = REC_REVEAL ? recJP(l) : recHidden(l);
+  $('rec-focus-zh').classList.toggle('hide', !REC_REVEAL);
+  $('rec-f-show').textContent = REC_REVEAL ? '隐藏答案' : '看答案';
+}
+function recReciteDone() {
+  const l = recLine();
+  if (!l) return;
+  if (!l.recited) {
+    l.recited = true;
+    recPost(l.line_no, 'recite', '');
+  }
+  recFocusAdvance();
+}
+
+// ---- 听写 ----
+function renderDict() {
+  const l = recLine();
+  if (!l) return;
+  REC_DICT_TRIES = 0;
+  REC_DICT_LOCK = false;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus">
+      <div class="rec-focus-top"><span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 听写</span><span id="rec-dict-mark">${recMark(l)}</span></div>
+      <div class="rec-focus-zh">${esc(l.translation)}</div>
+      <div class="rec-focus-actions">
+        <button class="btn ghost auto" id="rec-f-play">▶ 播放本句</button>
+      </div>
+      <div class="rec-dict">
+        <input id="rec-input" type="text" lang="ja" placeholder="听音频，输入这句日语…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <button class="btn accent" id="rec-check">检查</button>
+      </div>
+      <div class="rec-feedback" id="rec-feedback"></div>
+      <div id="rec-diff"></div>
+      <div id="rec-answer"></div>
+    </div>`;
+  $('rec-f-play').onclick = () => recPlayAt(REC_IDX, false);
+  $('rec-check').onclick = recCheckDict;
+  $('rec-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); recCheckDict(); }
+  });
+}
+function recCheckDict() {
+  if (!REC || REC_MODE !== 'dict' || REC_DICT_LOCK) return;
+  const inp = $('rec-input');
+  if (!inp) return;
+  const val = inp.value.trim();
+  if (!val) { toast('先输入听到的句子'); inp.focus(); return; }
+  const l = recLine();
+  if (!l) return;
+  const g = recGrade(l, val);
+  if (g.pass) {
+    REC_DICT_LOCK = true;
+    if (!l.dict_ok && !l.dict_reading) {
+      if (g.kind === 'ok') l.dict_ok = true; else l.dict_reading = true;
+      recPost(l.line_no, 'dict', g.kind);
+    }
+    inp.disabled = true;
+    const fb = $('rec-feedback');
+    fb.className = 'rec-feedback ok';
+    fb.textContent = g.kind === 'ok' ? '正确！' : '正确（假名读音对）';
+    $('rec-diff').innerHTML = '';
+    $('rec-answer').innerHTML = recAnswerHTML(l, true);
+    $('rec-dict-mark').textContent = recMark(l);
+    $('rec-f-next').onclick = () => { clearTimeout(REC_DICT_TIMER); recFocusAdvance(); };
+    REC_DICT_TIMER = setTimeout(recFocusAdvance, 2400);
+  } else {
+    REC_DICT_TRIES++;
+    const fb = $('rec-feedback');
+    fb.className = 'rec-feedback bad';
+    fb.textContent = REC_DICT_TRIES >= 2
+      ? '还不完全对。答案已给出，可以照着打一遍。'
+      : '还不完全对，再听一遍试试。';
+    $('rec-diff').innerHTML = recDiffHTML(val, l);
+    if (REC_DICT_TRIES >= 2 && !$('rec-answer').innerHTML) {
+      $('rec-answer').innerHTML = recAnswerHTML(l, true);
+      $('rec-f-next').onclick = () => recFocusAdvance();
+    }
+    inp.select();
+    recPlayAt(REC_IDX, false, true);
+  }
+}
+function recFocusAdvance() {
+  clearTimeout(REC_DICT_TIMER);
+  if (!REC) return;
+  if (REC_IDX >= REC.lines.length - 1) { renderRecDone(); return; }
+  REC_IDX++;
+  recSavePos();
+  REC_REVEAL = false;
+  REC_DICT_TRIES = 0;
+  REC_DICT_LOCK = false;
+  if (REC_MODE === 'recite') {
+    renderRecite();
+  } else {
+    renderDict();
+  }
+  recPlayAt(REC_IDX, false, true);
+}
+function renderRecDone() {
+  if (!REC) return;
+  const total = REC.lines.length;
+  const recd = REC.lines.filter(l => l.recited).length;
+  const dict = REC.lines.filter(l => l.dict_ok || l.dict_reading).length;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus">
+      <div class="rec-focus-top"><span>第 ${total} / ${total} 句</span><span>完成</span></div>
+      <div class="rec-focus-jp">本课练习完成。</div>
+      <div class="rec-focus-zh">已背 ${recd} / ${total} 句 · 听写通过 ${dict} / ${total} 句。</div>
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-done-again">从头再练</button>
+        <button class="btn accent wide" id="rec-done-list">返回列表</button>
+      </div>
+    </div>`;
+  $('rec-done-again').onclick = () => {
+    REC_IDX = 0;
+    recSavePos();
+    if (REC_MODE === 'recite') renderRecite(); else { REC_DICT_TRIES = 0; renderDict(); }
+    recPlayAt(0, false, true);
+  };
+  $('rec-done-list').onclick = () => goBack();
+}
+
 // ============ 本课/本单元播客（v13：思思+xudong 单场双语） ============
 let POD = null;      // {id, timeline, duration_ms, audio, url, cur}
 let POD_SRC = null;  // {kind:'lesson'|'dir', id}
@@ -3316,6 +3895,7 @@ $('ws-due-btn').onclick = () => goWordStudy('due');
 $('ws-new-btn').onclick = () => goWordStudy('new');
 $('lib-link').onclick = (e) => { e.preventDefault(); goLibrary(); };
 $('home-nb-btn').onclick = goNotebook;
+$('home-rec-btn').onclick = goRecite;
 $('cache-clear-btn').onclick = clearAudioCache;
 $('mode-full').onclick = () => pickGenMode('full');
 $('mode-phrases').onclick = () => pickGenMode('phrases');
@@ -3345,6 +3925,32 @@ $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-copy-btn').onclick = (e) => { e.stopPropagation(); nbCopyAll(); };
 $('nb-export-btn').onclick = (e) => { e.stopPropagation(); nbExportAll(); };
 $('nb-test-btn').onclick = (e) => { e.stopPropagation(); nbStartTest(); };
+
+// ---- 课文本 ----
+document.querySelectorAll('#rec-modes button').forEach(b => {
+  b.onclick = () => setRecMode(b.dataset.mode);
+});
+$('rec-play').onclick = recToggle;
+$('rec-prev').onclick = recPrev;
+$('rec-next').onclick = recNext;
+$('rec-repeat').onclick = () => { if (REC) recPlayAt(REC_IDX, REC_MODE === 'listen'); };
+$('rec-rate').value = String(REC_RATE);
+$('rec-rate').onchange = e => {
+  REC_RATE = parseFloat(e.target.value) || 1;
+  localStorage.setItem('ts_rec_rate', String(REC_RATE));
+  if (REC_AUDIO) REC_AUDIO.playbackRate = REC_RATE;
+};
+$('rec-list').addEventListener('click', e => {
+  const el = e.target.closest('.rec-item');
+  if (el) openRec(el.dataset.id);
+});
+$('rec-lines').addEventListener('click', e => {
+  const el = e.target.closest('.rec-line');
+  if (!el || !REC) return;
+  recPlayAt(+el.dataset.idx, REC_MODE === 'listen');
+});
+addEventListener('wheel', () => { if (CUR_SCREEN === 'recite-play') REC_FOLLOW = false; }, { passive: true });
+addEventListener('touchmove', () => { if (CUR_SCREEN === 'recite-play') REC_FOLLOW = false; }, { passive: true });
 
 // ---- 线上 nginx 的 CSP 是 script-src 'self'：内联 onclick/ontoggle 一律被拦（2026-11-06 实锤），
 // 渲染模板只写 data-act/data-arg，这里统一委托绑定 ----
