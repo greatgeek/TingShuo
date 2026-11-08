@@ -3072,12 +3072,52 @@ let REC_RAF = 0;
 let REC_DICT_TRIES = 0;
 let REC_DICT_LOCK = false;
 let REC_DICT_TIMER = 0;
+let REC_ROLE = '';          // 当前扮演的角色（按课文记住）
+let REC_ROLE_ACTIVE = false;
+let REC_ROLE_FINISHED = false;
+let REC_ROLE_PICKING = false;
+let REC_ROLE_TIMER = 0;
+let REC_ROLE_REVEAL = false;
+let REC_ROLE_DONE = 0;
+let REC_ROLE_TOTAL = 0;
+let REC_ROLE_HINTS = 0;
+let REC_ROLE_HINTED = new Set();
+// 消失术
+let REC_CLOZE_STEP = 0;
+let REC_CLOZE_HIDDEN = new Set();
+let REC_CLOZE_PEEK = new Set();
+let REC_CLOZE_WORDS = [];
+let REC_CLOZE_STARS = 3;
+let REC_CLOZE_TOTAL = 0;
+let REC_CLOZE_PERFECT = 0;
+// 中译日
+let REC_ZH_LVL = 0;
+let REC_ZH_USED_THIS = false;
+let REC_ZH_CLEAN = 0;
+let REC_ZH_USED = 0;
+// 通关赛
+let REC_RUN_COMBO = 0;
+let REC_RUN_BEST = 0;
+let REC_RUN_PREV_BEST = 0;
+let REC_RUN_CLEAN = 0;
+let REC_RUN_USED = 0;
+let REC_RUN_FLAGGED = [];
+let REC_RUN_OT = [];
+let REC_RUN_OT_POS = 0;
+let REC_RUN_OT_HINTS = 0;
+let REC_RUN_PHASE = 'main';   // main | overtime | done
+let REC_RUN_REVEAL = false;   // 当前句正在展示答案
+let REC_RUN_SEEN = false;     // 当前句看过答案（收起来也算）
 
 const REC_DESC = {
   read: '点任意一句从头播放，句末自动停；点 ↻ 重听本句。',
   recite: '先听一句，再凭首字提示回忆整句。想不起来可看答案，背完点「会背了」。',
   dict: '听整句，输入日语原文后按回车检查。汉字写对或假名读音写对都算通过。',
   listen: '整段连续播放，当前句自动高亮。手动滚动页面会暂停跟随，点播放恢复。',
+  role: '选一个角色：对方台词自动播放；轮到你时只给首字提示，说完点「接上了」。双方合说的句子自动播放。',
+  cloze: '先看全文背一遍；每背对一次就多遮住一些词，最后只剩首字假名。点遮住的词可以偷看，但会掉一颗星。',
+  zh2jp: '只看中文，先出声说出日语；卡住时按提示逐级加码：首字 → 每词首字 → 关键词 → 全句。',
+  run: '一课一局：不看答案背完一句就加一次连击；看过答案的句子会在结尾自动进入最多 3 句加时赛。',
 };
 
 function recFmt(ms) {
@@ -3093,6 +3133,23 @@ function recTokens(l) {
   return Array.isArray(l.ruby_tokens)
     ? l.ruby_tokens.filter(t => Array.isArray(t) && t.length >= 2)
     : [];
+}
+function recIsPunct(s) {
+  return /^[\s\u3000、。，．！？!?「」『』（）()【】〈〉《》…‥:：;；~〜\-—–・]+$/.test(s);
+}
+// 可挖空/可提示的“词”：取 ruby_tokens 里非标点的项，返回 token 下标。
+function recWords(l) {
+  const out = [];
+  recTokens(l).forEach((t, i) => { if (t[0] && !recIsPunct(t[0])) out.push(i); });
+  return out;
+}
+function recFirstKana(t) {
+  const read = t[1] || '';
+  const src = /[ぁ-ゖァ-ヺ]/.test(read) ? read : t[0];
+  return Array.from(src || '')[0] || '';
+}
+function recFirstChar(t) {
+  return Array.from((t && t[0]) || '')[0] || '';
 }
 function recJP(l) {
   const t = recTokens(l);
@@ -3222,6 +3279,7 @@ async function recAudio() {
       REC_STOP_AT = null;
       syncRecPlayBtn();
       recStopLoop();
+      if (REC_MODE === 'role') recRoleAfterLine();
     });
     REC_AUDIO = a; REC_AUDIO_LESSON = id; REC_AUDIO_URL = url;
     return a;
@@ -3259,6 +3317,7 @@ function recTick() {
   if (REC_STOP_AT != null && a.currentTime >= REC_STOP_AT) {
     REC_STOP_AT = null;
     a.pause();
+    if (REC_MODE === 'role') recRoleAfterLine();
     return;
   }
   if (REC_MODE === 'listen' && !a.paused) {
@@ -3273,6 +3332,8 @@ function recTick() {
 function syncRecPlayBtn() {
   const b = $('rec-play');
   if (b) b.textContent = REC_AUDIO && !REC_AUDIO.paused ? '⏸' : '▶';
+  const rb = $('rec-role-audio');
+  if (rb) rb.textContent = REC_AUDIO && !REC_AUDIO.paused ? '⏸ 暂停' : '▶ 听原声';
 }
 function recHighlight(idx, scroll) {
   const box = $('rec-lines');
@@ -3381,7 +3442,7 @@ async function loadRecCount() {
     REC_LIST = (await api('/recitation/lessons')).items || [];
     const n = REC_LIST.reduce((s, x) => s + x.line_count, 0);
     $('rec-desc').textContent = REC_LIST.length
-      ? `共 ${REC_LIST.length} 课 · ${n} 句 · 跟着原声逐句听读、背诵、听写。`
+      ? `共 ${REC_LIST.length} 课 · ${n} 句 · 听读、背诵、听写、对戏，还能用消失术、中译日、通关赛挑战记忆。`
       : '还没有课文内容。';
   } catch {}
 }
@@ -3412,6 +3473,15 @@ async function openRec(id) {
   REC_REVEAL = false;
   REC_DICT_TRIES = 0;
   REC_DICT_LOCK = false;
+  REC_ROLE = localStorage.getItem('ts_rec_role_' + id) || '';
+  REC_ROLE_ACTIVE = false;
+  REC_ROLE_FINISHED = false;
+  REC_ROLE_PICKING = false;
+  REC_ROLE_REVEAL = false;
+  REC_ROLE_DONE = 0;
+  REC_ROLE_HINTS = 0;
+  REC_ROLE_HINTED = new Set();
+  clearTimeout(REC_ROLE_TIMER);
   $('rec-title').textContent = recTitle(d.lesson);
   go('recite-play');
   setRecMode('read');
@@ -3420,6 +3490,7 @@ async function openRec(id) {
 }
 function recLeave() {
   clearTimeout(REC_DICT_TIMER);
+  clearTimeout(REC_ROLE_TIMER);
   REC_STOP_AT = null;
   recStopLoop();
   if (REC_AUDIO) { try { REC_AUDIO.pause(); } catch {} }
@@ -3454,7 +3525,9 @@ function setRecMode(mode) {
   REC_REVEAL = false;
   REC_DICT_TRIES = 0;
   REC_DICT_LOCK = false;
+  REC_ROLE_REVEAL = false;
   clearTimeout(REC_DICT_TIMER);
+  clearTimeout(REC_ROLE_TIMER);
   document.querySelectorAll('#rec-modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   $('rec-mode-desc').textContent = REC_DESC[mode] || '';
   const listMode = mode === 'read' || mode === 'listen';
@@ -3469,9 +3542,26 @@ function setRecMode(mode) {
     $('rec-lines').querySelectorAll('.rec-line').forEach(el => el.classList.toggle('showzh', mode === 'read'));
     recHighlight(REC_IDX, false);
     syncRecPlayBtn();
+  } else if (mode === 'role') {
+    if (REC_ROLE_FINISHED) {
+      renderRecRoleDone();
+    } else if (REC_ROLE_PICKING) {
+      renderRoleSelect();
+    } else if (recRoleValid()) {
+      if (REC_ROLE_ACTIVE) { renderRoleLine(); recRoleAutoPlay(); }
+      else recRoleBegin();
+    } else {
+      renderRoleSelect();
+    }
   } else if (mode === 'recite') {
     renderRecite();
     recPlayAt(REC_IDX, false, true);
+  } else if (mode === 'cloze') {
+    recClozeBegin();
+  } else if (mode === 'zh2jp') {
+    recZhBegin();
+  } else if (mode === 'run') {
+    recRunBegin();
   } else {
     renderDict();
     recPlayAt(REC_IDX, false, true);
@@ -3629,6 +3719,607 @@ function renderRecDone() {
     recPlayAt(0, false, true);
   };
   $('rec-done-list').onclick = () => goBack();
+}
+
+// ---- 对戏 ----
+// 角色取自教材会话标注：单人行给你演；对方行自动播下一句；双人合说行整句自动播。
+function recRoleKind(l) {
+  const sp = Array.isArray(l.speakers) ? l.speakers : [];
+  if (!sp.length) return 'narrator';
+  if (sp.length > 1) return sp.includes(REC_ROLE) ? 'both' : 'other';
+  return sp[0] === REC_ROLE ? 'mine' : 'other';
+}
+function recRoleValid() {
+  return !!(REC && REC_ROLE &&
+    REC.lines.some(l => Array.isArray(l.speakers) && l.speakers.includes(REC_ROLE)));
+}
+function recRoleBegin() {
+  if (!REC) return;
+  REC_ROLE_ACTIVE = true;
+  REC_ROLE_FINISHED = false;
+  REC_ROLE_PICKING = false;
+  REC_ROLE_DONE = 0;
+  REC_ROLE_HINTS = 0;
+  REC_ROLE_HINTED = new Set();
+  REC_ROLE_REVEAL = false;
+  REC_ROLE_TOTAL = REC.lines.filter(l => recRoleKind(l) === 'mine').length;
+  REC_IDX = 0;
+  recSavePos();
+  renderRoleLine();
+  recRoleAutoPlay();
+}
+function recRolePick(who) {
+  if (!REC) return;
+  REC_ROLE = who;
+  localStorage.setItem('ts_rec_role_' + REC.lesson.id, who);
+  recRoleBegin();
+}
+function recRoleStopAudio() {
+  clearTimeout(REC_ROLE_TIMER);
+  REC_STOP_AT = null;
+  if (REC_AUDIO) { try { REC_AUDIO.pause(); } catch {} }
+}
+function recRoleSelectUI() {
+  recRoleStopAudio();
+  REC_ROLE_ACTIVE = false;
+  REC_ROLE_FINISHED = false;
+  REC_ROLE_PICKING = true;
+  renderRoleSelect();
+}
+function renderRoleSelect() {
+  if (!REC) return;
+  REC_ROLE_REVEAL = false;
+  const counts = new Map();
+  REC.lines.forEach(l => {
+    const sp = Array.isArray(l.speakers) ? l.speakers : [];
+    sp.forEach(who => {
+      if (!counts.has(who)) counts.set(who, { own: 0, both: 0 });
+      const c = counts.get(who);
+      if (sp.length === 1) c.own++; else c.both++;
+    });
+  });
+  const roles = [...counts.entries()]
+    .filter(([who]) => who !== '皆')
+    .sort((a, b) => b[1].own - a[1].own || a[0].localeCompare(b[0]));
+  if (!roles.length) {
+    $('rec-focus').innerHTML = `
+      <div class="rec-focus">
+        <div class="rec-focus-top"><span>对戏</span></div>
+        <div class="rec-role-title">这一课还没有角色标注</div>
+        <div class="rec-role-intro">先用听读或背诵模式练习吧。</div>
+      </div>`;
+    return;
+  }
+  const scenes = [...new Set(REC.lines.map(l => l.scene).filter(Boolean))];
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus">
+      <div class="rec-focus-top"><span>对戏 · 选角色</span><span>${REC.lines.length} 句</span></div>
+      <div class="rec-role-title">你想演谁？</div>
+      <div class="rec-role-intro">对方台词自动播放；轮到你时只给首字提示，说完点「接上了」。双方合说的句子自动播放，不计入你的台词数。</div>
+      <div class="rec-role-list">
+        ${roles.map(([who, c]) => `<button class="rec-role-pick" data-who="${esc(who)}">
+          <span class="rec-role-name">${esc(who)}</span>
+          <span class="rec-role-count">${c.own} 句台词${c.both ? ` · ${c.both} 句合说` : ''}</span>
+        </button>`).join('')}
+      </div>
+      ${scenes.length ? `<div class="rec-role-scenes">场景：${scenes.map(esc).join(' · ')}</div>` : ''}
+    </div>`;
+  $('rec-focus').querySelectorAll('.rec-role-pick').forEach(b => {
+    b.onclick = () => recRolePick(b.dataset.who);
+  });
+}
+function renderRoleLine() {
+  const l = recLine();
+  if (!l) return;
+  const kind = recRoleKind(l);
+  const sp = Array.isArray(l.speakers) ? l.speakers : [];
+  const showScene = l.scene && (REC_IDX === 0 || REC.lines[REC_IDX - 1].scene !== l.scene);
+  let who = '旁白';
+  if (kind === 'mine') who = '你 · ' + REC_ROLE;
+  else if (kind === 'both') who = '双方 · ' + sp.join(' / ');
+  else if (sp.length) who = '对方 · ' + sp.join(' / ');
+  const mine = kind === 'mine';
+  const full = !mine || REC_ROLE_REVEAL;
+  const actions = mine
+    ? `<button class="btn ghost" id="rec-role-audio">▶ 听原声</button>
+       <button class="btn ghost" id="rec-role-show">${REC_ROLE_REVEAL ? '收起答案' : '看答案'}</button>
+       <button class="btn accent wide" id="rec-role-done">接上了 →</button>`
+    : `<button class="btn ghost" id="rec-role-audio">▶ 听原声</button>
+       <button class="btn accent wide" id="rec-role-next">下一句 →</button>`;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-role">
+      <div class="rec-focus-top">
+        <span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 对戏</span>
+        <button class="rec-role-switch" id="rec-role-switch">你演 ${esc(REC_ROLE)} · 换角色</button>
+      </div>
+      ${showScene ? `<div class="rec-role-scene">${esc(l.scene)}</div>` : ''}
+      <div class="rec-role-who ${kind}">${esc(who)}${l.recited ? '<span class="rec-role-mark">已背 ✓</span>' : ''}</div>
+      <div class="rec-focus-jp" id="rec-role-jp">${full ? recJP(l) : recHidden(l)}</div>
+      <div class="rec-focus-zh${full ? '' : ' hide'}" id="rec-role-zh">${esc(l.translation)}</div>
+      <div class="rec-focus-actions">${actions}</div>
+      <div class="rec-role-progress">本场台词 ${REC_ROLE_DONE} / ${REC_ROLE_TOTAL}${REC_ROLE_HINTS ? ` · 看答案 ${REC_ROLE_HINTS} 次` : ''}</div>
+    </div>`;
+  $('rec-role-switch').onclick = recRoleSelectUI;
+  $('rec-role-audio').onclick = recRoleAudioToggle;
+  if (mine) {
+    $('rec-role-show').onclick = recRoleToggleAnswer;
+    $('rec-role-done').onclick = recRoleDone;
+  } else {
+    $('rec-role-next').onclick = () => recRoleNext();
+  }
+  syncRecPlayBtn();
+}
+function recRoleAutoPlay() {
+  if (!REC || REC_MODE !== 'role') return;
+  const l = recLine();
+  if (!l || recRoleKind(l) === 'mine') { syncRecPlayBtn(); return; }
+  recPlayAt(REC_IDX, false, true);
+}
+function recRoleAfterLine() {
+  if (!REC || REC_MODE !== 'role') return;
+  const l = recLine();
+  if (!l || recRoleKind(l) === 'mine') return;
+  clearTimeout(REC_ROLE_TIMER);
+  REC_ROLE_TIMER = setTimeout(() => {
+    if (!REC || REC_MODE !== 'role' || recRoleKind(recLine()) === 'mine') return;
+    recRoleNext();
+  }, 700);
+}
+function recRoleNext() {
+  clearTimeout(REC_ROLE_TIMER);
+  if (!REC || REC_MODE !== 'role') return;
+  if (REC_IDX >= REC.lines.length - 1) { renderRecRoleDone(); return; }
+  if (REC_AUDIO && !REC_AUDIO.paused) { try { REC_AUDIO.pause(); } catch {} }
+  REC_STOP_AT = null;
+  REC_IDX++;
+  recSavePos();
+  REC_ROLE_REVEAL = false;
+  renderRoleLine();
+  recRoleAutoPlay();
+}
+function recRoleAudioToggle() {
+  if (!REC || REC_MODE !== 'role') return;
+  if (REC_AUDIO && !REC_AUDIO.paused) { REC_AUDIO.pause(); return; }
+  recResumeLine();
+}
+function recRoleToggleAnswer() {
+  const l = recLine();
+  if (!l || REC_MODE !== 'role' || recRoleKind(l) !== 'mine') return;
+  REC_ROLE_REVEAL = !REC_ROLE_REVEAL;
+  $('rec-role-jp').innerHTML = REC_ROLE_REVEAL ? recJP(l) : recHidden(l);
+  $('rec-role-zh').classList.toggle('hide', !REC_ROLE_REVEAL);
+  $('rec-role-show').textContent = REC_ROLE_REVEAL ? '收起答案' : '看答案';
+  if (REC_ROLE_REVEAL && !REC_ROLE_HINTED.has(l.line_no)) {
+    REC_ROLE_HINTED.add(l.line_no);
+    REC_ROLE_HINTS++;
+    const pg = $('rec-focus').querySelector('.rec-role-progress');
+    if (pg) pg.textContent = `本场台词 ${REC_ROLE_DONE} / ${REC_ROLE_TOTAL} · 看答案 ${REC_ROLE_HINTS} 次`;
+  }
+}
+function recRoleDone() {
+  const l = recLine();
+  if (!l || REC_MODE !== 'role' || recRoleKind(l) !== 'mine') return;
+  REC_ROLE_DONE++;
+  if (!l.recited) {
+    l.recited = true;
+    recPost(l.line_no, 'recite', '');
+  }
+  recRoleNext();
+}
+function renderRecRoleDone() {
+  if (!REC) return;
+  recRoleStopAudio();
+  REC_ROLE_FINISHED = true;
+  REC_ROLE_ACTIVE = false;
+  const total = REC_ROLE_TOTAL;
+  const done = REC_ROLE_DONE;
+  const hints = REC_ROLE_HINTS;
+  const mixed = REC.lines.filter(l => recRoleKind(l) === 'both').length;
+  const perfect = total > 0 && done >= total && hints === 0;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-role-done">
+      <div class="rec-focus-top"><span>对戏 · ${esc(REC_ROLE)}</span><span>完成</span></div>
+      <div class="rec-role-curtain">本场杀青</div>
+      <div class="rec-role-stats">
+        <span>你的台词 <b>${done} / ${total}</b> 句</span>
+        <span>看答案 <b>${hints}</b> 次</span>
+        <span>双方合说 <b>${mixed}</b> 句</span>
+      </div>
+      ${perfect ? '<div class="rec-role-perfect">零提示通关，台词全接上了。</div>' : ''}
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-role-again">再对一场</button>
+        <button class="btn ghost" id="rec-role-change">换角色</button>
+        <button class="btn accent wide" id="rec-role-back">返回列表</button>
+      </div>
+    </div>`;
+  $('rec-role-again').onclick = recRoleBegin;
+  $('rec-role-change').onclick = recRoleSelectUI;
+  $('rec-role-back').onclick = () => goBack();
+}
+
+// ---- 消失术 ----
+// 每句从全文开始，每点一次「背对了」多遮住 1/3 的词，遮到只剩首字假名后过关。
+// 点遮住的词可偷看整词，但本句星星 -1（3 星起）。
+function recClozeResetLine() {
+  REC_CLOZE_STEP = 0;
+  REC_CLOZE_HIDDEN = new Set();
+  REC_CLOZE_PEEK = new Set();
+  REC_CLOZE_STARS = 3;
+  REC_CLOZE_WORDS = REC ? recWords(recLine()) : [];
+}
+function recClozeBegin() {
+  REC_CLOZE_TOTAL = 0;
+  REC_CLOZE_PERFECT = 0;
+  recClozeResetLine();
+  renderCloze();
+  recPlayAt(REC_IDX, false, true);
+}
+function recClozeWordHTML(t, hidden) {
+  if (hidden) {
+    return `<span class="rec-cloze-word" data-tok="${t.i}" title="点一下偷看">${esc(recFirstKana(t.t))}<span class="rec-cloze-dots">…</span></span>`;
+  }
+  const cls = REC_CLOZE_PEEK.has(t.i) ? ' class="rec-cloze-peek"' : '';
+  return `<span${cls}>${rubyHTML([t.t])}</span>`;
+}
+function recClozeHTML(l) {
+  const toks = recTokens(l);
+  if (!toks.length) return esc(l.text);
+  const words = new Set(REC_CLOZE_WORDS);
+  return toks.map((t, i) => {
+    if (!t[0] || recIsPunct(t[0])) return esc(t[0]);
+    const hidden = words.has(i) && REC_CLOZE_HIDDEN.has(i) && !REC_CLOZE_PEEK.has(i);
+    return recClozeWordHTML({ t, i }, hidden);
+  }).join('');
+}
+function recClozeStarsHTML() {
+  return `<span class="rec-cloze-stars">${[0, 1, 2].map(i => `<i class="${i < REC_CLOZE_STARS ? 'on' : ''}">★</i>`).join('')}</span>`;
+}
+function renderCloze() {
+  const l = recLine();
+  if (!l) return;
+  const stepTxt = REC_CLOZE_STEP === 0 ? '全文' : (REC_CLOZE_STEP >= 3 ? '只剩首字' : `已遮 ${REC_CLOZE_STEP} / 3`);
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-cloze">
+      <div class="rec-focus-top"><span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 消失术</span>${recClozeStarsHTML()}</div>
+      <div class="rec-focus-jp" id="rec-cloze-jp">${recClozeHTML(l)}</div>
+      <div class="rec-focus-zh">${esc(l.translation)}</div>
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-cloze-play">▶ 播放本句</button>
+        <button class="btn accent wide" id="rec-cloze-done">${REC_CLOZE_STEP >= 3 ? '背对了，下一句 →' : '背对了 →'}</button>
+      </div>
+      <div class="rec-drill-progress"><span>本句 ${stepTxt}</span><span>本课已得 ★ ${REC_CLOZE_TOTAL}</span></div>
+    </div>`;
+  $('rec-cloze-play').onclick = () => recPlayAt(REC_IDX, false);
+  $('rec-cloze-done').onclick = recClozeStep;
+  $('rec-cloze-jp').querySelectorAll('.rec-cloze-word').forEach(el => {
+    el.onclick = () => recClozePeek(+el.dataset.tok);
+  });
+}
+function recClozePeek(tokIdx) {
+  if (!REC || REC_MODE !== 'cloze') return;
+  if (!REC_CLOZE_HIDDEN.has(tokIdx) || REC_CLOZE_PEEK.has(tokIdx)) return;
+  REC_CLOZE_PEEK.add(tokIdx);
+  if (REC_CLOZE_STARS > 0) REC_CLOZE_STARS--;
+  renderCloze();
+}
+function recClozeStep() {
+  if (!REC || REC_MODE !== 'cloze') return;
+  const l = recLine();
+  if (!l) return;
+  if (REC_CLOZE_STEP < 3 && REC_CLOZE_WORDS.length) {
+    REC_CLOZE_STEP++;
+    const target = Math.ceil(REC_CLOZE_WORDS.length * REC_CLOZE_STEP / 3);
+    const rest = REC_CLOZE_WORDS.filter(i => !REC_CLOZE_HIDDEN.has(i));
+    for (let i = rest.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [rest[i], rest[j]] = [rest[j], rest[i]];
+    }
+    for (const i of rest) {
+      if (REC_CLOZE_HIDDEN.size >= target) break;
+      REC_CLOZE_HIDDEN.add(i);
+    }
+    renderCloze();
+    return;
+  }
+  REC_CLOZE_TOTAL += REC_CLOZE_STARS;
+  if (REC_CLOZE_STARS === 3) REC_CLOZE_PERFECT++;
+  if (!l.recited) {
+    l.recited = true;
+    recPost(l.line_no, 'recite', '');
+  }
+  if (REC_IDX >= REC.lines.length - 1) { renderClozeDone(); return; }
+  REC_IDX++;
+  recSavePos();
+  recClozeResetLine();
+  renderCloze();
+  recPlayAt(REC_IDX, false, true);
+}
+function renderClozeDone() {
+  if (!REC) return;
+  const max = REC.lines.length * 3;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-role-done">
+      <div class="rec-focus-top"><span>消失术</span><span>完成</span></div>
+      <div class="rec-role-curtain">课文消失完毕</div>
+      <div class="rec-role-stats">
+        <span>获得星星 <b>${REC_CLOZE_TOTAL} / ${max}</b></span>
+        <span>满星句子 <b>${REC_CLOZE_PERFECT}</b> 句</span>
+      </div>
+      ${REC_CLOZE_PERFECT === REC.lines.length ? '<div class="rec-role-perfect">每句都拿满星，记忆很稳。</div>' : ''}
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-cloze-again">再来一遍</button>
+        <button class="btn accent wide" id="rec-cloze-back">返回列表</button>
+      </div>
+    </div>`;
+  $('rec-cloze-again').onclick = () => {
+    REC_IDX = 0;
+    recSavePos();
+    recClozeBegin();
+  };
+  $('rec-cloze-back').onclick = () => goBack();
+}
+
+// ---- 中译日 ----
+// 只给中文；提示四级：首字 → 每词首字 → 关键词 → 全句。不自动播放音频，避免一上来听到答案。
+const REC_ZH_STOP = new Set(['は', 'が', 'を', 'に', 'で', 'と', 'も', 'の', 'か', 'ね', 'よ', 'な', 'です', 'ます', 'ました', 'ません', 'でした', 'では', 'じゃ', 'て', 'た', 'だ', 'から', 'まで', 'より', 'へ', 'や', 'ば', 'ので', 'のに', 'けど', 'でも', 'そして', 'それ', 'これ', 'あれ', 'どれ', 'ここ', 'そこ', 'あそこ', 'ええ', 'はい', 'いいえ']);
+function recZhKeywords(l) {
+  const toks = recTokens(l).filter(t => t[0] && !recIsPunct(t[0]));
+  if (!toks.length) return [];
+  const picks = toks.filter(t => /[\u4e00-\u9fff]/.test(t[0]) ||
+    (Array.from(t[0]).length >= 2 && !REC_ZH_STOP.has(t[0]))).map(t => t[0]);
+  const uniq = [...new Set(picks)].slice(0, 4);
+  return uniq.length ? uniq : [toks[0][0]];
+}
+function recZhHintHTML(l) {
+  if (REC_ZH_LVL === 0) return '<div class="rec-zh-hint-empty">先出声说一遍；卡住再点「提示」，一级一级来。</div>';
+  const toks = recTokens(l);
+  if (REC_ZH_LVL === 1) {
+    const t = toks.find(x => x[0] && !recIsPunct(x[0]));
+    return `<div class="rec-zh-hint-label">首字</div><div class="rec-zh-hint-lvl">${esc(recFirstChar(t))}…</div>`;
+  }
+  if (REC_ZH_LVL === 2) {
+    const chars = recWords(l).map(i => recFirstChar(toks[i]));
+    return `<div class="rec-zh-hint-label">每词首字</div><div class="rec-zh-hint-lvl">${chars.map(esc).join(' ')}</div>`;
+  }
+  if (REC_ZH_LVL === 3) {
+    const kw = recZhKeywords(l);
+    return `<div class="rec-zh-hint-label">关键词</div><div class="rec-zh-kw">${kw.map(k => `<span>${esc(k)}</span>`).join('')}</div>`;
+  }
+  return `<div class="rec-zh-hint-label">全句</div><div class="rec-focus-jp rec-zh-answer">${recJP(l)}</div>`;
+}
+function recZhBegin() {
+  REC_ZH_LVL = 0;
+  REC_ZH_USED_THIS = false;
+  REC_ZH_CLEAN = 0;
+  REC_ZH_USED = 0;
+  renderZh2Jp();
+}
+function renderZh2Jp() {
+  const l = recLine();
+  if (!l) return;
+  const lvl = REC_ZH_LVL;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-zh">
+      <div class="rec-focus-top"><span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 中译日</span><span>${REC_ZH_USED_THIS ? '本句已用提示' : '本句零提示'}</span></div>
+      <div class="rec-zh-prompt">${esc(l.translation)}</div>
+      <div class="rec-zh-sub">把这句话用日语说出来。</div>
+      <div class="rec-zh-hintbox">${recZhHintHTML(l)}</div>
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-zh-hint" ${lvl >= 4 ? 'disabled' : ''}>${lvl >= 4 ? '提示已用完' : `提示 ${lvl + 1}/4`}</button>
+        <button class="btn ghost" id="rec-zh-show">${lvl >= 4 ? '▶ 听原声' : '看答案'}</button>
+        <button class="btn accent wide" id="rec-zh-next">下一句 →</button>
+      </div>
+      <div class="rec-drill-progress"><span>零提示 ${REC_ZH_CLEAN} 句</span><span>用过提示 ${REC_ZH_USED} 句</span></div>
+    </div>`;
+  $('rec-zh-hint').onclick = recZhHint;
+  $('rec-zh-show').onclick = recZhShow;
+  $('rec-zh-next').onclick = recZhNext;
+}
+function recZhHint() {
+  if (!REC || REC_MODE !== 'zh2jp' || REC_ZH_LVL >= 4) return;
+  REC_ZH_LVL++;
+  REC_ZH_USED_THIS = true;
+  renderZh2Jp();
+}
+function recZhShow() {
+  if (!REC || REC_MODE !== 'zh2jp') return;
+  if (REC_ZH_LVL < 4) {
+    REC_ZH_LVL = 4;
+    REC_ZH_USED_THIS = true;
+    renderZh2Jp();
+    return;
+  }
+  recPlayAt(REC_IDX, false);
+}
+function recZhNext() {
+  if (!REC || REC_MODE !== 'zh2jp') return;
+  const l = recLine();
+  if (!l) return;
+  if (REC_ZH_USED_THIS) REC_ZH_USED++; else REC_ZH_CLEAN++;
+  if (!l.recited) {
+    l.recited = true;
+    recPost(l.line_no, 'recite', '');
+  }
+  if (REC_IDX >= REC.lines.length - 1) { renderZh2JpDone(); return; }
+  REC_IDX++;
+  recSavePos();
+  REC_ZH_LVL = 0;
+  REC_ZH_USED_THIS = false;
+  renderZh2Jp();
+}
+function renderZh2JpDone() {
+  if (!REC) return;
+  const total = REC.lines.length;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-role-done">
+      <div class="rec-focus-top"><span>中译日</span><span>完成</span></div>
+      <div class="rec-role-curtain">说完了</div>
+      <div class="rec-role-stats">
+        <span>完成 <b>${total}</b> 句</span>
+        <span>零提示 <b>${REC_ZH_CLEAN}</b> 句</span>
+        <span>用过提示 <b>${REC_ZH_USED}</b> 句</span>
+      </div>
+      ${REC_ZH_USED === 0 ? '<div class="rec-role-perfect">全程零提示，从中文直接说出日语。</div>' : ''}
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-zh-again">再来一遍</button>
+        <button class="btn accent wide" id="rec-zh-back">返回列表</button>
+      </div>
+    </div>`;
+  $('rec-zh-again').onclick = () => {
+    REC_IDX = 0;
+    recSavePos();
+    recZhBegin();
+  };
+  $('rec-zh-back').onclick = () => goBack();
+}
+
+// ---- 通关赛 ----
+// 一课一局：零提示背完加连击；看过答案的句子结尾进最多 3 句加时赛。
+function recRunSavedBest() {
+  return REC ? (parseInt(localStorage.getItem('ts_rec_run_best_' + REC.lesson.id) || '0', 10) || 0) : 0;
+}
+function recRunBegin() {
+  REC_RUN_PREV_BEST = recRunSavedBest();
+  REC_RUN_COMBO = 0;
+  REC_RUN_BEST = 0;
+  REC_RUN_CLEAN = 0;
+  REC_RUN_USED = 0;
+  REC_RUN_FLAGGED = [];
+  REC_RUN_OT = [];
+  REC_RUN_OT_POS = 0;
+  REC_RUN_OT_HINTS = 0;
+  REC_RUN_PHASE = 'main';
+  REC_RUN_REVEAL = false;
+  REC_RUN_SEEN = false;
+  REC_IDX = 0;
+  recSavePos();
+  renderRunLine();
+  recPlayAt(REC_IDX, false, true);
+}
+function recRunBumpCombo() {
+  REC_RUN_COMBO++;
+  if (REC_RUN_COMBO > REC_RUN_BEST) REC_RUN_BEST = REC_RUN_COMBO;
+  const key = 'ts_rec_run_best_' + REC.lesson.id;
+  if (REC_RUN_BEST > (parseInt(localStorage.getItem(key) || '0', 10) || 0)) {
+    localStorage.setItem(key, String(REC_RUN_BEST));
+  }
+}
+function renderRunLine() {
+  const l = recLine();
+  if (!l) return;
+  const ot = REC_RUN_PHASE === 'overtime';
+  const pos = ot ? REC_RUN_OT_POS : REC_IDX;
+  const total = ot ? REC_RUN_OT.length : REC.lines.length;
+  const jp = REC_RUN_REVEAL ? recJP(l) : recHidden(l);
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-run">
+      <div class="rec-focus-top">
+        <span>第 ${pos + 1} / ${total} 句 · ${ot ? '加时赛' : '通关赛'}</span>
+        <span class="rec-run-combo${REC_RUN_COMBO ? ' on' : ''}">${ot ? '回炉重背' : '连击 ×' + REC_RUN_COMBO}</span>
+      </div>
+      ${ot ? '<div class="rec-role-scene">这一句刚才看过答案，再来一次。</div>' : ''}
+      <div class="rec-focus-jp" id="rec-run-jp">${jp}</div>
+      <div class="rec-focus-zh${REC_RUN_REVEAL ? '' : ' hide'}" id="rec-run-zh">${esc(l.translation)}</div>
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-run-play">▶ 播放本句</button>
+        <button class="btn ghost" id="rec-run-show">${REC_RUN_REVEAL ? '收起答案' : '看答案'}</button>
+        <button class="btn accent wide" id="rec-run-done">${ot ? '过关 →' : '会背了'}</button>
+      </div>
+      <div class="rec-drill-progress">
+        ${ot
+          ? `<span>加时赛 ${REC_RUN_OT_POS + 1} / ${REC_RUN_OT.length} 句</span><span>又看答案 ${REC_RUN_OT_HINTS} 句</span>`
+          : `<span>零提示 ${REC_RUN_CLEAN} 句 · 看答案 ${REC_RUN_USED} 句</span><span>最高连击 ${REC_RUN_BEST}</span>`}
+      </div>
+    </div>`;
+  $('rec-run-play').onclick = () => recPlayAt(REC_IDX, false);
+  $('rec-run-show').onclick = recRunToggleAnswer;
+  $('rec-run-done').onclick = ot ? recRunOtDone : recRunPass;
+}
+function recRunToggleAnswer() {
+  if (!REC || REC_MODE !== 'run') return;
+  if (REC_RUN_REVEAL) {
+    REC_RUN_REVEAL = false;
+  } else {
+    REC_RUN_REVEAL = true;
+    REC_RUN_SEEN = true;
+    if (REC_RUN_PHASE === 'main' && REC_RUN_COMBO) REC_RUN_COMBO = 0;
+  }
+  renderRunLine();
+}
+function recRunPass() {
+  if (!REC || REC_MODE !== 'run' || REC_RUN_PHASE !== 'main') return;
+  const l = recLine();
+  if (!l) return;
+  if (REC_RUN_SEEN) {
+    REC_RUN_USED++;
+    if (!REC_RUN_FLAGGED.includes(REC_IDX)) REC_RUN_FLAGGED.push(REC_IDX);
+  } else {
+    REC_RUN_CLEAN++;
+    recRunBumpCombo();
+  }
+  if (!l.recited) {
+    l.recited = true;
+    recPost(l.line_no, 'recite', '');
+  }
+  if (REC_IDX >= REC.lines.length - 1) { recRunFinishMain(); return; }
+  REC_IDX++;
+  recSavePos();
+  REC_RUN_REVEAL = false;
+  REC_RUN_SEEN = false;
+  renderRunLine();
+  recPlayAt(REC_IDX, false, true);
+}
+function recRunFinishMain() {
+  if (!REC) return;
+  if (REC_RUN_FLAGGED.length) {
+    REC_RUN_OT = REC_RUN_FLAGGED.slice(0, 3);
+    REC_RUN_OT_POS = 0;
+    REC_RUN_OT_HINTS = 0;
+    REC_RUN_PHASE = 'overtime';
+    REC_RUN_REVEAL = false;
+    REC_RUN_SEEN = false;
+    REC_IDX = REC_RUN_OT[0];
+    recSavePos();
+    renderRunLine();
+    recPlayAt(REC_IDX, false, true);
+    return;
+  }
+  renderRunDone();
+}
+function recRunOtDone() {
+  if (!REC || REC_MODE !== 'run' || REC_RUN_PHASE !== 'overtime') return;
+  if (REC_RUN_SEEN) REC_RUN_OT_HINTS++;
+  if (REC_RUN_OT_POS >= REC_RUN_OT.length - 1) { renderRunDone(); return; }
+  REC_RUN_OT_POS++;
+  REC_IDX = REC_RUN_OT[REC_RUN_OT_POS];
+  recSavePos();
+  REC_RUN_REVEAL = false;
+  REC_RUN_SEEN = false;
+  renderRunLine();
+  recPlayAt(REC_IDX, false, true);
+}
+function renderRunDone() {
+  if (!REC) return;
+  REC_RUN_PHASE = 'done';
+  const total = REC.lines.length;
+  const record = REC_RUN_BEST > REC_RUN_PREV_BEST;
+  $('rec-focus').innerHTML = `
+    <div class="rec-focus rec-role-done">
+      <div class="rec-focus-top"><span>通关赛</span><span>完成</span></div>
+      <div class="rec-role-curtain">本课通关</div>
+      <div class="rec-role-stats">
+        <span>最高连击 <b>${REC_RUN_BEST}</b>${record ? ' · 新纪录' : ''}</span>
+        <span>零提示 <b>${REC_RUN_CLEAN} / ${total}</b> 句 · 看答案 <b>${REC_RUN_USED}</b> 句</span>
+        ${REC_RUN_OT.length ? `<span>加时赛 <b>${REC_RUN_OT.length}</b> 句${REC_RUN_OT_HINTS ? ` · 又看答案 ${REC_RUN_OT_HINTS} 句` : ''}</span>` : ''}
+      </div>
+      ${REC_RUN_USED === 0 ? '<div class="rec-role-perfect">零提示通关，一课一次过。</div>' : ''}
+      <div class="rec-focus-actions">
+        <button class="btn ghost" id="rec-run-again">再来一局</button>
+        <button class="btn accent wide" id="rec-run-back">返回列表</button>
+      </div>
+    </div>`;
+  $('rec-run-again').onclick = recRunBegin;
+  $('rec-run-back').onclick = () => goBack();
 }
 
 // ============ 本课/本单元播客（v13：思思+xudong 单场双语） ============

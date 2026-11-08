@@ -78,6 +78,8 @@ type lineItem struct {
 	Text        string          `json:"text"`
 	Translation string          `json:"translation"`
 	RubyTokens  json.RawMessage `json:"ruby_tokens"`
+	Speakers    []string        `json:"speakers"`
+	Scene       string          `json:"scene"`
 	Recited     bool            `json:"recited"`
 	DictOK      bool            `json:"dict_ok"`
 	DictReading bool            `json:"dict_reading"`
@@ -96,6 +98,7 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.pool.Query(r.Context(), `
 		SELECT rl.id, rl.line_no, rl.start_ms, rl.end_ms, rl.text, rl.translation, rl.ruby_tokens,
+		       rl.speakers, rl.scene,
 		       (p.recited_at IS NOT NULL), (p.dict_ok_at IS NOT NULL), (p.dict_reading_at IS NOT NULL)
 		FROM recitation_line rl
 		LEFT JOIN recitation_progress p
@@ -110,14 +113,18 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 	lines := []lineItem{}
 	for rows.Next() {
 		var it lineItem
-		var ruby []byte
+		var ruby, speakers []byte
 		if err := rows.Scan(&it.ID, &it.LineNo, &it.StartMS, &it.EndMS, &it.Text,
-			&it.Translation, &ruby, &it.Recited, &it.DictOK, &it.DictReading); err != nil {
+			&it.Translation, &ruby, &speakers, &it.Scene, &it.Recited, &it.DictOK, &it.DictReading); err != nil {
 			httpx.Err(w, httpx.Internal(err.Error()))
 			return
 		}
 		if len(ruby) > 0 {
 			it.RubyTokens = json.RawMessage(ruby)
+		}
+		it.Speakers = []string{}
+		if len(speakers) > 0 {
+			_ = json.Unmarshal(speakers, &it.Speakers)
 		}
 		lines = append(lines, it)
 	}

@@ -1068,7 +1068,10 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 
 .rec-head { padding-bottom: 14px; }
 .rec-head h2 { margin-bottom: 2px; }
-.rec-modes { margin-top: 12px; margin-bottom: 8px; }
+.rec-modes {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
+  margin-top: 12px; margin-bottom: 8px;
+}
 #rec-mode-desc { min-height: 18px; }
 
 #rec-lines { display: flex; flex-direction: column; gap: 8px; }
@@ -1123,6 +1126,106 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 }
 .rec-focus-actions .btn.wide { flex: 1.4 1 0; }
 .rec-focus-actions .btn.auto { flex: 0 0 auto; padding-left: 18px; padding-right: 18px; }
+
+/* 对戏 */
+.rec-role-switch {
+  flex: none; padding: 2px 0; border: 0; background: transparent;
+  color: var(--ink3); font-family: inherit; font-size: 11px; cursor: pointer;
+}
+.rec-role-switch:hover { color: var(--accent); }
+.rec-role-title { margin-top: 18px; font-family: var(--serif); font-size: 22px; font-weight: 700; letter-spacing: .04em; }
+.rec-role-intro { margin-top: 8px; font-size: 12.5px; color: var(--ink2); line-height: 1.8; }
+.rec-role-list { display: flex; flex-direction: column; gap: 9px; margin-top: 16px; }
+.rec-role-pick {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  width: 100%; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;
+  transition: border-color .15s, background .15s, transform .08s;
+}
+.rec-role-pick:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.rec-role-pick:active { transform: translateY(1px); }
+.rec-role-name { font-size: 15.5px; font-weight: 700; }
+.rec-role-count { flex: none; font-size: 11px; color: var(--ink3); }
+.rec-role-scenes {
+  margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line);
+  font-size: 11.5px; color: var(--ink3); line-height: 1.7;
+}
+.rec-role-scene {
+  margin-top: 14px; padding: 9px 12px; border-radius: 10px;
+  background: var(--surface-2); border-left: 3px solid var(--accent);
+  font-size: 12px; color: var(--ink2); line-height: 1.6;
+}
+.rec-role-who { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 11px; letter-spacing: .08em; color: var(--ink3); }
+.rec-role-who.mine { color: var(--accent); font-weight: 700; }
+.rec-role-who.both { color: var(--jade); font-weight: 700; }
+.rec-role-mark { color: var(--jade); font-size: 10px; letter-spacing: 0; }
+.rec-role-progress {
+  margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--line);
+  font-size: 11px; color: var(--ink3); text-align: right; font-variant-numeric: tabular-nums;
+}
+.rec-role-curtain {
+  margin: 26px 0 18px; text-align: center;
+  font-family: var(--serif); font-size: 28px; font-weight: 700; letter-spacing: .12em; color: var(--ink);
+}
+.rec-role-stats { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; font-size: 13px; color: var(--ink2); line-height: 1.6; }
+.rec-role-stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.rec-role-perfect {
+  margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+  background: var(--jade-soft); color: var(--jade); font-size: 12.5px; text-align: center;
+}
+
+/* 消失术 */
+.rec-cloze-stars { display: inline-flex; gap: 2px; font-size: 12px; letter-spacing: 0; }
+.rec-cloze-stars i { font-style: normal; color: var(--line-strong); }
+.rec-cloze-stars i.on { color: var(--gold); }
+.rec-cloze-word {
+  display: inline-block; min-width: 1.5em; padding: 0 2px;
+  color: var(--accent); border-bottom: 1.5px dotted var(--accent);
+  cursor: pointer; transition: color .15s, border-color .15s;
+}
+.rec-cloze-word:active { color: var(--gold); border-color: var(--gold); }
+.rec-cloze-dots { color: var(--ink3); letter-spacing: .08em; }
+.rec-cloze-peek { color: var(--gold); }
+
+/* 中译日 */
+.rec-zh-prompt {
+  margin-top: 18px; font-size: 21px; font-weight: 650;
+  line-height: 1.75; letter-spacing: .01em; color: var(--ink);
+}
+.rec-zh-sub { margin-top: 6px; font-size: 11.5px; color: var(--ink3); }
+.rec-zh-hintbox {
+  margin-top: 16px; padding: 13px 14px; min-height: 62px;
+  background: var(--surface-2); border: 1px dashed var(--line-strong); border-radius: 12px;
+}
+.rec-zh-hint-empty { font-size: 12px; color: var(--ink3); line-height: 1.7; }
+.rec-zh-hint-label {
+  margin-bottom: 6px; font-size: 10.5px; letter-spacing: .1em;
+  color: var(--ink3); font-weight: 700;
+}
+.rec-zh-hint-lvl {
+  font-family: var(--serif); font-size: 19px; line-height: 1.8;
+  letter-spacing: .08em; color: var(--ink);
+}
+.rec-zh-kw { display: flex; flex-wrap: wrap; gap: 6px; }
+.rec-zh-kw span {
+  padding: 4px 9px; border-radius: 8px;
+  background: var(--accent-soft); color: var(--accent);
+  font-family: var(--serif); font-size: 14px; line-height: 1.4;
+}
+.rec-zh-hintbox .rec-zh-answer {
+  margin-top: 0; min-height: 0; font-size: 20px; line-height: 1.9;
+}
+
+/* 练习模式底部进度条 */
+.rec-drill-progress {
+  display: flex; justify-content: space-between; gap: 10px;
+  margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--line);
+  font-size: 11px; color: var(--ink3); font-variant-numeric: tabular-nums;
+}
+
+/* 通关赛 */
+.rec-run-combo { flex: none; font-size: 11px; color: var(--ink3); letter-spacing: 0; }
+.rec-run-combo.on { color: var(--accent); font-weight: 700; }
 .rec-dict { margin-top: 16px; }
 .rec-dict input {
   width: 100%; padding: 13px 14px;
