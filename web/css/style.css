@@ -1241,6 +1241,7 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 .rec-diff { margin-top: 8px; font-family: var(--serif); font-size: 15px; line-height: 1.8; word-break: break-all; }
 .rec-diff .hit { color: var(--jade); }
 .rec-diff .miss { color: var(--danger); text-decoration: underline wavy; text-underline-offset: 3px; }
+.rec-diff-tip { margin-top: 3px; font-family: var(--sans); font-size: 12px; color: var(--danger); }
 .rec-answer {
   margin-top: 12px; padding: 12px 14px;
   background: var(--surface-2); border: 1px dashed var(--line-strong); border-radius: 12px;

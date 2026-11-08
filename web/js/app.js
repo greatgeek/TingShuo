@@ -3198,14 +3198,49 @@ function recGrade(l, input) {
   }
   return { pass: false };
 }
+function recDiffOps(a, b) {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const ops = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push({ t: 'match', bi: j }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: 'del', ai: i }); i++; }
+    else { ops.push({ t: 'ins', bi: j }); j++; }
+  }
+  while (i < n) ops.push({ t: 'del', ai: i++ });
+  while (j < m) ops.push({ t: 'ins', bi: j++ });
+  return ops;
+}
 function recDiffHTML(input, l) {
-  const ans = Array.from(recNorm(l.text));
-  const raw = Array.from(String(input).replace(/[\s\u3000]+/g, ''));
-  const chars = raw.map((c, i) => {
-    const cn = recNorm(c);
-    return `<span class="${cn && cn === ans[i] ? 'hit' : 'miss'}">${esc(c)}</span>`;
-  }).join('');
-  return `<div class="rec-diff">你的输入：${chars || '（空）'}</div>`;
+  const ans = Array.from(l.text).map(c => ({ c, n: recNorm(c) })).filter(x => x.n);
+  const raw = Array.from(String(input).replace(/[\s\u3000]+/g, '')).map(c => ({ c, n: recNorm(c) })).filter(x => x.n);
+  const ops = recDiffOps(ans.map(x => x.n), raw.map(x => x.n));
+  const state = new Array(raw.length).fill('miss');
+  const missing = [], extra = [];
+  let runDel = [], runIns = [];
+  const flushRun = () => {
+    const pairs = Math.min(runDel.length, runIns.length);
+    missing.push(...runDel.slice(pairs));
+    extra.push(...runIns.slice(pairs));
+    runDel = []; runIns = [];
+  };
+  ops.forEach(op => {
+    if (op.t === 'match') { flushRun(); state[op.bi] = 'hit'; }
+    else if (op.t === 'del') runDel.push(ans[op.ai].c);
+    else runIns.push(raw[op.bi].c);
+  });
+  flushRun();
+  const chars = raw.map((x, i) => `<span class="${state[i]}">${esc(x.c)}</span>`).join('');
+  const tip = missing.length
+    ? `少了「${esc(missing.slice(0, 8).join(''))}」`
+    : (extra.length ? `多了「${esc(extra.slice(0, 8).join(''))}」` : '');
+  return `<div class="rec-diff">你的输入：${chars || '（空）'}${tip ? `<div class="rec-diff-tip">${tip}</div>` : ''}</div>`;
 }
 function recAnswerHTML(l, withNext) {
   const next = withNext
