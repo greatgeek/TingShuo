@@ -3623,7 +3623,6 @@ function renderDict() {
   $('rec-focus').innerHTML = `
     <div class="rec-focus">
       <div class="rec-focus-top"><span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 听写</span><span id="rec-dict-mark">${recMark(l)}</span></div>
-      <div class="rec-focus-zh">${esc(l.translation)}</div>
       <div class="rec-focus-actions">
         <button class="btn ghost auto" id="rec-f-play">▶ 播放本句</button>
       </div>
