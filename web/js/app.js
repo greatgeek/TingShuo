@@ -3415,5 +3415,8 @@ $('pod-list').addEventListener('scroll', () => {
 }, { passive: true });
 $('cfg-save').onclick = saveNbCfg;
 $('cfg-cancel').onclick = () => { $('nb-cfg-mask').style.display = 'none'; };
+$('nb-cfg-mask').addEventListener('click', e => {
+  if (e.target === $('nb-cfg-mask')) $('nb-cfg-mask').style.display = 'none';
+});
 $('ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 if (TOKEN) afterLogin(); else { $('userchip').textContent = '未登录'; go('login'); }
