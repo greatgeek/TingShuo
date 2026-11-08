@@ -3861,6 +3861,7 @@ function renderDict() {
     <div class="rec-focus">
       <div class="rec-focus-top">
         <span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 听写</span>
+        <span class="rec-dict-zh" id="rec-dict-zh" role="button" tabindex="0" aria-label="点一下显示中文译文"><span class="rec-dict-zh-label">中文</span><span class="rec-dict-zh-text">${esc(l.translation)}</span></span>
         <span class="rec-dict-tools">
           <span id="rec-dict-mark">${recMark(l)}</span>
           <button class="btn ghost rec-top-btn" id="rec-f-play">▶ 播放本句</button>
@@ -3876,6 +3877,15 @@ function renderDict() {
     </div>`;
   $('rec-f-play').onclick = () => recPlayAt(REC_IDX, false);
   $('rec-check').onclick = recCheckDict;
+  const zh = $('rec-dict-zh');
+  const toggleZh = () => {
+    zh.classList.toggle('show');
+    zh.closest('.rec-focus-top').classList.toggle('zh-open', zh.classList.contains('show'));
+  };
+  zh.onclick = toggleZh;
+  zh.onkeydown = e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleZh(); }
+  };
   $('rec-input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); recCheckDict(); }
   });
@@ -3920,6 +3930,7 @@ function recDictPass(l, kind, inp) {
   fb.textContent = kind === 'ok' ? '正确！' : '正确（读音一致）';
   $('rec-diff').innerHTML = '';
   $('rec-answer').innerHTML = recAnswerHTML(l, true);
+  $('rec-dict-zh')?.remove();
   $('rec-dict-mark').textContent = recMark(l);
   $('rec-f-next').onclick = () => { clearTimeout(REC_DICT_TIMER); recFocusAdvance(); };
   REC_DICT_TIMER = setTimeout(recFocusAdvance, 2400);
@@ -3934,6 +3945,7 @@ function recDictFail(l, val, inp) {
   $('rec-diff').innerHTML = recDiffHTML(val, l);
   if (REC_DICT_TRIES >= 2 && !$('rec-answer').innerHTML) {
     $('rec-answer').innerHTML = recAnswerHTML(l, true);
+    $('rec-dict-zh')?.remove();
     $('rec-f-next').onclick = () => recFocusAdvance();
   }
   inp.select();
