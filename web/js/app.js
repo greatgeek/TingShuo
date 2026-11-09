@@ -3015,7 +3015,7 @@ function openNbCfg() {
   $('nb-cfg-mask').style.display = 'flex';
 }
 function saveNbCfg() {
-  const c = v => Math.min(9, Math.max(1, parseInt(v, 10) || 1));
+  const c = v => Math.min(99, Math.max(1, parseInt(v, 10) || 1));
   const g = v => Math.min(10, Math.max(0, parseInt(v, 10) || 0));
   const prev = PL_CFG;
   PL_CFG = {
