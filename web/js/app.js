@@ -2942,6 +2942,29 @@ function nbPlayJumpToIndex(idx) {
   nbPlayStep();
 }
 
+// 方向键跳转：只在「单词读音 / 例句原声」之间走，跳过中文含义/句译与同一项的重复遍数
+function nbPlayUnits() {
+  const units = [];
+  PL.items.forEach((it, i) => {
+    if (it.kind !== 'word' && it.kind !== 'sent') return;
+    const p = units[units.length - 1];
+    if (p && p.kind === it.kind && p.w === it.w && p.si === it.si) return;
+    units.push({ kind: it.kind, w: it.w, si: it.si, i });
+  });
+  return units;
+}
+
+function nbPlaySkip(step) {
+  if (!PL) return false;
+  const units = nbPlayUnits();
+  let u = -1;
+  for (let k = 0; k < units.length; k++) if (units[k].i <= PL.i) u = k;
+  const t = units[u + step];
+  if (!t) return false;
+  nbPlayJumpToIndex(t.i);
+  return true;
+}
+
 // 暂停/继续：同一 Audio 元素 pause/play，续播即从暂停处继续
 function nbPlayPause() {
   if (!PL) return;
@@ -2983,16 +3006,18 @@ async function nbPlayStep(autoplay = true) {
   if (!PL) return;
   const it = PL.items[PL.i];
   nbPlayHighlight(it);
+  const pl = PL, idx = PL.i; // 连续跳转时丢弃过期请求，避免旧音频盖掉新选的项
   try {
     let url;
     if (it.kind === 'word') url = await wordAudioBlobURL(it.w.word_id);
     else if (it.kind === 'wmean') url = await sayBlobURL(it.say, ZH_VOICE);
     else if (it.kind === 'smean') url = await sayBlobURL(it.s.translation, ZH_VOICE);
     else url = await sayBlobURL(it.s.text);
-    if (!PL) return;
+    if (PL !== pl || PL.i !== idx) return;
     PL.audio.src = url;
     if (autoplay) await playUnlock(PL.audio);
   } catch (e) {
+    if (PL !== pl || PL.i !== idx) return;
     toast('获取音频失败，跳过：' + e.message);
     nbPlayNext();
   }
@@ -4947,6 +4972,17 @@ document.addEventListener('toggle', (e) => {
 }, true);
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
+// 全播中 ←/↑ 上一个、→/↓ 下一个（只在生词库列表页、非输入框里生效）
+document.addEventListener('keydown', e => {
+  if (!PL || CUR_SCREEN !== 'notebook') return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
+  const step = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1
+    : (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 0;
+  if (!step) return;
+  if (nbPlaySkip(step)) e.preventDefault();
+});
 $('pod-btn').onclick = () => podOpen('lesson', LESSON && LESSON.lesson && LESSON.lesson.id, null);
 $('nb-pod-btn').onclick = (e) => {
   e.stopPropagation(); // 横条点击会开选择面板，需阻断
