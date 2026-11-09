@@ -4972,12 +4972,20 @@ document.addEventListener('toggle', (e) => {
 }, true);
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-pause').onclick = nbPlayPause;
-// 全播中 ←/↑ 上一个、→/↓ 下一个（只在生词库列表页、非输入框里生效）
+// 全播中 ←/↑ 上一个、→/↓ 下一个、空格暂停/继续（只在生词库列表页、非输入框里生效）
 document.addEventListener('keydown', e => {
   if (!PL || CUR_SCREEN !== 'notebook') return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (['picker-mask', 'nb-cfg-mask'].some(id => $(id) && getComputedStyle($(id)).display !== 'none')) return;
   const t = e.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
+  if (e.key === ' ' || e.key === 'Spacebar') {
+    if (e.repeat) return;
+    if (t && t.closest && t.closest('button, a, [role="button"]')) return; // 焦点在按钮上时留给原生空格激活
+    nbPlayPause();
+    e.preventDefault();
+    return;
+  }
   const step = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1
     : (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 0;
   if (!step) return;
