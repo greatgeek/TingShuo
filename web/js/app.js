@@ -1084,10 +1084,20 @@ function largestJSON(s) {
 }
 
 // ============ 学习屏 ============
-function rubyHTML(tokens) {
+// force=true 时单个词也分词（消失术等逐词渲染）；'plain' 用于词条本身不分词
+function rubyHTML(tokens, force) {
   if (!Array.isArray(tokens) || !tokens.length) return '';
+  const seg = force === 'plain' ? false
+    : (force || tokens.filter(([w]) => w && !recIsPunct(w)).length >= 2);
+  let first = true;
   return tokens
-    .map(([w, r]) => (r && /[一-龯]/.test(w)) ? `<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>` : esc(w))
+    .map(([w, r]) => {
+      const inner = (r && /[一-龯]/.test(w)) ? `<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>` : esc(w);
+      if (!seg || !w || recIsPunct(w)) return inner;
+      const cls = first ? 'wseg wseg-first' : 'wseg';
+      first = false;
+      return `<span class="${cls}">${inner}</span>`;
+    })
     .join('');
 }
 
@@ -2423,7 +2433,7 @@ function renderNbWords() {
     div.className = 'sent wordrow';
     div.innerHTML = `
       <span class="spk">${i + 1}</span>
-      <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens) : `<ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>`}</div>
+      <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : `<ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>`}</div>
       <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>
       <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开例句">▾</button>`;
@@ -4254,8 +4264,8 @@ function recClozeWordHTML(t, hidden) {
   if (hidden) {
     return `<span class="rec-cloze-word" data-tok="${t.i}" title="点一下偷看">${esc(recFirstKana(t.t))}<span class="rec-cloze-dots">…</span></span>`;
   }
-  const cls = REC_CLOZE_PEEK.has(t.i) ? ' class="rec-cloze-peek"' : '';
-  return `<span${cls}>${rubyHTML([t.t])}</span>`;
+  const cls = REC_CLOZE_PEEK.has(t.i) ? 'rec-cloze-word rec-cloze-peek' : 'rec-cloze-word';
+  return `<span class="${cls}">${rubyHTML([t.t], true)}</span>`;
 }
 function recClozeHTML(l) {
   const toks = recTokens(l);

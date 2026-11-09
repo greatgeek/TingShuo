@@ -447,6 +447,9 @@ ruby rt {
   font-family: var(--sans); letter-spacing: 0;
 }
 body.no-rt rt { display: none; }
+/* 分词辅助：词间留空隙 + 淡下划线，便于断句与记忆 */
+.wseg { border-bottom: 1px solid rgba(36, 31, 25, .14); padding-bottom: 1px; }
+.wseg:not(.wseg-first) { margin-left: .14em; }
 
 .wordrow .txt ruby rt { font-size: 10.5px; }
 /* 生词行可换行：展开的用法面板独占整行，避免把词义/首见信息挤成竖排（用户红框） */
@@ -1226,12 +1229,14 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 .rec-cloze-stars { display: inline-flex; gap: 2px; font-size: 12px; letter-spacing: 0; }
 .rec-cloze-stars i { font-style: normal; color: var(--line-strong); }
 .rec-cloze-stars i.on { color: var(--gold); }
-.rec-cloze-word {
+.rec-cloze-word[data-tok] {
   display: inline-block; min-width: 1.5em; padding: 0 2px;
   color: var(--accent); border-bottom: 1.5px dotted var(--accent);
   cursor: pointer; transition: color .15s, border-color .15s;
 }
-.rec-cloze-word:active { color: var(--gold); border-color: var(--gold); }
+.rec-cloze-word[data-tok]:active { color: var(--gold); border-color: var(--gold); }
+.rec-cloze-jp .rec-cloze-word { margin-left: .14em; }
+.rec-cloze-jp .rec-cloze-word:first-child { margin-left: 0; }
 .rec-cloze-dots { color: var(--ink3); letter-spacing: .08em; }
 .rec-cloze-peek { color: var(--gold); }
 
