@@ -4908,6 +4908,13 @@ $('picker-cancel-btn').onclick = closePicker;
 $('ai-send').onclick = aiSend;
 $('nb-strip').onclick = openNbPicker;
 $('nb-play-all').onclick = (e) => { e.stopPropagation(); nbPlayStart(); };
+$('nb-kbd-btn').onclick = (e) => {
+  e.stopPropagation(); // 横条点击会开选择面板，需阻断
+  $('nb-kbd-btn').classList.toggle('tip-open');
+};
+document.addEventListener('click', e => {
+  if (!e.target.closest || !e.target.closest('#nb-kbd-btn')) $('nb-kbd-btn').classList.remove('tip-open');
+});
 $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-copy-btn').onclick = (e) => { e.stopPropagation(); nbCopyAll(); };
 $('nb-export-btn').onclick = (e) => { e.stopPropagation(); nbExportAll(); };
