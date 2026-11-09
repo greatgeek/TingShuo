@@ -450,6 +450,8 @@ body.no-rt rt { display: none; }
 /* 分词辅助：词间留空隙 + 淡下划线，便于断句与记忆 */
 .wseg { border-bottom: 1px solid rgba(36, 31, 25, .14); padding-bottom: 1px; }
 .wseg:not(.wseg-first) { margin-left: .14em; }
+/* 数字＋量词连成一个视觉整体（3年生、390円、3月20日） */
+.wseg.wseg-join { margin-left: 0; }
 
 .wordrow .txt ruby rt { font-size: 10.5px; }
 /* 生词行可换行：展开的用法面板独占整行，避免把词义/首见信息挤成竖排（用户红框） */

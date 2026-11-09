@@ -1084,18 +1084,44 @@ function largestJSON(s) {
 }
 
 // ============ 学习屏 ============
+// 数字（半角/全角/汉字）与量词在视觉上连成一个整体，但不并成一个 ruby 词块，
+// 保证振り仮名只盖在汉字量词上（3年生 → 3 と 年生）。
+const NUM_CH = /[0-9０-９〇零一二三四五六七八九十百千万億兆]/;
+function isNumTok(w) {
+  return !!w && Array.from(w).every(c => NUM_CH.test(c));
+}
+const COUNTER_HEAD = [
+  'ヶ月', 'ヵ月', 'か月', 'カ月', '種類', '年生', '週間', '時間', '分間', '日間', '年間',
+  'ヶ所', '箇所', 'ページ', '文字',
+  'キロメートル', 'センチメートル', 'ミリメートル', 'キログラム', 'ミリリットル',
+  'メートル', 'センチ', 'ミリ', 'グラム', 'キロ', 'リットル', 'ヘクタール', 'パーセント',
+  '年', '月', '日', '時', '分', '秒', '階', '歳', '才', '人', '名', '枚', '個', '本',
+  '杯', '匹', '台', '冊', '円', '回', '度', '番', '号', '件', '曲', '話', '軒', '泊',
+  '着', '足', '頭', '羽', '組', 'つ', '点', '倍', '割', 'ドル', 'ユーロ', '元',
+];
+// 日期/时刻的下一段允许继续连（3月20日、10時30分）
+const DATE_JOIN = new Set(['月', '日', '年', '時', '分', '秒']);
+function isCounterTok(w) {
+  return !!w && COUNTER_HEAD.some(h => w.startsWith(h));
+}
+function keepsNumRun(w) {
+  return isNumTok(w) || (isCounterTok(w) && DATE_JOIN.has(Array.from(w)[0]));
+}
 // force=true 时单个词也分词（消失术等逐词渲染）；'plain' 用于词条本身不分词
 function rubyHTML(tokens, force) {
   if (!Array.isArray(tokens) || !tokens.length) return '';
   const seg = force === 'plain' ? false
     : (force || tokens.filter(([w]) => w && !recIsPunct(w)).length >= 2);
   let first = true;
+  let numRun = false;
   return tokens
     .map(([w, r]) => {
       const inner = (r && /[一-龯]/.test(w)) ? `<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>` : esc(w);
-      if (!seg || !w || recIsPunct(w)) return inner;
-      const cls = first ? 'wseg wseg-first' : 'wseg';
+      if (!seg || !w || recIsPunct(w)) { numRun = false; return inner; }
+      const join = !first && numRun && (isNumTok(w) || isCounterTok(w));
+      const cls = first ? 'wseg wseg-first' : (join ? 'wseg wseg-join' : 'wseg');
       first = false;
+      numRun = keepsNumRun(w);
       return `<span class="${cls}">${inner}</span>`;
     })
     .join('');

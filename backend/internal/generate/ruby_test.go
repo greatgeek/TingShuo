@@ -59,6 +59,44 @@ func TestReading(t *testing.T) {
 	}
 }
 
+func TestLearningWordChunks(t *testing.T) {
+	segs := func(text string) []string {
+		var out []string
+		for _, tok := range BuildRubyTokens(text) {
+			out = append(out, tok[0].(string))
+		}
+		return out
+	}
+	cases := []struct {
+		text string
+		want string
+	}{
+		{"重さはどれくらいですか。", "重さ｜は｜どれくらい｜です｜か｜。"},
+		{"一時的にここに預けることはできますか。", "一時的｜に｜ここ｜に｜預ける｜こと｜は｜できます｜か｜。"},
+		{"部屋全体の掃除と洗濯をします。", "部屋全体｜の｜掃除｜と｜洗濯｜を｜します｜。"},
+		{"ジョージさんは経済学部の3年生です。", "ジョージさん｜は｜経済学部｜の｜3｜年生｜です｜。"},
+		{"誕生日パーティーをしましょう！", "誕生日パーティー｜を｜しましょう｜！"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(segs(c.text), "｜"); got != c.want {
+			t.Fatalf("seg(%q)\n got %q\nwant %q", c.text, got, c.want)
+		}
+	}
+}
+
+func TestDateMonthReading(t *testing.T) {
+	cases := map[string]string{
+		"4月は桜が咲きます。": "4がつはさくらがさきます。",
+		"何月に行きますか。":  "なんがつにいきますか。",
+		"月がきれいです。":   "つきがきれいです。",
+	}
+	for text, want := range cases {
+		if got := Reading(text); got != want {
+			t.Fatalf("Reading(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
 func TestKataToHira(t *testing.T) {
 	if got := kataToHira("カイケイ"); got != "かいけい" {
 		t.Fatalf("片→平转换错误: %q", got)
