@@ -470,6 +470,57 @@ body.no-rt rt { display: none; }
 }
 .usage-sent .txt { font-size: 14px; }
 
+/* ===== 生词原声例句（影视片段）===== */
+.wclip-box { text-align: left; margin-top: 12px; }
+.wclip-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.wclip-head .usage-head { margin: 4px 4px 6px; }
+.wclip-swap {
+  border: 1px solid var(--line-strong); background: var(--surface);
+  color: var(--ink2); border-radius: 999px; font-size: 11px;
+  padding: 4px 10px; cursor: pointer; font-family: inherit; flex: none;
+}
+.wclip-swap:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.wclip-card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 14px; overflow: hidden; margin-top: 8px;
+}
+.wclip-video {
+  display: block; width: 100%; aspect-ratio: 16 / 9;
+  background: #181410; object-fit: cover;
+}
+.wclip-body { padding: 10px 12px 11px; }
+.wclip-text { font-family: var(--serif); font-size: 15px; line-height: 1.85; color: var(--ink); }
+.wclip-hit {
+  background: rgba(184, 64, 44, .15); color: var(--accent-deep);
+  font-weight: 700; border-radius: 4px; padding: 0 2px;
+}
+.wclip-zh { font-size: 12.5px; color: var(--ink2); line-height: 1.7; margin-top: 4px; }
+.wclip-lang {
+  display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em;
+  color: var(--ink3); border: 1px solid var(--line-strong); border-radius: 4px;
+  padding: 0 4px; margin-right: 5px; vertical-align: 1px;
+}
+.wclip-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.wclip-src {
+  font-size: 10.5px; color: var(--ink3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wclip-mini {
+  width: 30px; height: 30px; border-radius: 50%; flex: none;
+  border: 1px solid var(--line-strong); background: var(--surface-2);
+  color: var(--ink2); cursor: pointer; font-size: 13px;
+  display: grid; place-items: center;
+}
+.wclip-mini:hover, .wclip-mini.on {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-soft);
+}
+.wclip-audio { display: none; }
+#ws-clips { margin-top: 14px; text-align: left; }
+@media (max-width: 420px) {
+  .wclip-text { font-size: 14px; }
+  .wclip-body { padding: 9px 10px 10px; }
+}
+
 /* ===== 复习 ===== */
 .rv-progress { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .rv-progress .bar { margin: 0; }

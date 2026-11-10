@@ -28,6 +28,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
 	"github.com/greatgeek/TingShuo/backend/internal/word"
+	"github.com/greatgeek/TingShuo/backend/internal/wordclip"
 	"github.com/greatgeek/TingShuo/backend/internal/wordstudy"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
 	"github.com/greatgeek/TingShuo/backend/pkg/doubaopod"
@@ -93,6 +94,8 @@ func run() error {
 	podH.StartWorker(ctx) // 长片一集要跑十几分钟，生成走后台任务，前端轮询进度
 	favH := favorite.NewHandler(pool)
 	wordH := word.NewHandler(pool)
+	clipH := wordclip.NewHandler(pool)
+	wordclip.NewWorker(pool).Start(ctx)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
@@ -144,6 +147,8 @@ func run() error {
 			sec.Get("/ai/chat", aiH.Chat)
 			sec.Delete("/ai/chat", aiH.ChatClear)
 			sec.Get("/words/{id}/usage", wordH.Usage)
+			sec.Get("/words/{id}/clips", clipH.Clips)
+			sec.Post("/words/clips/backfill", clipH.Backfill)
 
 			wsH := wordstudy.NewHandler(pool, azureTTS, store)
 			sec.Get("/word-study/status", wsH.Status)

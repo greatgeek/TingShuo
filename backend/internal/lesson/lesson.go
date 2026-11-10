@@ -23,9 +23,9 @@ func NewHandler(pool *pgxpool.Pool) *Handler { return &Handler{pool: pool} }
 // ---- POST /lessons：提交词单建课（status=draft）----
 
 type createReq struct {
-	LessonDate string            `json:"lesson_date"` // YYYY-MM-DD
-	Words      []WordInput       `json:"words"`
-	Params     map[string]any    `json:"params"` // 生成参数快照（scenes/level/context...）
+	LessonDate string         `json:"lesson_date"` // YYYY-MM-DD
+	Words      []WordInput    `json:"words"`
+	Params     map[string]any `json:"params"` // 生成参数快照（scenes/level/context...）
 }
 
 // Create 幂等：同日重复提交返回既有课程 + 409（§6.3）。
@@ -94,7 +94,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
-		"lesson_id": lessonID,
+		"lesson_id":  lessonID,
 		"status":     "draft",
 		"word_count": len(words),
 	})
@@ -195,7 +195,18 @@ func (h *Handler) replaceDraftWords(r *http.Request, lessonID, userID string, wo
 		lessonID, len(words), paramsJSON); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	// 原声例句入队：尽力而为，失败不影响课创建；worker 逐词检索并落缓存
+	for _, wi := range words {
+		_, _ = h.pool.Exec(ctx, `
+			INSERT INTO word_clip_queue (word_key, surface, reading, meaning)
+			VALUES (word_clip_key($1, $2), $1, $2, $3)
+			ON CONFLICT (word_key) DO NOTHING`,
+			wi.Surface, wi.Reading, wi.Meaning)
+	}
+	return nil
 }
 
 // ---- GET /lessons?from=&to= ----
@@ -320,13 +331,13 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	defer srows.Close()
 
 	type materialOut struct {
-		ID       string          `json:"id"`
-		Type     string          `json:"type"`
-		Scene    *string         `json:"scene"`
-		Title    *string         `json:"title"`
-		RoleA    *string         `json:"role_a"`
-		RoleB    *string         `json:"role_b"`
-		Sort     int             `json:"sort"`
+		ID        string           `json:"id"`
+		Type      string           `json:"type"`
+		Scene     *string          `json:"scene"`
+		Title     *string          `json:"title"`
+		RoleA     *string          `json:"role_a"`
+		RoleB     *string          `json:"role_b"`
+		Sort      int              `json:"sort"`
 		Sentences []map[string]any `json:"sentences"`
 	}
 	mats := []*materialOut{}

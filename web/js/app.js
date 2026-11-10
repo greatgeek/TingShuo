@@ -48,6 +48,7 @@ function histOwn() {
   return !!(s && s.tsSid === HIST_SID);
 }
 function applyScreen(name) {
+  if (CUR_SCREEN !== name) clipStopAll();
   if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
   CUR_SCREEN = name;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
@@ -354,7 +355,8 @@ function renderWordsView() {
 // toggleWordUsage 词的用法索引：GET /words/{id}/usage → 短语 + 按场景句子
 async function toggleWordUsage(w, div) {
   const existing = div.querySelector('.usage');
-  if (existing) { existing.remove(); return; } // 再次点击收起
+  if (existing) { clipStopAll(); existing.remove(); return; } // 再次点击收起
+  clipStopAll();
   document.querySelectorAll('.usage').forEach(u => u.remove()); // 同时只展开一个
   const box = document.createElement('div');
   box.className = 'usage';
@@ -395,6 +397,11 @@ async function toggleWordUsage(w, div) {
   } catch (e) {
     box.innerHTML = '<p class="hint">加载失败：' + esc(e.message) + '</p>';
   }
+  // 原声台词：异步加载，不阻塞用法面板
+  const clips = document.createElement('div');
+  clips.className = 'wclip-box';
+  box.appendChild(clips);
+  loadWordClips(w, clips);
 }
 
 // usageRow 用法条目行（点播）
@@ -407,6 +414,132 @@ function usageRow(x) {
       <div class="zh">${esc(x.translation || '')}</div></div>
       <button class="play ${has ? 'has' : ''}">${has ? '▶' : '…'}</button>
     </div>`;
+}
+
+// ============ 生词原声例句（影视片段）============
+// 后端按词从 Nadeshiko 缓存最多 5 条带视频的台词；前端每次展示 2 条，
+// 点"换两条"在本地轮换（不消耗 API 配额），点播走 CDN 直链。
+const CLIP_MEM = new Map();
+
+function clipStopAll() {
+  document.querySelectorAll('.wclip-video, .wclip-audio').forEach(x => { try { x.pause(); } catch {} });
+  document.querySelectorAll('.wclip-mini.on').forEach(b => b.classList.remove('on'));
+}
+
+function clipPauseOthers(el) {
+  if (playing) { playing.pause(); playing = null; }
+  if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
+  if (RV_AUDIO) RV_AUDIO.pause();
+  document.querySelectorAll('.wclip-video, .wclip-audio').forEach(x => {
+    if (x !== el && !x.paused) x.pause();
+  });
+}
+
+function clipTextHTML(c) {
+  const t = (c.text_ja || '').replace(/\u3000/g, ' ');
+  const chars = Array.from(t);
+  const a = Math.max(0, Math.min(Number(c.match_start) || 0, chars.length));
+  const b = Math.max(a, Math.min(Number(c.match_end) || 0, chars.length));
+  return esc(chars.slice(0, a).join('')) +
+    (b > a ? `<mark class="wclip-hit">${esc(chars.slice(a, b).join(''))}</mark>` : '') +
+    esc(chars.slice(b).join(''));
+}
+
+// loadWordClips 拉取该词原声；生成中的词轮询几次，面板收起即停。
+async function loadWordClips(w, box, opts = {}) {
+  if (!box) return;
+  if (!box._stopBubble) {
+    box._stopBubble = true;
+    box.addEventListener('click', e => e.stopPropagation());
+  }
+  const cached = CLIP_MEM.get(w.id);
+  if (cached && cached.length) { wclipRender(box, cached, opts, 0); return; }
+
+  const title = opts.title || '原声台词';
+  box.innerHTML = `<div class="wclip-head"><span class="usage-head">${title}</span></div><p class="hint">加载原声…</p>`;
+  let tries = 0;
+  const tick = async () => {
+    if (!box.isConnected) return;
+    try {
+      const r = await api('/words/' + w.id + '/clips');
+      if (!box.isConnected) return;
+      const items = r.items || [];
+      // 已缓存的片段即使搜索服务未配置也照常展示
+      if (!r.enabled && !items.length) { box.innerHTML = ''; return; }
+      if (items.length) { CLIP_MEM.set(w.id, items); wclipRender(box, items, opts, 0); return; }
+      if (r.pending && tries < 20) {
+        tries++;
+        box.innerHTML = `<div class="wclip-head"><span class="usage-head">${title}</span></div>
+          <p class="hint">原声例句生成中…（第一次遇到这个词，约需十几秒）</p>`;
+        setTimeout(tick, 3000);
+        return;
+      }
+      box.innerHTML = '';
+    } catch {
+      box.innerHTML = '';
+    }
+  };
+  tick();
+}
+
+function wclipRender(box, clips, opts, offset) {
+  clipStopAll();
+  const title = opts.title || '原声台词';
+  const total = clips.length;
+  const n = Math.min(2, total);
+  const shown = [];
+  for (let i = 0; i < n; i++) shown.push(clips[(offset + i) % total]);
+
+  let html = `<div class="wclip-head">
+      <span class="usage-head">${title}</span>
+      ${total > n ? '<button class="wclip-swap" data-act="swap">换两条 ↻</button>' : ''}
+    </div>`;
+  shown.forEach(c => {
+    const src = [c.media_name || '原声',
+      c.episode_title || (c.episode ? '第' + c.episode + '集' : '')].filter(Boolean).join(' · ');
+    const zh = c.text_zh || c.text_en || '';
+    const lang = c.zh_source === 'en' ? '<span class="wclip-lang">EN</span>' : '';
+    html += `<div class="wclip-card">
+      <video class="wclip-video" src="${esc(c.video_url)}" poster="${esc(c.image_url)}"
+             controls playsinline preload="none"></video>
+      <div class="wclip-body">
+        <div class="wclip-text">${clipTextHTML(c)}</div>
+        ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
+        <div class="wclip-meta">
+          <span class="wclip-src">${esc(src)}</span>
+          <button class="wclip-mini" data-act="audio" title="只听音频">🎧</button>
+        </div>
+      </div>
+      ${c.audio_url ? `<audio class="wclip-audio" src="${esc(c.audio_url)}" preload="none"></audio>` : ''}
+    </div>`;
+  });
+  box.innerHTML = html;
+
+  box.querySelectorAll('.wclip-video').forEach(v => {
+    v.addEventListener('play', () => clipPauseOthers(v));
+  });
+  box.querySelectorAll('.wclip-card').forEach(card => {
+    const a = card.querySelector('.wclip-audio');
+    const btn = card.querySelector('.wclip-mini');
+    if (!a || !btn) return;
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (a.paused) {
+        clipPauseOthers(a);
+        a.play().catch(() => toast('音频播放失败'));
+      } else a.pause();
+    };
+    a.addEventListener('play', () => { btn.classList.add('on'); });
+    a.addEventListener('pause', () => btn.classList.remove('on'));
+    a.addEventListener('ended', () => btn.classList.remove('on'));
+  });
+  const swap = box.querySelector('.wclip-swap');
+  if (swap) {
+    swap.onclick = (e) => {
+      e.stopPropagation();
+      wclipRender(box, clips, opts, (offset + n) % total);
+    };
+  }
 }
 
 // renderPhrasesView 生词短语视图：每词一短语，点句即听（配音管线不变）
@@ -1992,7 +2125,10 @@ async function goWordStudy(mode) {
   await wsRestart(false);
 }
 
-function wsStopAudio() { if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; } }
+function wsStopAudio() {
+  if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
+  clipStopAll();
+}
 
 // wsSpeakWord 单词发音：后端 /word-study/{id}/audio（首次合成落库，之后直接用缓存）
 function wsSpeakWord(wordId, btn, retry) {
@@ -2156,6 +2292,7 @@ function wsBackFlipHTML(w) {
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
+    <div id="ws-clips"></div>
     <div id="ws-usage"><p class="hint">加载例句…</p></div>
     <div id="ws-nb"></div>
     <div class="rv-actions">
@@ -2185,6 +2322,7 @@ function wsBackQuizHTML(w, ok, chosen) {
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${q.tokens ? `<div class="ws-cloze ws-cloze-full">${wsTokensFullHTML(q, w)}</div>` : ''}
     ${q.trans ? `<div class="ws-trans">句子翻译：${esc(q.trans)}</div>` : ''}
+    <div id="ws-clips"></div>
     ${WS_HINT_USED ? '<div class="rv-meta">本次使用了语境提示（弱通过：间隔不增长）</div>' : ''}
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
     ${mark}
@@ -2228,6 +2366,7 @@ async function wsFlip() {
   back.style.display = 'block';
   back.innerHTML = wsBackFlipHTML(WS_ITEMS[WS_IDX]);
   const w = WS_ITEMS[WS_IDX];
+  loadWordClips(w, $('ws-clips'), { title: '原声助记' });
   const box = $('ws-usage');
   try {
     const u = await api('/words/' + w.id + '/usage');
@@ -2286,6 +2425,7 @@ function wsShowReview(w, ok, chosen) {
   const back = $('ws-back');
   back.style.display = 'block';
   back.innerHTML = wsBackQuizHTML(w, ok, chosen);
+  loadWordClips(w, $('ws-clips'), { title: '原声助记' });
 }
 
 // wsAutoPlayFront 下一词落位后主动播一次题面音频：听力题播句子，其余播单词。
