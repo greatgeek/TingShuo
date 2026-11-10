@@ -41,8 +41,11 @@ func (w *Worker) Start(ctx context.Context) {
 		log.Printf("wordclip: NADE_API_KEY 未配置，原声片段 worker 停用")
 		return
 	}
-	w.syncQuota(ctx)
-	go w.loop(ctx)
+	// 首次配额校准可能跨境慢请求，不能在启动路径同步等待，否则 HTTP 端口迟迟不绑
+	go func() {
+		w.syncQuota(ctx)
+		w.loop(ctx)
+	}()
 }
 
 func (w *Worker) loop(ctx context.Context) {
