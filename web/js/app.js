@@ -21,7 +21,10 @@ let FAVM = new Set();    // 已收藏材料 ID
 let RV_POOL = new Set(); // 已在复习池的句子 ID（含已掌握）
 
 // ============ 页面导航与「返回上一级」============
-// 页面树：home 为根；create/learn/review/library/wordstudy/notebook 为一级；
+// 返回按访问顺序：每次屏间跳转 pushState（同 URL，state 记屏名/深度/本页会话 sid），
+// 浏览器后退与左上角「返回」都走 history.back；popstate 时恢复对应屏。
+// 页面树仅作兜底：历史里没有可退的屏（如刷新后直接落在某屏）时按层级返回。
+// home 为根；create/learn/review/library/wordstudy/notebook 为一级；
 // gen 是中转页（生成中），其上一级 = 进入它时的来源页（create 或 learn）。
 const NAV_PARENT = {
   home: null, login: null,
@@ -33,8 +36,18 @@ const NAV_PARENT = {
 let CUR_SCREEN = 'login';
 let GEN_FROM = 'create';
 
-function go(name) {
-  if (name === 'gen') GEN_FROM = CUR_SCREEN; // 记录中转页来源
+const HIST_SID = Date.now().toString(36) + Math.random().toString(36).slice(2);
+let HIST_BASE = false; // 本页会话的首条历史已登记
+let HIST_DEPTH = 0;    // 当前屏在会话历史里的深度（0 = 起点）
+
+function histState(name) {
+  return { tsSid: HIST_SID, tsScreen: name, tsDepth: HIST_DEPTH, tsGenFrom: GEN_FROM };
+}
+function histOwn() {
+  const s = history.state;
+  return !!(s && s.tsSid === HIST_SID);
+}
+function applyScreen(name) {
   if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
   CUR_SCREEN = name;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
@@ -42,12 +55,55 @@ function go(name) {
   updateBackBtn();
 }
 
-// goBack 返回上一级；根页面不响应
+// go 切屏并登记历史：登录转换、离开 gen 中转页、同屏重入都替换当前条目
+// （不占历史）；其余屏间跳转压入新条目，浏览器后退键据此回上一屏。
+function go(name, opts = {}) {
+  if (name === 'gen') GEN_FROM = CUR_SCREEN; // 记录中转页来源
+  const prev = CUR_SCREEN;
+  applyScreen(name);
+  if (!HIST_BASE || !histOwn()) { // 首个屏或历史已漂到别处：重新登记会话起点
+    HIST_BASE = true;
+    HIST_DEPTH = 0;
+    history.replaceState(histState(name), '', location.href);
+    return;
+  }
+  if (name === prev && !opts.replace) return;
+  if (opts.replace || name === 'login' || prev === 'login' || prev === 'gen') {
+    history.replaceState(histState(name), '', location.href);
+    return;
+  }
+  HIST_DEPTH += 1;
+  history.pushState(histState(name), '', location.href);
+}
+
+// goBack 左上角返回：优先按访问顺序后退；没有站内历史时按页面树兜底
 function goBack() {
   if (CUR_SCREEN === 'home' || CUR_SCREEN === 'login') return;
+  if (HIST_BASE && histOwn() && (history.state.tsDepth || 0) > 0) {
+    history.back();
+    return;
+  }
   const target = CUR_SCREEN === 'gen' ? GEN_FROM : (NAV_PARENT[CUR_SCREEN] || 'home');
-  go(target);
+  go(target, { replace: true });
 }
+
+// popstate：弹层先收；其余按历史条目恢复屏（旧页面会话的条目不恢复——
+// 课程/列表数据已随上次加载丢失，浏览器继续后退即离开本站）
+addEventListener('popstate', e => {
+  const masks = ['picker-mask', 'nb-cfg-mask'];
+  if (masks.some(id => $(id) && getComputedStyle($(id)).display !== 'none')) {
+    masks.forEach(id => { $(id).style.display = 'none'; });
+    if (HIST_BASE) history.pushState(histState(CUR_SCREEN), '', location.href); // 把退掉的这步压回，保持当前屏
+    return;
+  }
+  const st = e.state;
+  if (!HIST_BASE || !st || st.tsSid !== HIST_SID) return;
+  const name = st.tsScreen;
+  if (!name || !$('sc-' + name)) return;
+  HIST_DEPTH = st.tsDepth || 0;
+  if (st.tsGenFrom) GEN_FROM = st.tsGenFrom;
+  applyScreen(name);
+});
 
 function updateBackBtn() {
   const b = $('nav-back');
@@ -493,8 +549,8 @@ async function genPhrasesCore(lessonID, words, isRetry) {
     $('gen-retry').style.display = 'block';
     $('gen-retry').textContent = '↻ 重新生成';
     $('gen-back').style.display = 'block';
-    $('gen-back').textContent = '返回学习';
-    $('gen-back').onclick = () => { go('learn'); };
+    $('gen-back').textContent = '返回'; // 来源可能是学习屏或创建屏，按实际历史回退
+    $('gen-back').onclick = goBack;
     $('gen-title').textContent = '短语生成失败';
     return false;
   }
@@ -557,7 +613,7 @@ async function genFull() {
     $('gen-retry').textContent = '↻ 重新生成';
     $('gen-back').style.display = 'block';
     $('gen-back').textContent = '返回学习';
-    $('gen-back').onclick = () => { go('learn'); };
+    $('gen-back').onclick = goBack;
     $('gen-title').textContent = '生成失败';
   }
 }
@@ -678,7 +734,7 @@ async function resumeActiveGen() {
     $('gen-title').textContent = '生成失败';
     $('gen-back').style.display = 'block';
     $('gen-back').textContent = '返回首页';
-    $('gen-back').onclick = () => { clearActiveTask(); goHome(); };
+    $('gen-back').onclick = () => { clearActiveTask(); goBack(); };
   }
 }
 
@@ -4962,7 +5018,7 @@ $('submit-words-btn').onclick = submitWords;
 $('open-picker-btn').onclick = openWordPicker;
 $('fill-sample-btn').onclick = fillSample;
 $('gen-retry').onclick = submitWords;
-$('gen-back').onclick = () => go('create');
+$('gen-back').onclick = goBack;
 $('md-normal').onclick = () => { switchView('material'); setMode('normal'); };
 $('md-blind').onclick = () => setMode('blind');
 $('md-zh').onclick = () => setMode('zh');
