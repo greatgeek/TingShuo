@@ -2816,7 +2816,7 @@ async function aiSend() {
 // ============ 列表连播（▶ 全播）============
 // 顺序：每词读 word 次 → 其例句逐句各读 sent 次；整表循环 loop 次。仅日语音频。
 let PL_CFG = (() => {
-  const def = { word: 2, sent: 1, loop: 1, wgap: 1, sgap: 1, wmean: true, smean: true };
+  const def = { word: 2, sent: 1, loop: 1, wgap: 1, sgap: 1, wrate: 1, srate: 1, wmean: true, smean: true };
   try { return Object.assign(def, JSON.parse(localStorage.getItem('ts_nb_play_cfg') || '{}')); }
   catch { return def; }
 })();
@@ -2880,6 +2880,13 @@ async function nbPlayStart() {
   PL = { items, i: 0, loop: 0, audio: new Audio(), follow: true, autoScrolling: false, paused: false };
   PL.audio.addEventListener('ended', () => nbPlayNext());
   PL.audio.addEventListener('error', () => { toast('音频播放出错，跳下一条'); nbPlayNext(); });
+  // 部分移动端浏览器要等元数据就绪才认 playbackRate：加载后补设一次
+  PL.audio.addEventListener('loadedmetadata', () => {
+    if (!PL) return;
+    const rate = rateFor(PL.items[PL.i]);
+    PL.audio.defaultPlaybackRate = rate;
+    PL.audio.playbackRate = rate;
+  });
   $('nb-now-pause').textContent = '⏸ 暂停';
   $('nb-nowbar').hidden = false;
   document.body.classList.add('nb-playing');
@@ -3051,6 +3058,9 @@ async function nbPlayStep(autoplay = true) {
     else url = await sayBlobURL(it.s.text);
     if (PL !== pl || PL.i !== idx) return;
     PL.audio.src = url;
+    const rate = rateFor(it);
+    PL.audio.defaultPlaybackRate = rate;
+    PL.audio.playbackRate = rate;
     if (autoplay) await playUnlock(PL.audio);
   } catch (e) {
     if (PL !== pl || PL.i !== idx) return;
@@ -3065,12 +3075,32 @@ function gapFor(it) {
   return (it.kind === 'word' || it.kind === 'wmean') ? (PL_CFG.wgap || 0) : (PL_CFG.sgap || 0);
 }
 
+// rateFor 每组音频的倍速：单词与其中文含义同速，例句与句译同速
+function rateFor(it) {
+  if (!it) return 1;
+  return (it.kind === 'word' || it.kind === 'wmean') ? (PL_CFG.wrate || 1) : (PL_CFG.srate || 1);
+}
+
+// 预设里没有的旧倍速值（手工改过 localStorage 等）补一个选项，避免下拉显示空白
+function setRateSel(id, v) {
+  const sel = $(id);
+  sel.value = String(v);
+  if (sel.value) return;
+  const opt = document.createElement('option');
+  opt.value = String(v);
+  opt.textContent = v + '×';
+  sel.appendChild(opt);
+  sel.value = String(v);
+}
+
 function openNbCfg() {
   $('cfg-word').value = PL_CFG.word;
   $('cfg-sent').value = PL_CFG.sent;
   $('cfg-loop').value = PL_CFG.loop;
   $('cfg-wgap').value = PL_CFG.wgap == null ? 1 : PL_CFG.wgap;
   $('cfg-sgap').value = PL_CFG.sgap == null ? 1 : PL_CFG.sgap;
+  setRateSel('cfg-wrate', PL_CFG.wrate || 1);
+  setRateSel('cfg-srate', PL_CFG.srate || 1);
   $('cfg-wmean').checked = !!PL_CFG.wmean;
   $('cfg-smean').checked = !!PL_CFG.smean;
   $('nb-cfg-mask').style.display = 'flex';
@@ -3078,15 +3108,21 @@ function openNbCfg() {
 function saveNbCfg() {
   const c = v => Math.min(99, Math.max(1, parseInt(v, 10) || 1));
   const g = v => Math.min(10, Math.max(0, parseInt(v, 10) || 0));
+  const rt = v => Math.min(2, Math.max(0.5, parseFloat(v) || 1));
   const prev = PL_CFG;
   PL_CFG = {
     word: c($('cfg-word').value), sent: c($('cfg-sent').value), loop: c($('cfg-loop').value),
     wgap: g($('cfg-wgap').value), sgap: g($('cfg-sgap').value),
+    wrate: rt($('cfg-wrate').value), srate: rt($('cfg-srate').value),
     wmean: $('cfg-wmean').checked, smean: $('cfg-smean').checked,
   };
   localStorage.setItem('ts_nb_play_cfg', JSON.stringify(PL_CFG));
   $('nb-cfg-mask').style.display = 'none';
-  toast(`已保存：词 ×${PL_CFG.word} · 句 ×${PL_CFG.sent} · 循环 ×${PL_CFG.loop} · 间隔 ${PL_CFG.wgap}/${PL_CFG.sgap}s · 中文 ${PL_CFG.wmean || PL_CFG.smean ? '开' : '关'}`);
+  toast(`已保存：词 ×${PL_CFG.word}·${PL_CFG.wrate}× · 句 ×${PL_CFG.sent}·${PL_CFG.srate}× · 循环 ×${PL_CFG.loop}`);
+  if (PL) { // 倍速即时生效：当前这条音频不用重播就能变速
+    PL.audio.defaultPlaybackRate = rateFor(PL.items[PL.i]);
+    PL.audio.playbackRate = rateFor(PL.items[PL.i]);
+  }
   const changed = prev.word !== PL_CFG.word || prev.sent !== PL_CFG.sent ||
     !!prev.wmean !== !!PL_CFG.wmean || !!prev.smean !== !!PL_CFG.smean;
   if (changed) nbPlayApplyCfg();

@@ -887,27 +887,55 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 .pod-log .cur { color: #A8D5B8; }
 @keyframes podlog-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
-/* ===== 播放设置弹层（保持用户标注的两行合并布局） ===== */
+/* ===== 播放设置弹层（单词 / 句子分组） ===== */
 .nb-cfg-mask { align-items: center; padding: 20px; }
 .nb-cfg {
   width: 100%; max-width: 372px; margin: 0 auto;
   border-radius: 20px; padding: 20px;
   max-height: 88vh; overflow: auto;
 }
-.nb-cfg h2 { margin-bottom: 4px; }
-.nb-cfg .hint { font-size: 11.5px; }
-.nb-cfg label {
-  display: flex; align-items: center; justify-content: flex-start; gap: 8px;
-  margin: 14px 0; font-size: 13px; color: var(--ink);
+.nb-cfg h2 { margin-bottom: 2px; }
+.nb-cfg-sub { font-size: 11.5px; color: var(--ink3); }
+.nb-cfg .hint { font-size: 11.5px; margin-top: 12px; }
+.cfg-group {
+  margin-top: 12px; padding: 12px 12px 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 14px;
 }
-.nb-cfg input[type=number] {
-  width: 58px; padding: 7px 6px;
+.cfg-group-title {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 600; color: var(--ink);
+}
+.cfg-group-title::before {
+  content: ""; width: 7px; height: 7px; flex: none;
+  border-radius: 2px; background: var(--accent); opacity: .85;
+  transform: rotate(45deg);
+}
+.cfg-fields {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px; margin-top: 10px;
+}
+.nb-cfg .cfg-field { display: flex; flex-direction: column; gap: 5px; }
+.nb-cfg .cfg-field > span { font-size: 10.5px; color: var(--ink3); letter-spacing: .02em; }
+.nb-cfg input[type=number], .nb-cfg select {
+  width: 100%; height: 34px; margin: 0;
+  padding: 0 6px;
   border: 1px solid var(--line-strong); border-radius: 9px;
-  text-align: center; font-size: 13px; background: var(--surface-2);
+  text-align: center; font-size: 13px; font-family: inherit;
+  color: var(--ink); background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
-.nb-cfg input[type=number]:focus { background: var(--surface); }
-.nb-cfg .cfg-gaplab { margin-left: auto; font-size: 12px; color: var(--ink2); white-space: nowrap; }
-.nb-cfg label.cfg-check { justify-content: flex-start; gap: 10px; margin: 12px 0; }
+.nb-cfg input[type=number]:focus, .nb-cfg select:focus { outline: none; border-color: var(--accent); }
+.nb-cfg select {
+  appearance: none; -webkit-appearance: none;
+  padding-right: 18px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' fill='none' stroke='%239C9384' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center;
+}
+.nb-cfg label.cfg-check {
+  display: flex; align-items: center; justify-content: flex-start;
+  gap: 10px; margin: 10px 0 12px; font-size: 12.5px; color: var(--ink);
+}
 .nb-cfg label.cfg-check input[type=checkbox] {
   appearance: none; -webkit-appearance: none;
   width: 38px; height: 22px; flex: none; position: relative;
@@ -923,6 +951,12 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 }
 .nb-cfg label.cfg-check input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
 .nb-cfg label.cfg-check input[type=checkbox]:checked::after { transform: translateX(16px); }
+.nb-cfg .cfg-loop {
+  display: flex; align-items: center; gap: 8px;
+  margin: 14px 0 0; font-size: 13px; color: var(--ink);
+}
+.nb-cfg .cfg-loop input { width: 58px; margin: 0 0 0 auto; background: var(--surface-2); }
+.nb-cfg .cfg-loop .cfg-unit { font-size: 12px; color: var(--ink2); }
 .nb-cfg .row2 { margin-top: 18px; }
 
 /* ===== 问 AI ===== */
@@ -1059,10 +1093,11 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
   .nb-play-group { flex: 1 0 100%; margin-left: 0; }
   .nb-play-group::before { display: none; }
   .nb-strip #nb-play-all { flex: 1; justify-content: center; }
-  /* 播放设置：窄屏收紧标签与输入框，长标签不折行 */
-  .nb-cfg label { gap: 6px; font-size: 12.5px; white-space: nowrap; }
-  .nb-cfg .cfg-gaplab { font-size: 12px; }
-  .nb-cfg input { width: 44px; padding: 6px; }
+  /* 播放设置：窄屏收紧内边距，三列字段交给网格自适应 */
+  .nb-cfg { padding: 18px 16px calc(14px + env(safe-area-inset-bottom)); }
+  .cfg-group { padding: 12px 10px 2px; }
+  .cfg-fields { gap: 6px; }
+  .nb-cfg .cfg-field > span { font-size: 10px; }
   .nb-nowbar { width: calc(100vw - 16px); bottom: 8px; padding: 8px 12px; }
   .compact { gap: 10px; padding: 13px 14px; }
   .compact-btn { padding: 7px 11px; font-size: 12px; }

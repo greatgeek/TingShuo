@@ -360,12 +360,57 @@
 <div class="picker-mask nb-cfg-mask" id="nb-cfg-mask" style="display:none">
   <div class="picker card nb-cfg">
     <h2>播放设置</h2>
-    <label>单词播放次数<input type="number" id="cfg-word" min="1" max="99" value="2"><span class="cfg-gaplab">播放间隔（秒）</span><input type="number" id="cfg-wgap" min="0" max="10" value="1"></label>
-    <label>句子播放次数<input type="number" id="cfg-sent" min="1" max="99" value="1"><span class="cfg-gaplab">播放间隔（秒）</span><input type="number" id="cfg-sgap" min="0" max="10" value="1"></label>
-    <label>本列表循环次数<input type="number" id="cfg-loop" min="1" max="99" value="1"></label>
-    <label class="cfg-check"><input type="checkbox" id="cfg-wmean" checked>单词后播中文含义</label>
-    <label class="cfg-check"><input type="checkbox" id="cfg-smean" checked>句子后播中文翻译</label>
-    <p class="hint">单词按读音读、例句按原文读；勾选后每条读完跟读一遍中文含义/翻译。间隔为每条音频之间的停顿秒数。设置自动保存。</p>
+    <p class="nb-cfg-sub">单词与例句的朗读节奏</p>
+    <section class="cfg-group">
+      <div class="cfg-group-title">单词</div>
+      <div class="cfg-fields">
+        <label class="cfg-field"><span>播放次数</span><input type="number" id="cfg-word" min="1" max="99" value="2"></label>
+        <label class="cfg-field"><span>间隔（秒）</span><input type="number" id="cfg-wgap" min="0" max="10" value="1"></label>
+        <label class="cfg-field"><span>倍速</span><select id="cfg-wrate" class="cfg-rate">
+          <option value="0.5">0.5×</option>
+          <option value="0.6">0.6×</option>
+          <option value="0.7">0.7×</option>
+          <option value="0.75">0.75×</option>
+          <option value="0.8">0.8×</option>
+          <option value="0.9">0.9×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.1">1.1×</option>
+          <option value="1.2">1.2×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.3">1.3×</option>
+          <option value="1.5">1.5×</option>
+          <option value="1.75">1.75×</option>
+          <option value="2">2×</option>
+        </select></label>
+      </div>
+      <label class="cfg-check"><input type="checkbox" id="cfg-wmean" checked>单词后播中文含义</label>
+    </section>
+    <section class="cfg-group">
+      <div class="cfg-group-title">句子</div>
+      <div class="cfg-fields">
+        <label class="cfg-field"><span>播放次数</span><input type="number" id="cfg-sent" min="1" max="99" value="1"></label>
+        <label class="cfg-field"><span>间隔（秒）</span><input type="number" id="cfg-sgap" min="0" max="10" value="1"></label>
+        <label class="cfg-field"><span>倍速</span><select id="cfg-srate" class="cfg-rate">
+          <option value="0.5">0.5×</option>
+          <option value="0.6">0.6×</option>
+          <option value="0.7">0.7×</option>
+          <option value="0.75">0.75×</option>
+          <option value="0.8">0.8×</option>
+          <option value="0.9">0.9×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.1">1.1×</option>
+          <option value="1.2">1.2×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.3">1.3×</option>
+          <option value="1.5">1.5×</option>
+          <option value="1.75">1.75×</option>
+          <option value="2">2×</option>
+        </select></label>
+      </div>
+      <label class="cfg-check"><input type="checkbox" id="cfg-smean" checked>句子后播中文翻译</label>
+    </section>
+    <label class="cfg-loop">本列表循环次数<input type="number" id="cfg-loop" min="1" max="99" value="1"><span class="cfg-unit">遍</span></label>
+    <p class="hint">单词按读音、例句按原文朗读；倍速同时作用于该组的中文跟读，间隔为每条音频之间的停顿秒数。</p>
     <div class="row2">
       <button class="btn accent" id="cfg-save">保存</button>
       <button class="btn ghost" id="cfg-cancel">取消</button>
