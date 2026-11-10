@@ -484,10 +484,27 @@ body.no-rt rt { display: none; }
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 14px; overflow: hidden; margin-top: 8px;
 }
-.wclip-video {
-  display: block; width: 100%; aspect-ratio: 16 / 9;
-  background: #181410; object-fit: cover;
+.wclip-poster {
+  position: relative; display: block; width: 100%; aspect-ratio: 16 / 9;
+  background: #181410; cursor: pointer; overflow: hidden;
 }
+.wclip-poster img {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+}
+.wclip-poster::after {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 38%;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .38)); pointer-events: none;
+}
+.wclip-poster:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.wclip-play {
+  position: absolute; left: 12px; bottom: 12px; z-index: 1;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(0, 0, 0, .58); color: #fff;
+  display: grid; place-items: center; font-size: 15px; line-height: 1;
+  backdrop-filter: blur(4px);
+}
+.wclip-poster:hover .wclip-play,
+.wclip-poster.on .wclip-play { background: var(--accent); }
 .wclip-body { padding: 10px 12px 11px; }
 .wclip-text { font-family: var(--serif); font-size: 15px; line-height: 1.85; color: var(--ink); }
 .wclip-hit {

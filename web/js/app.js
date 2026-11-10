@@ -416,21 +416,22 @@ function usageRow(x) {
     </div>`;
 }
 
-// ============ 生词原声例句（影视片段）============
-// 后端按词从 Nadeshiko 缓存最多 5 条带视频的台词；前端每次展示 2 条，
-// 点"换两条"在本地轮换（不消耗 API 配额），点播走 CDN 直链。
+// ============ 生词原声例句（剧照 + 原声）============
+// Nadeshiko 的「视频」实际是静帧+音频，这里按剧照呈现：点图播原声。
+// 后端按词缓存最多 5 条，前端每次展示 2 条，点"换两条"本地轮换（不消耗 API 配额）。
 const CLIP_MEM = new Map();
 
 function clipStopAll() {
-  document.querySelectorAll('.wclip-video, .wclip-audio').forEach(x => { try { x.pause(); } catch {} });
-  document.querySelectorAll('.wclip-mini.on').forEach(b => b.classList.remove('on'));
+  document.querySelectorAll('.wclip-audio').forEach(x => { try { x.pause(); } catch {} });
+  document.querySelectorAll('.wclip-mini.on, .wclip-poster.on').forEach(b => b.classList.remove('on'));
+  document.querySelectorAll('.wclip-play').forEach(b => { b.textContent = '▶'; });
 }
 
 function clipPauseOthers(el) {
   if (playing) { playing.pause(); playing = null; }
   if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
   if (RV_AUDIO) RV_AUDIO.pause();
-  document.querySelectorAll('.wclip-video, .wclip-audio').forEach(x => {
+  document.querySelectorAll('.wclip-audio').forEach(x => {
     if (x !== el && !x.paused) x.pause();
   });
 }
@@ -500,8 +501,10 @@ function wclipRender(box, clips, opts, offset) {
     const zh = c.text_zh || c.text_en || '';
     const lang = c.zh_source === 'en' ? '<span class="wclip-lang">EN</span>' : '';
     html += `<div class="wclip-card">
-      <video class="wclip-video" src="${esc(c.video_url)}" poster="${esc(c.image_url)}"
-             controls playsinline preload="none"></video>
+      <div class="wclip-poster" role="button" tabindex="0" aria-label="播放原声">
+        ${c.image_url ? `<img src="${esc(c.image_url)}" alt="" loading="lazy">` : ''}
+        <span class="wclip-play">▶</span>
+      </div>
       <div class="wclip-body">
         <div class="wclip-text">${clipTextHTML(c)}</div>
         ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
@@ -515,23 +518,36 @@ function wclipRender(box, clips, opts, offset) {
   });
   box.innerHTML = html;
 
-  box.querySelectorAll('.wclip-video').forEach(v => {
-    v.addEventListener('play', () => clipPauseOthers(v));
-  });
   box.querySelectorAll('.wclip-card').forEach(card => {
     const a = card.querySelector('.wclip-audio');
     const btn = card.querySelector('.wclip-mini');
-    if (!a || !btn) return;
-    btn.onclick = (e) => {
-      e.stopPropagation();
+    const poster = card.querySelector('.wclip-poster');
+    const icon = poster && poster.querySelector('.wclip-play');
+    if (!a) return;
+    const toggle = () => {
       if (a.paused) {
         clipPauseOthers(a);
         a.play().catch(() => toast('音频播放失败'));
       } else a.pause();
     };
-    a.addEventListener('play', () => { btn.classList.add('on'); });
-    a.addEventListener('pause', () => btn.classList.remove('on'));
-    a.addEventListener('ended', () => btn.classList.remove('on'));
+    if (btn) btn.onclick = (e) => { e.stopPropagation(); toggle(); };
+    if (poster) {
+      poster.onclick = (e) => { e.stopPropagation(); toggle(); };
+      poster.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); toggle(); }
+      };
+    }
+    const setOn = (on) => {
+      if (btn) btn.classList.toggle('on', on);
+      if (poster) {
+        poster.classList.toggle('on', on);
+        poster.setAttribute('aria-label', on ? '暂停原声' : '播放原声');
+      }
+      if (icon) icon.textContent = on ? '⏸' : '▶';
+    };
+    a.addEventListener('play', () => setOn(true));
+    a.addEventListener('pause', () => setOn(false));
+    a.addEventListener('ended', () => setOn(false));
   });
   const swap = box.querySelector('.wclip-swap');
   if (swap) {
