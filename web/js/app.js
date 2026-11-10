@@ -58,7 +58,7 @@ function applyScreen(name) {
 // go 切屏并登记历史：登录转换、离开 gen 中转页、同屏重入都替换当前条目
 // （不占历史）；其余屏间跳转压入新条目，浏览器后退键据此回上一屏。
 function go(name, opts = {}) {
-  if (name === 'gen') GEN_FROM = CUR_SCREEN; // 记录中转页来源
+  if (name === 'gen' && CUR_SCREEN !== 'gen') GEN_FROM = CUR_SCREEN; // 记录中转页来源（重入 gen 不覆盖）
   const prev = CUR_SCREEN;
   applyScreen(name);
   if (!HIST_BASE || !histOwn()) { // 首个屏或历史已漂到别处：重新登记会话起点
