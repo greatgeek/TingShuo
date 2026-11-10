@@ -41,7 +41,8 @@ func NewClient() *Client {
 	return &Client{
 		base: base,
 		key:  key,
-		http: &http.Client{Timeout: 25 * time.Second},
+		// 跨境访问 Cloudflare 偶发冷启动 20-30s，给足余量，避免误判失败重试
+		http: &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
