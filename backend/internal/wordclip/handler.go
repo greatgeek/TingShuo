@@ -41,7 +41,7 @@ type clipItem struct {
 	VideoURL     string  `json:"video_url"`
 }
 
-// Clips GET /words/{id}/clips —— 生词的原声例句（最多 5 条，前端轮换展示 2 条）。
+// Clips GET /words/{id}/clips —— 生词的原声例句（最多 6 条）。
 // 未生成时返回 enabled/pending，前端据此决定隐藏还是提示"准备中"。
 func (h *Handler) Clips(w http.ResponseWriter, r *http.Request) {
 	userID := auth.FromContext(r.Context())
@@ -63,7 +63,7 @@ func (h *Handler) Clips(w http.ResponseWriter, r *http.Request) {
 		FROM word_clip
 		WHERE word_key = $1
 		ORDER BY sort_order
-		LIMIT 5`, key)
+		LIMIT 6`, key)
 	if err != nil {
 		httpx.Err(w, httpx.Internal(err.Error()))
 		return
@@ -90,6 +90,66 @@ func (h *Handler) Clips(w http.ResponseWriter, r *http.Request) {
 		"items":   items,
 		"count":   len(items),
 		"enabled": h.cli != nil,
+		"pending": status == "pending" || status == "running",
+		"status":  status,
+	})
+}
+
+// Enqueue POST /words/{id}/clips —— 生词本里按需生成原声例句。
+// 已有缓存直接返回；无缓存则入队（跳过/失败的词可重试），前端轮询 Clips 拿结果。
+func (h *Handler) Enqueue(w http.ResponseWriter, r *http.Request) {
+	if h.cli == nil {
+		httpx.Err(w, httpx.NewError(http.StatusServiceUnavailable, "CLIPS_DISABLED",
+			"原声例句服务未配置（NADE_API_KEY）"))
+		return
+	}
+	userID := auth.FromContext(r.Context())
+	wordID := chi.URLParam(r, "id")
+
+	var key, surface, reading, meaning string
+	if err := h.pool.QueryRow(r.Context(), `
+		SELECT word_clip_key(surface, reading), surface,
+		       COALESCE(reading, ''), COALESCE(meaning, '')
+		FROM word WHERE id = $1 AND user_id = $2`, wordID, userID).
+		Scan(&key, &surface, &reading, &meaning); err != nil {
+		httpx.Err(w, httpx.NotFound("生词不存在或不属于当前用户"))
+		return
+	}
+
+	var count int
+	_ = h.pool.QueryRow(r.Context(),
+		`SELECT count(*) FROM word_clip WHERE word_key = $1`, key).Scan(&count)
+	if count > 0 {
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{
+			"count": count, "pending": false, "status": "done",
+		})
+		return
+	}
+
+	tag, err := h.pool.Exec(r.Context(), `
+		INSERT INTO word_clip_queue (word_key, surface, reading, meaning, status)
+		VALUES ($1, $2, $3, $4, 'pending')
+		ON CONFLICT (word_key) DO NOTHING`, key, surface, reading, meaning)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		// 旧记录：跳过/失败/完成但无片段的词重新排队；pending/running 不动
+		if _, err := h.pool.Exec(r.Context(), `
+			UPDATE word_clip_queue
+			SET status = 'pending', attempts = 0, last_error = '',
+			    created_at = now(), updated_at = now()
+			WHERE word_key = $1 AND status IN ('skipped', 'failed', 'done')`, key); err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+	}
+	var status string
+	_ = h.pool.QueryRow(r.Context(),
+		`SELECT status FROM word_clip_queue WHERE word_key = $1`, key).Scan(&status)
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"count":   count,
 		"pending": status == "pending" || status == "running",
 		"status":  status,
 	})

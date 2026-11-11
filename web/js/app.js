@@ -418,7 +418,7 @@ function usageRow(x) {
 
 // ============ 生词原声例句（剧照 + 原声）============
 // Nadeshiko 的「视频」实际是静帧+音频，这里按剧照呈现：点图播原声。
-// 后端按词缓存最多 5 条，前端每次展示 2 条，点"换两条"本地轮换（不消耗 API 配额）。
+// 后端按词缓存最多 6 条；这里（生词库/背词）每次展示 2 条，点"换两条"本地轮换（不消耗 API 配额）。
 const CLIP_MEM = new Map();
 
 function clipStopAll() {
@@ -428,6 +428,7 @@ function clipStopAll() {
 }
 
 function clipPauseOthers(el) {
+  if (PL) nbPlayStop();
   if (playing) { playing.pause(); playing = null; }
   if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
   if (RV_AUDIO) RV_AUDIO.pause();
@@ -2650,6 +2651,7 @@ function renderNbPickerList() {
 
 async function nbOpenDir(dirId) {
   nbPlayStop();
+  clipStopAll();
   NB_CURDIR = dirId;
   localStorage.setItem('ts_nb_dir', dirId);
   renderNbStrip();
@@ -2673,13 +2675,15 @@ function renderNbWords() {
       <span class="spk">${i + 1}</span>
       <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : `<ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>`}</div>
       <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>
+      <button class="word-clip-btn" title="影视原声例句"><span class="ic">🎬</span><span class="tx">影视原声</span></button>
       <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开例句">▾</button>`;
+    div.querySelector('.word-clip-btn').onclick = (e) => { e.stopPropagation(); nbToggleClips(w, div); };
     div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.word_id, e.currentTarget); };
     div.onclick = () => { if (PL && nbPlayJumpTo(w)) return; nbToggleWord(w, div); };
     box.appendChild(div);
   });
-  $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 点词展开例句（▶ 点播）`;
+  $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 🎬 影视原声 · 点词展开例句（▶ 点播）`;
 }
 
 // ---- 本单元导出/复制：数据已在 NB_WORDS 里（DirWords 接口返回词+例句），纯前端拼装 ----
@@ -2799,8 +2803,143 @@ function nbBuildSents(w) {
 function nbToggleWord(w, div) {
   const ex = div.querySelector('.nb-sents');
   if (ex) { ex.remove(); return; }
+  document.querySelectorAll('.nb-clips').forEach(x => x.remove());
+  clipStopAll();
   document.querySelectorAll('.nb-sents').forEach(x => x.remove());
   div.appendChild(nbBuildSents(w));
+}
+
+// ---- 生词本 / 影视原声：横滑剧照条，点图听原声 ----
+function nbToggleClips(w, div) {
+  const panel = div.querySelector('.nb-clips');
+  if (panel) { panel.remove(); clipStopAll(); return; }
+  nbPlayStop();
+  document.querySelectorAll('.nb-sents').forEach(x => x.remove());
+  document.querySelectorAll('.nb-clips').forEach(x => x.remove());
+  clipStopAll();
+  const box = document.createElement('div');
+  box.className = 'nb-clips';
+  div.appendChild(box);
+  nbLoadClips(w, box);
+}
+
+async function nbLoadClips(w, box) {
+  const head = '<div class="nb-clips-head"><span class="usage-head">影视原声</span></div>';
+  const cached = CLIP_MEM.get(w.word_id);
+  if (cached && cached.length) { nbClipsRender(box, cached); return; }
+  box.innerHTML = head + '<p class="hint">加载原声…</p>';
+  let tries = 0;
+  let autoTried = false;
+  const showRetry = (msg) => {
+    box.innerHTML = `${head}<p class="hint">${msg}</p>
+      <button class="wclip-swap" data-act="retry">重新查找 ↻</button>`;
+    const btn = box.querySelector('[data-act="retry"]');
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      btn.disabled = true; btn.textContent = '重新排队…';
+      try {
+        await api('/words/' + w.word_id + '/clips', { method: 'POST' });
+        tries = 0;
+        setTimeout(tick, 1200);
+      } catch (err) {
+        toast('重新查找失败：' + err.message);
+        showRetry(msg);
+      }
+    };
+  };
+  const tick = async () => {
+    if (!box.isConnected) return;
+    try {
+      const r = await api('/words/' + w.word_id + '/clips');
+      if (!box.isConnected) return;
+      const items = r.items || [];
+      if (items.length) { CLIP_MEM.set(w.word_id, items); nbClipsRender(box, items); return; }
+      if (!r.enabled) { box.innerHTML = head + '<p class="hint">原声例句服务暂不可用</p>'; return; }
+      if (r.pending) {
+        tries++;
+        if (tries > 20) {
+          box.innerHTML = head + '<p class="hint">原声仍在生成，稍后再展开查看</p>';
+          return;
+        }
+        box.innerHTML = `${head}<p class="hint">原声例句生成中…（第一次遇到这个词，约需十几秒）</p>
+          <div class="nb-clips-skel">${'<span></span>'.repeat(4)}</div>`;
+        setTimeout(tick, 3000);
+        return;
+      }
+      if (!r.status && !autoTried) {
+        // 从未查过：进面板即按需入队，省一次手动点重试
+        autoTried = true;
+        box.innerHTML = head + '<p class="hint">第一次查找这个词的原声例句…</p>';
+        try { await api('/words/' + w.word_id + '/clips', { method: 'POST' }); } catch {}
+        if (!box.isConnected) return;
+        setTimeout(tick, 1200);
+        return;
+      }
+      showRetry(r.status === 'skipped' || r.status === 'failed'
+        ? '暂未找到合适的原声例句' : '这个词还没有原声例句');
+    } catch (e) {
+      if (box.isConnected) showRetry('加载失败：' + esc(e.message));
+    }
+  };
+  tick();
+}
+
+function nbClipsRender(box, clips) {
+  clipStopAll();
+  let html = `<div class="nb-clips-head"><span class="usage-head">影视原声</span>
+    <span class="nb-clips-count">${clips.length} 条 · 点剧照听原声</span></div>
+    <div class="wclip-strip">`;
+  clips.forEach((c, i) => {
+    html += `<button class="wclip-thumb${i === 0 ? ' sel' : ''}" data-i="${i}" title="播放第 ${i + 1} 条原声">
+      ${c.image_url ? `<img src="${esc(c.image_url)}" alt="" decoding="async">` : '<span class="wclip-thumb-ph"></span>'}
+      <span class="wclip-play">▶</span>
+    </button>`;
+  });
+  html += `</div><div class="wclip-detail"></div>
+    <audio class="wclip-audio" preload="none"></audio>`;
+  box.innerHTML = html;
+
+  const audio = box.querySelector('audio');
+  const detail = box.querySelector('.wclip-detail');
+  const thumbs = [...box.querySelectorAll('.wclip-thumb')];
+  let sel = 0;
+  const fillDetail = (i) => {
+    const c = clips[i];
+    const src = [c.media_name || '原声',
+      c.episode_title || (c.episode ? '第' + c.episode + '集' : '')].filter(Boolean).join(' · ');
+    const zh = c.text_zh || c.text_en || '';
+    const lang = c.zh_source === 'en' ? '<span class="wclip-lang">EN</span>' : '';
+    detail.innerHTML = `<div class="wclip-text">${clipTextHTML(c)}</div>
+      ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
+      <div class="wclip-src">${esc(src)}</div>`;
+  };
+  fillDetail(0);
+  const setOn = (on) => {
+    thumbs.forEach((t, i) => {
+      const icon = t.querySelector('.wclip-play');
+      const active = on && i === sel;
+      t.classList.toggle('on', active);
+      if (icon) icon.textContent = active ? '⏸' : '▶';
+    });
+  };
+  const playAt = (i) => {
+    const c = clips[i];
+    if (!c.audio_url) { toast('这条没有音频'); return; }
+    if (sel === i && audio.src) {
+      if (!audio.paused) { audio.pause(); return; }
+      if (!audio.ended) { audio.play().catch(() => toast('音频播放失败')); return; }
+    }
+    sel = i;
+    thumbs.forEach((t, j) => t.classList.toggle('sel', j === i));
+    fillDetail(i);
+    clipPauseOthers(audio);
+    audio.src = c.audio_url;
+    audio.play().catch(() => toast('音频播放失败'));
+  };
+  thumbs.forEach((t, i) => { t.onclick = (e) => { e.stopPropagation(); playAt(i); }; });
+  audio.addEventListener('play', () => setOn(true));
+  audio.addEventListener('pause', () => setOn(false));
+  audio.addEventListener('ended', () => setOn(false));
 }
 
 // sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
@@ -3086,6 +3225,7 @@ function nbPlayItems() {
 
 async function nbPlayStart() {
   nbPlayStop();
+  clipStopAll();
   closeNbPicker();
   const items = nbPlayItems();
   if (!items.length) { toast('本目录没有可播放内容'); return; }

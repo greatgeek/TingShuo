@@ -6,7 +6,7 @@ import (
 	"unicode"
 )
 
-const maxClips = 5
+const maxClips = 6
 
 // 目标词匹配候选：同一句里可能有多个同词，取第一个实词 token。
 type candidate struct {
@@ -216,7 +216,7 @@ func scoreSegment(seg Segment, rank int, surface string, idx int) float64 {
 	return score
 }
 
-// pickClips 从搜索结果里挑最多 5 条：词形精确、句子完整、媒体尽量分散。
+// pickClips 从搜索结果里挑最多 6 条：词形精确、句子完整、媒体尽量分散。
 func pickClips(surface, reading string, segs []Segment, media mediaSet) []candidate {
 	cands := make([]candidate, 0, len(segs))
 	seenText := map[string]bool{}
@@ -264,7 +264,7 @@ func pickClips(surface, reading string, segs []Segment, media mediaSet) []candid
 	}
 	sort.SliceStable(cands, func(i, j int) bool { return cands[i].score > cands[j].score })
 
-	// 两轮：第一轮每个作品最多 1 条，第二轮再补，避免 5 条全来自同一部剧
+	// 两轮：第一轮每个作品最多 1 条，第二轮再补，避免 6 条全来自同一部剧
 	selected := make([]candidate, 0, maxClips)
 	mediaCount := map[string]int{}
 	for pass := 0; pass < 2 && len(selected) < maxClips; pass++ {

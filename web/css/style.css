@@ -870,6 +870,51 @@ body.no-rt rt { display: none; }
 .nb-sent .zh { font-size: 11.5px; color: var(--ink2); margin-top: 3px; display: block; }
 .nb-sent .play { width: 32px; height: 32px; font-size: 11px; flex: none; margin-top: 2px; }
 
+/* 生词行「影视原声」按钮与横滑剧照条 */
+.word-clip-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  height: 34px; padding: 0 9px; flex: none; margin-top: 4px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); color: var(--ink2);
+  font-family: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap;
+}
+.word-clip-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.word-clip-btn .ic { font-size: 13px; line-height: 1; }
+.nb-clips { flex: 0 0 100%; min-width: 0; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.nb-clips-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.nb-clips-count { font-size: 10.5px; color: var(--ink3); white-space: nowrap; }
+.nb-clips .wclip-swap { margin-top: 2px; }
+.wclip-strip {
+  display: flex; gap: 8px; overflow-x: auto; overscroll-behavior-x: contain;
+  padding: 6px 2px 8px; scroll-snap-type: x proximity; max-width: 100%;
+}
+.wclip-strip::-webkit-scrollbar { height: 6px; }
+.wclip-strip::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 99px; }
+.wclip-thumb {
+  position: relative; flex: none; width: 148px; aspect-ratio: 16 / 9;
+  padding: 0; border: 2px solid transparent; border-radius: 10px;
+  background: #181410; overflow: hidden; cursor: pointer;
+  scroll-snap-align: start;
+}
+.wclip-thumb img, .wclip-thumb-ph { display: block; width: 100%; height: 100%; object-fit: cover; }
+.wclip-thumb.sel { border-color: var(--accent); }
+.wclip-thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.wclip-thumb .wclip-play {
+  left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%);
+  width: 34px; height: 34px; font-size: 12px;
+}
+.wclip-thumb:hover .wclip-play, .wclip-thumb.on .wclip-play { background: var(--accent); }
+.wclip-detail { padding: 2px 2px 0; }
+.wclip-detail .wclip-text { font-size: 14.5px; line-height: 1.85; }
+.wclip-detail .wclip-src { margin-top: 2px; }
+.nb-clips-skel { display: flex; gap: 8px; margin-top: 2px; overflow: hidden; }
+.nb-clips-skel span {
+  flex: none; width: 148px; aspect-ratio: 16 / 9; border-radius: 10px;
+  background: linear-gradient(100deg, var(--surface-2) 30%, var(--line) 50%, var(--surface-2) 70%);
+  background-size: 200% 100%; animation: nb-skel 1.4s linear infinite;
+}
+@keyframes nb-skel { from { background-position: 160% 0; } to { background-position: -60% 0; } }
+
 /* 默认显示译文（学习屏跟读脚手架除外） */
 .nb-sent .zh { display: block; }
 #ws-nb .zh { display: block; }
@@ -1149,6 +1194,10 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
   .sent .fav { width: 30px; height: 30px; font-size: 19px; }
   .sent .play { width: 34px; height: 34px; font-size: 11px; }
   .sent .word-speak { width: 32px; height: 32px; font-size: 12px; }
+  .word-clip-btn { width: 32px; height: 32px; padding: 0; }
+  .word-clip-btn .tx { display: none; }
+  .word-clip-btn .ic { font-size: 14px; }
+  .wclip-thumb, .nb-clips-skel span { width: 124px; }
   #nb-words .sent { padding: 11px 12px; }
   #nb-words .spk { width: 20px; height: 20px; margin-top: 11px; }
   .ws-word-txt { font-size: 38px; }

@@ -148,6 +148,7 @@ func run() error {
 			sec.Delete("/ai/chat", aiH.ChatClear)
 			sec.Get("/words/{id}/usage", wordH.Usage)
 			sec.Get("/words/{id}/clips", clipH.Clips)
+			sec.Post("/words/{id}/clips", clipH.Enqueue)
 			sec.Post("/words/clips/backfill", clipH.Backfill)
 
 			wsH := wordstudy.NewHandler(pool, azureTTS, store)
