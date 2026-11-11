@@ -508,6 +508,9 @@ body.no-rt rt { display: none; }
 .wclip-poster.on .wclip-play { display: none; }
 .wclip-body { padding: 10px 12px 11px; }
 .wclip-text { font-family: var(--serif); font-size: 15px; line-height: 1.85; color: var(--ink); }
+.wclip-line { display: flex; align-items: flex-start; gap: 8px; }
+.wclip-line .wclip-text { flex: 1; min-width: 0; }
+.wclip-line .ai-ask { margin-left: 0; margin-top: 2px; }
 .wclip-hit {
   background: rgba(184, 64, 44, .15); color: var(--accent-deep);
   font-weight: 700; border-radius: 4px; padding: 0 2px;

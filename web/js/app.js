@@ -455,7 +455,7 @@ async function loadWordClips(w, box, opts = {}) {
     box.addEventListener('click', e => e.stopPropagation());
   }
   const cached = CLIP_MEM.get(w.id);
-  if (cached && cached.length) { wclipRender(box, cached, opts, 0); return; }
+  if (cached && cached.length) { wclipRender(box, cached, w, opts, 0); return; }
 
   const title = opts.title || '原声台词';
   box.innerHTML = `<div class="wclip-head"><span class="usage-head">${title}</span></div><p class="hint">加载原声…</p>`;
@@ -468,7 +468,7 @@ async function loadWordClips(w, box, opts = {}) {
       const items = r.items || [];
       // 已缓存的片段即使搜索服务未配置也照常展示
       if (!r.enabled && !items.length) { box.innerHTML = ''; return; }
-      if (items.length) { CLIP_MEM.set(w.id, items); wclipRender(box, items, opts, 0); return; }
+      if (items.length) { CLIP_MEM.set(w.id, items); wclipRender(box, items, w, opts, 0); return; }
       if (r.pending && tries < 20) {
         tries++;
         box.innerHTML = `<div class="wclip-head"><span class="usage-head">${title}</span></div>
@@ -484,7 +484,7 @@ async function loadWordClips(w, box, opts = {}) {
   tick();
 }
 
-function wclipRender(box, clips, opts, offset) {
+function wclipRender(box, clips, w, opts, offset) {
   clipStopAll();
   const title = opts.title || '原声台词';
   const total = clips.length;
@@ -507,7 +507,10 @@ function wclipRender(box, clips, opts, offset) {
         <span class="wclip-play">▶</span>
       </div>
       <div class="wclip-body">
-        <div class="wclip-text">${clipTextHTML(c)}</div>
+        <div class="wclip-line">
+          <div class="wclip-text">${clipTextHTML(c)}</div>
+          <button class="ai-ask wclip-ask" title="就这句问 AI">问AI</button>
+        </div>
         ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
         <div class="wclip-meta">
           <span class="wclip-src">${esc(src)}</span>
@@ -519,7 +522,13 @@ function wclipRender(box, clips, opts, offset) {
   });
   box.innerHTML = html;
 
-  box.querySelectorAll('.wclip-card').forEach(card => {
+  box.querySelectorAll('.wclip-card').forEach((card, i) => {
+    const c = shown[i];
+    const ask = card.querySelector('.wclip-ask');
+    if (ask) ask.onclick = (e) => {
+      e.stopPropagation();
+      openAiAsk({ text: c.text_ja, translation: c.text_zh || c.text_en || '' }, w);
+    };
     const a = card.querySelector('.wclip-audio');
     const btn = card.querySelector('.wclip-mini');
     const poster = card.querySelector('.wclip-poster');
@@ -554,7 +563,7 @@ function wclipRender(box, clips, opts, offset) {
   if (swap) {
     swap.onclick = (e) => {
       e.stopPropagation();
-      wclipRender(box, clips, opts, (offset + n) % total);
+      wclipRender(box, clips, w, opts, (offset + n) % total);
     };
   }
 }
@@ -2826,7 +2835,7 @@ function nbToggleClips(w, div) {
 async function nbLoadClips(w, box) {
   const head = '<div class="nb-clips-head"><span class="usage-head">影视原声</span></div>';
   const cached = CLIP_MEM.get(w.word_id);
-  if (cached && cached.length) { nbClipsRender(box, cached); return; }
+  if (cached && cached.length) { nbClipsRender(box, cached, w); return; }
   box.innerHTML = head + '<p class="hint">加载原声…</p>';
   let tries = 0;
   let autoTried = false;
@@ -2853,7 +2862,7 @@ async function nbLoadClips(w, box) {
       const r = await api('/words/' + w.word_id + '/clips');
       if (!box.isConnected) return;
       const items = r.items || [];
-      if (items.length) { CLIP_MEM.set(w.word_id, items); nbClipsRender(box, items); return; }
+      if (items.length) { CLIP_MEM.set(w.word_id, items); nbClipsRender(box, items, w); return; }
       if (!r.enabled) { box.innerHTML = head + '<p class="hint">原声例句服务暂不可用</p>'; return; }
       if (r.pending) {
         tries++;
@@ -2884,7 +2893,7 @@ async function nbLoadClips(w, box) {
   tick();
 }
 
-function nbClipsRender(box, clips) {
+function nbClipsRender(box, clips, w) {
   clipStopAll();
   let html = `<div class="nb-clips-head"><span class="usage-head">影视原声</span>
     <span class="nb-clips-count">${clips.length} 条 · 点剧照听原声</span></div>
@@ -2909,9 +2918,16 @@ function nbClipsRender(box, clips) {
       c.episode_title || (c.episode ? '第' + c.episode + '集' : '')].filter(Boolean).join(' · ');
     const zh = c.text_zh || c.text_en || '';
     const lang = c.zh_source === 'en' ? '<span class="wclip-lang">EN</span>' : '';
-    detail.innerHTML = `<div class="wclip-text">${clipTextHTML(c)}</div>
+    detail.innerHTML = `<div class="wclip-line">
+      <div class="wclip-text">${clipTextHTML(c)}</div>
+      <button class="ai-ask wclip-ask" title="就这句问 AI">问AI</button>
+    </div>
       ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
       <div class="wclip-src">${esc(src)}</div>`;
+    detail.querySelector('.wclip-ask').onclick = (e) => {
+      e.stopPropagation();
+      openAiAsk({ text: c.text_ja, translation: c.text_zh || c.text_en || '' }, w);
+    };
   };
   fillDetail(0);
   const setOn = (on) => {
