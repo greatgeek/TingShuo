@@ -3130,8 +3130,7 @@ async function aiSend() {
         } else if (ev === 'text') {
           reply += JSON.parse(data);
           if (!rep.dataset.on) { rep.dataset.on = '1'; thk.style.display = 'none'; live.hidden = true; }
-          rep.innerHTML = mdRender(reply);
-          bub.scrollIntoView({ block: 'end' });
+          rep.innerHTML = mdRender(reply); // 不跟随滚动：内容增长时不把视图拉到末尾
         } else if (ev === 'done') {
           const j = JSON.parse(data);
           reply = j.reply || reply;
@@ -3160,7 +3159,6 @@ async function aiSend() {
     rep.innerHTML = '<span class="ai-err">请求失败：' + esc(e.message) + '</span>';
   } finally {
     $('ai-send').disabled = false;
-    bub.scrollIntoView({ block: 'end' });
   }
 }
 
