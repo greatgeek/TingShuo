@@ -399,6 +399,7 @@ textarea {
   display: flex; align-items: center; gap: 10px;
   padding: 11px 10px; border-radius: 13px; cursor: pointer;
   transition: background .15s;
+  -webkit-tap-highlight-color: transparent; /* 触屏点按不闪整卡蓝光 */
 }
 .sent:hover { background: var(--surface-2); }
 .sent.now { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
