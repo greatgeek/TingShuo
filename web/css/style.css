@@ -504,8 +504,8 @@ body.no-rt rt { display: none; }
   display: grid; place-items: center; font-size: 15px; line-height: 1;
   backdrop-filter: blur(4px);
 }
-.wclip-poster:hover .wclip-play,
-.wclip-poster.on .wclip-play { background: var(--accent); }
+.wclip-poster:hover .wclip-play { background: var(--accent); }
+.wclip-poster.on .wclip-play { display: none; }
 .wclip-body { padding: 10px 12px 11px; }
 .wclip-text { font-family: var(--serif); font-size: 15px; line-height: 1.85; color: var(--ink); }
 .wclip-hit {
@@ -904,7 +904,8 @@ body.no-rt rt { display: none; }
   left: 50%; top: 50%; bottom: auto; transform: translate(-50%, -50%);
   width: 34px; height: 34px; font-size: 12px;
 }
-.wclip-thumb:hover .wclip-play, .wclip-thumb.on .wclip-play { background: var(--accent); }
+.wclip-thumb:hover .wclip-play { background: var(--accent); }
+.wclip-thumb.on .wclip-play { display: none; }
 .wclip-detail { padding: 2px 2px 0; }
 .wclip-detail .wclip-text { font-size: 14.5px; line-height: 1.85; }
 .wclip-detail .wclip-src { margin-top: 2px; }
