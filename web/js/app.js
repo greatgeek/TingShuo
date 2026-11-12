@@ -31,6 +31,7 @@ const NAV_PARENT = {
   create: 'home', learn: 'home', review: 'home',
   library: 'home', wordstudy: 'home', notebook: 'home',
   recite: 'home', 'recite-play': 'recite',
+  grammar: 'home',
   aiask: 'notebook',
 };
 let CUR_SCREEN = 'login';
@@ -921,6 +922,7 @@ async function loadHome() {
   loadLibCount();    // 首页显示生词库数量（不阻塞主流程）
   loadNbCount();     // 首页显示生词本概览（不阻塞主流程）
   loadRecCount();    // 首页显示课文本数量（不阻塞主流程）
+  loadGraCount();    // 首页显示语法本概览（不阻塞主流程）
   updateCacheStats(); // 首页本地音频缓存占用（不阻塞主流程）
 
   const chip = $('lesson-chip'), btn = $('home-main-btn');
@@ -2600,6 +2602,7 @@ function renderNbStrip() {
   $('nb-copy-btn').hidden = !dir;
   $('nb-export-btn').hidden = !dir;
   $('nb-test-btn').hidden = !dir;
+  $('nb-gra-btn').hidden = !nbGrammarLessonNo();
 }
 
 // 目录选择面板：横条正下方就地展开/收起（不再底部弹窗）
@@ -3556,6 +3559,254 @@ function nbPlayApplyCfg() {
   nbPlayStep(!PL.paused);
 }
 
+// ============ 语法本（语法解释 + 表达扩展，例句联动课文本/生词本）============
+let GRAM_BOOK = localStorage.getItem('gram-book') || '初级上';
+let GRAM_LESSONS = null, GRAM = null;
+
+function renderGraBooks() {
+  document.querySelectorAll('#gra-books .gra-book').forEach(b => {
+    b.classList.toggle('on', b.dataset.book === GRAM_BOOK);
+    b.setAttribute('aria-selected', String(b.dataset.book === GRAM_BOOK));
+  });
+}
+
+async function setGrammarBook(book) {
+  if (book === GRAM_BOOK) return;
+  GRAM_BOOK = book;
+  localStorage.setItem('gram-book', book);
+  GRAM_LESSONS = null;
+  GRAM = null;
+  renderGraBooks();
+  showGraList();
+  $('gra-list').innerHTML = '<p class="hint">加载中…</p>';
+  try { await loadGrammarLessons(true); }
+  catch (e) { $('gra-list').innerHTML = `<p class="hint">加载失败：${esc(e.message)}</p>`; return; }
+  renderGraList();
+  loadGraCount();
+}
+
+async function loadGrammarLessons(force) {
+  if (GRAM_LESSONS && !force) return GRAM_LESSONS;
+  const r = await api('/grammar/lessons?book=' + encodeURIComponent(GRAM_BOOK));
+  GRAM_LESSONS = r.lessons || [];
+  return GRAM_LESSONS;
+}
+
+async function loadGraCount() {
+  try {
+    const list = await loadGrammarLessons();
+    const pts = list.reduce((s, x) => s + (x.points || 0), 0);
+    $('gra-desc').textContent = list.length
+      ? `${GRAM_BOOK} · ${list.length} 课 · ${pts} 个知识点 · 例句与词表可发音`
+      : '还没有语法内容。';
+  } catch {}
+}
+
+async function goGrammar() {
+  stopPlay();
+  go('grammar');
+  showGraList();
+  if (!GRAM_LESSONS) {
+    $('gra-list').innerHTML = '<p class="hint">加载中…</p>';
+    try { await loadGrammarLessons(); }
+    catch (e) { $('gra-list').innerHTML = `<p class="hint">加载失败：${esc(e.message)}</p>`; return; }
+  }
+  renderGraList();
+}
+
+function showGraList() {
+  GRAM = null;
+  $('gra-list-card').hidden = false;
+  $('gra-lesson').hidden = true;
+  window.scrollTo(0, 0);
+}
+
+function renderGraList() {
+  const box = $('gra-list');
+  if (!GRAM_LESSONS || !GRAM_LESSONS.length) {
+    box.innerHTML = '<p class="hint">还没有语法内容。</p>';
+    return;
+  }
+  box.innerHTML = GRAM_LESSONS.map(it => {
+    const tags = (it.recitation_lesson_id ? '<span class="gra-tag">有课文本</span>' : '') +
+      (it.has_notebook ? '<span class="gra-tag nb">生词本已有本科</span>' : '');
+    return `<button class="gra-item" data-no="${it.lesson_no}">
+      <div class="gra-item-top">
+        <span class="gra-item-title">${esc(it.title)}</span>
+        <span class="gra-item-meta">语法 ${it.grammar_points} · 表达 ${it.expression_points}</span>
+      </div>
+      <div class="gra-item-sub">${it.examples} 条例句 ${tags}</div>
+    </button>`;
+  }).join('');
+}
+
+async function openGrammarLesson(no) {
+  if (!TOKEN) { go('login'); return; }
+  stopPlay();
+  go('grammar');
+  $('gra-list-card').hidden = true;
+  $('gra-lesson').hidden = false;
+  $('gra-detail').innerHTML = '<div class="card"><p class="hint">加载中…</p></div>';
+  window.scrollTo(0, 0);
+  const book = no >= 17 ? '初级下' : '初级上';
+  if (book !== GRAM_BOOK) {
+    GRAM_BOOK = book;
+    localStorage.setItem('gram-book', book);
+    GRAM_LESSONS = null;
+    renderGraBooks();
+  }
+  try { GRAM = await api(`/grammar/lessons/${no}?book=${encodeURIComponent(GRAM_BOOK)}`); }
+  catch (e) { $('gra-detail').innerHTML = `<div class="card"><p class="hint">${esc(e.message)}</p></div>`; return; }
+  renderGraDetail();
+}
+
+function graRenderBody(blocks, p) {
+  const bySeq = new Map(((p && p.examples) || []).map(e => [e.seq, e]));
+  const used = new Set();
+  const out = [];
+  let run = [];
+  const flush = () => {
+    if (run.length) { out.push(`<div class="gra-exs">${run.join('')}</div>`); run = []; }
+  };
+  for (const b of blocks || []) {
+    if (b.type === 'ex') {
+      const e = bySeq.get(b.seq);
+      if (e) { run.push(graExampleHTML(p, e)); used.add(b.seq); }
+      continue;
+    }
+    flush();
+    if (b.type === 'p') { out.push(`<p class="gra-p">${esc(b.text)}</p>`); continue; }
+    if (b.type === 'item') { out.push(`<div class="gra-itemline"><b>${esc(b.term)}</b><span>${esc(b.text)}</span></div>`); continue; }
+    if (b.type === 'table') {
+      const cell = c => {
+        if (c && typeof c === 'object') {
+          const say = c.say ? `<button class="gra-cell-say" data-say="${esc(c.say)}" title="朗读" aria-label="朗读 ${esc(c.t)}">🔊</button>` : '';
+          return `<span class="gra-cell-t">${esc(c.t)}</span>${say}`;
+        }
+        return esc(c);
+      };
+      const head = (b.head || []).map(h => `<th>${esc(h)}</th>`).join('');
+      const rows = (b.rows || []).map(r => `<tr>${r.map(c => `<td>${cell(c)}</td>`).join('')}</tr>`).join('');
+      out.push(`<div class="gra-tablewrap">${b.title ? `<div class="gra-tabletitle">${esc(b.title)}</div>` : ''}` +
+        `<table class="gra-table">${head ? `<thead><tr>${head}</tr></thead>` : ''}<tbody>${rows}</tbody></table></div>`);
+    }
+  }
+  flush();
+  const rest = ((p && p.examples) || []).filter(e => !used.has(e.seq));
+  if (rest.length) out.push(`<div class="gra-exs">${rest.map(e => graExampleHTML(p, e)).join('')}</div>`);
+  return out.join('');
+}
+
+function graExampleHTML(p, e) {
+  const spk = e.speaker ? `<span class="gra-spk">${esc(e.speaker)}</span>` : '';
+  const markCls = e.mark === '○' ? 'ok' : (e.mark === '×' ? 'bad' : 'warn');
+  const mark = e.mark ? `<span class="gra-mark ${markCls}">${esc(e.mark)}</span>` : '';
+  const badges = (e.rec ? '<button class="gra-badge rec" data-link="rec">原声</button>' : '') +
+    (e.notebook ? '<button class="gra-badge nb" data-link="nb">生词本</button>' : '');
+  return `<div class="gra-ex" data-pid="${esc(p.id)}" data-seq="${e.seq}">
+    <div class="gra-ex-main">
+      <div class="gra-ex-line">${spk}${mark}<span class="gra-ex-text">${rubyHTML(e.ruby_tokens) || esc(e.text)}</span></div>
+      <div class="gra-zh">${esc(e.translation)}</div>
+      ${e.note ? `<div class="gra-note">${esc(e.note)}</div>` : ''}
+      ${badges ? `<div class="gra-badges">${badges}</div>` : ''}
+    </div>
+    <button class="gra-say" title="朗读例句">🔊</button>
+  </div>`;
+}
+
+function graPointHTML(p, open) {
+  return `<div class="card gra-point${open ? ' open' : ''}" data-pid="${esc(p.id)}">
+    <button class="gra-point-head" aria-expanded="${open}">
+      <span class="gra-seq">${p.seq}</span>
+      <span class="gra-pattern">${esc(p.pattern)}</span>
+      <span class="gra-chev">▾</span>
+    </button>
+    <div class="gra-point-body"${open ? '' : ' hidden'}>
+      ${p.formation ? `<p class="gra-formation"><b>接续</b>${esc(p.formation)}</p>` : ''}
+      ${graRenderBody(p.body, p)}
+    </div>
+  </div>`;
+}
+
+function renderGraDetail() {
+  const points = GRAM.points || [];
+  const secs = [['grammar', '语法解释'], ['expression', '表达扩展']];
+  let html = `<div class="card gra-head">
+    <h2>${esc(GRAM.title)}</h2>
+    <p class="hint">点知识点展开 · 🔊 朗读例句与词表 · 「原声」「生词本」可直接跳到对应位置</p>
+  </div>`;
+  for (const [key, label] of secs) {
+    const list = points.filter(p => (p.section || 'grammar') === key);
+    if (!list.length) continue;
+    html += `<div class="gra-sec">
+      <div class="gra-sec-head"><span>${label}</span><span class="gra-sec-ct">${list.length} 个知识点</span></div>
+      ${list.map((p, i) => graPointHTML(p, i === 0)).join('')}
+    </div>`;
+  }
+  const box = $('gra-detail');
+  box.innerHTML = html;
+
+  box.querySelectorAll('.gra-point').forEach(cardEl => {
+    const head = cardEl.querySelector('.gra-point-head');
+    const body = cardEl.querySelector('.gra-point-body');
+    head.onclick = () => {
+      body.hidden = !body.hidden;
+      cardEl.classList.toggle('open', !body.hidden);
+      head.setAttribute('aria-expanded', String(!body.hidden));
+    };
+  });
+
+  box.querySelectorAll('.gra-cell-say').forEach(btn => {
+    btn.onclick = (ev) => { ev.stopPropagation(); sayAudio(btn.dataset.say, btn); };
+  });
+
+  box.querySelectorAll('.gra-ex').forEach(el => {
+    const p = points.find(x => x.id === el.dataset.pid);
+    const e = p && p.examples.find(x => String(x.seq) === el.dataset.seq);
+    if (!e) return;
+    el.querySelector('.gra-say').onclick = (ev) => { ev.stopPropagation(); sayAudio(e.text, ev.currentTarget); };
+    const recBtn = el.querySelector('[data-link="rec"]');
+    if (recBtn) recBtn.onclick = (ev) => { ev.stopPropagation(); openRec(e.rec.lesson_id, { lineNo: e.rec.line_no }); };
+    const nbBtn = el.querySelector('[data-link="nb"]');
+    if (nbBtn) nbBtn.onclick = (ev) => { ev.stopPropagation(); openNotebookAt(e.notebook); };
+  });
+}
+
+// 生词本反向入口：当前目录向上找到「第N课」
+function nbGrammarLessonNo() {
+  let d = NB_DIRS.find(x => x.id === NB_CURDIR);
+  while (d) {
+    const m = /^第(\d+)课$/.exec(d.name || '');
+    if (m) return parseInt(m[1], 10);
+    d = NB_DIRS.find(x => x.id === (d.parent_id || ''));
+  }
+  return 0;
+}
+
+async function openNotebookAt(ref) {
+  if (!ref || !ref.notebook_id) return;
+  stopPlay();
+  try { NB_LIST = (await api('/notebooks')).items || []; }
+  catch (e) { alert(e.message); return; }
+  if (!NB_LIST.find(x => x.id === ref.notebook_id)) { toast('找不到对应的生词本'); return; }
+  NB_CUR = ref.notebook_id;
+  NB_CURDIR = null;
+  NB_WORDS = {};
+  localStorage.setItem('ts_nb_cur', NB_CUR);
+  await nbLoadTree();
+  go('notebook');
+  await nbOpenDir(ref.dir_id);
+  const items = NB_WORDS[ref.dir_id] || [];
+  const idx = items.findIndex(w => w.word_id === ref.word_id);
+  if (idx < 0) { toast('这个词已不在该目录'); return; }
+  const row = $('nb-words').querySelectorAll('.wordrow')[idx];
+  if (!row) return;
+  nbToggleWord(items[idx], row);
+  row.classList.add('gra-hit');
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  setTimeout(() => row.classList.remove('gra-hit'), 2600);
+}
+
 // ============ 课文本（练口语课文：听读/背诵/听写/连听）============
 // 参照 DashPlayer：整课一条原声音频 + SRT 行时间轴。当前句只由时间轴决定，
 // 点句 seek、句末自动停（听读），连续播放自动高亮（连听）。
@@ -4195,7 +4446,7 @@ async function goRecite() {
   }
   recRenderList();
 }
-async function openRec(id) {
+async function openRec(id, opts = {}) {
   stopPlay();
   let d;
   try {
@@ -4204,7 +4455,7 @@ async function openRec(id) {
   if (REC && REC.lesson.id !== id) recDropAudio();
   REC = d;
   const saved = parseInt(localStorage.getItem('ts_rec_pos_' + id) || '0', 10);
-  const idx = REC.lines.findIndex(l => l.line_no === saved);
+  const idx = REC.lines.findIndex(l => l.line_no === (opts.lineNo || saved));
   REC_IDX = idx >= 0 ? idx : 0;
   REC_REVEAL = false;
   REC_DICT_TRIES = 0;
@@ -4223,6 +4474,19 @@ async function openRec(id) {
   setRecMode('read');
   window.scrollTo(0, 0);
   recAudio().catch(() => {});
+  syncRecGrammarBtn();
+  if (opts.lineNo) recPlayAt(REC_IDX, false, true);
+}
+
+async function syncRecGrammarBtn() {
+  const btn = $('rec-gra-btn');
+  if (!REC || !REC.lesson || !REC.lesson.lesson_no) { btn.hidden = true; return; }
+  try {
+    const list = await loadGrammarLessons();
+    const it = list.find(x => x.lesson_no === REC.lesson.lesson_no);
+    btn.hidden = !it;
+    btn.onclick = it ? () => openGrammarLesson(it.lesson_no) : null;
+  } catch { btn.hidden = true; }
 }
 function recLeave() {
   clearTimeout(REC_DICT_TIMER);
@@ -5359,6 +5623,7 @@ $('ws-new-btn').onclick = () => goWordStudy('new');
 $('lib-link').onclick = (e) => { e.preventDefault(); goLibrary(); };
 $('home-nb-btn').onclick = goNotebook;
 $('home-rec-btn').onclick = goRecite;
+$('home-gra-btn').onclick = goGrammar;
 $('cache-clear-btn').onclick = clearAudioCache;
 $('mode-full').onclick = () => pickGenMode('full');
 $('mode-phrases').onclick = () => pickGenMode('phrases');
@@ -5395,8 +5660,23 @@ $('nb-play-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-copy-btn').onclick = (e) => { e.stopPropagation(); nbCopyAll(); };
 $('nb-export-btn').onclick = (e) => { e.stopPropagation(); nbExportAll(); };
 $('nb-test-btn').onclick = (e) => { e.stopPropagation(); nbStartTest(); };
+$('nb-gra-btn').onclick = (e) => {
+  e.stopPropagation();
+  const no = nbGrammarLessonNo();
+  if (no) openGrammarLesson(no);
+};
 
 // ---- 课文本 ----
+$('gra-list').addEventListener('click', e => {
+  const el = e.target.closest('.gra-item');
+  if (el) openGrammarLesson(parseInt(el.dataset.no, 10));
+});
+$('gra-back-list').onclick = goGrammar;
+$('gra-books').addEventListener('click', e => {
+  const b = e.target.closest('.gra-book');
+  if (b) setGrammarBook(b.dataset.book);
+});
+renderGraBooks();
 document.querySelectorAll('#rec-modes button').forEach(b => {
   b.onclick = () => setRecMode(b.dataset.mode);
 });

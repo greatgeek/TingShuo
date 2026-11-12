@@ -122,6 +122,14 @@
 
     <div class="card compact">
       <div class="compact-main">
+        <h2>语法本</h2>
+        <p class="hint" id="gra-desc">按课查看语法点与例句，联动课文本与生词本。</p>
+      </div>
+      <button class="btn ghost compact-btn" id="home-gra-btn">打开 →</button>
+    </div>
+
+    <div class="card compact">
+      <div class="compact-main">
         <h2>本地音频缓存</h2>
         <p class="hint" id="cache-desc">尚未缓存音频，播放过的句子会自动存到本地。</p>
       </div>
@@ -268,6 +276,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v11"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
         </button>
         <button class="btn ghost nb-icon nb-test" id="nb-test-btn" title="测试本目录全部词（句子挖空为主）" aria-label="测试本目录">测</button>
+        <button class="btn ghost nb-icon" id="nb-gra-btn" title="本课语法点与例句" aria-label="本课语法" hidden>法</button>
         <div class="nb-play-group">
           <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置" aria-label="播放设置">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/></svg>
@@ -303,6 +312,23 @@
     <p class="hint" id="nb-hint" style="margin-top:12px"></p>
   </section>
 
+  <!-- 语法本 -->
+  <section class="screen" id="sc-grammar">
+    <div class="card" id="gra-list-card">
+      <h2>语法本</h2>
+      <p class="hint">按教材课次整理「语法解释」与「表达扩展」。例句与词表可发音；已出现在课文本/生词本里的例句会带「原声」「生词本」入口。</p>
+      <div class="gra-books" id="gra-books" role="tablist">
+        <button class="gra-book" data-book="初级上">初级上</button>
+        <button class="gra-book" data-book="初级下">初级下</button>
+      </div>
+      <div id="gra-list"></div>
+    </div>
+    <div id="gra-lesson" hidden>
+      <button class="btn ghost gra-back" id="gra-back-list">← 课列表</button>
+      <div id="gra-detail"></div>
+    </div>
+  </section>
+
   <!-- 课文本列表 -->
   <section class="screen" id="sc-recite">
     <div class="card">
@@ -316,7 +342,10 @@
   <!-- 课文本练习 -->
   <section class="screen" id="sc-recite-play">
     <div class="card rec-head">
-      <h2 id="rec-title">—</h2>
+      <div class="rec-head-top">
+        <h2 id="rec-title">—</h2>
+        <button class="btn ghost rec-gra-btn" id="rec-gra-btn" title="本课语法点与例句" hidden>语法</button>
+      </div>
       <div class="modebar rec-modes" id="rec-modes">
         <button data-mode="read" class="on">听读</button>
         <button data-mode="recite">背诵</button>

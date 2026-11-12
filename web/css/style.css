@@ -1516,3 +1516,119 @@ body.rec-playing #sc-recite-play { padding-bottom: 104px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ============ 语法本 ============ */
+.rec-head-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rec-head-top h2 { margin-bottom: 2px; min-width: 0; }
+.rec-gra-btn { flex: none; width: auto; margin: 0; padding: 7px 12px; font-size: 12px; }
+
+.gra-back { width: auto; margin: 0 0 10px; padding: 7px 12px; font-size: 12px; }
+#gra-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.gra-item {
+  width: 100%; text-align: left; padding: 13px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-md);
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.gra-item:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.gra-item-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.gra-item-title { font-size: 14px; font-weight: 700; }
+.gra-item-meta { flex: none; font-size: 11px; color: var(--accent-deep); }
+.gra-item-sub { margin-top: 4px; font-size: 11.5px; color: var(--ink3); }
+.gra-tag {
+  display: inline-block; margin-left: 6px; padding: 1px 7px;
+  border-radius: 99px; font-size: 10.5px;
+  background: var(--accent-soft); color: var(--accent-deep);
+}
+.gra-tag.nb { background: var(--jade-soft); color: var(--jade); }
+
+.gra-head h2 { margin-bottom: 4px; }
+.gra-books { display: inline-flex; margin-top: 10px; padding: 3px; border-radius: 99px; background: var(--surface-2); gap: 2px; }
+.gra-book {
+  padding: 6px 16px; border: 0; border-radius: 99px; background: none; color: var(--ink2);
+  font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.gra-book.on { background: var(--surface); color: var(--accent-deep); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.gra-sec { margin-top: 18px; }
+.gra-sec-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 0 4px 8px; font-size: 13px; font-weight: 700; color: var(--ink2);
+  letter-spacing: .06em;
+}
+.gra-sec-ct { font-size: 11px; font-weight: 400; color: var(--ink3); letter-spacing: 0; }
+.gra-point { padding: 0; overflow: hidden; }
+.gra-point-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 14px 16px; border: 0; background: none; color: var(--ink);
+  font-family: inherit; text-align: left; cursor: pointer;
+}
+.gra-point-head:hover { background: var(--surface-2); }
+.gra-seq {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--accent-soft); color: var(--accent-deep);
+  font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.gra-pattern { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; line-height: 1.5; }
+.gra-chev { flex: none; color: var(--ink3); font-size: 11px; transition: transform .15s; }
+.gra-point.open .gra-chev { transform: rotate(180deg); }
+.gra-point-body { padding: 0 16px 16px; border-top: 1px dashed var(--line); }
+.gra-formation {
+  margin: 10px 0 4px; padding: 8px 10px; border-radius: var(--r-sm);
+  background: var(--surface-2); font-size: 12.5px; color: var(--ink2); line-height: 1.7;
+}
+.gra-formation b { margin-right: 8px; color: var(--ink3); font-weight: 600; font-size: 10.5px; letter-spacing: .08em; }
+.gra-p { margin-top: 8px; font-size: 13px; color: var(--ink2); line-height: 1.9; }
+.gra-itemline { margin-top: 8px; font-size: 13px; line-height: 1.9; color: var(--ink2); }
+.gra-itemline b { display: inline-block; margin-right: 8px; color: var(--ink); font-family: var(--serif); font-size: 14.5px; }
+.gra-tablewrap { margin-top: 10px; overflow-x: auto; }
+.gra-tabletitle { margin-bottom: 5px; font-size: 11px; color: var(--ink3); letter-spacing: .04em; }
+.gra-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.gra-table th, .gra-table td { padding: 7px 9px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.gra-table th { background: var(--surface-2); color: var(--ink2); font-weight: 700; white-space: nowrap; }
+.gra-table td { color: var(--ink); }
+.gra-exs { margin-top: 12px; border-top: 1px solid var(--line); }
+.gra-ex { display: flex; align-items: flex-start; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.gra-ex-main { flex: 1; min-width: 0; }
+.gra-ex-line { font-family: var(--serif); font-size: 15.5px; line-height: 2; color: var(--ink); }
+.gra-spk {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 6px;
+  background: var(--surface-3); color: var(--ink2);
+  font-family: var(--sans); font-size: 11px; font-weight: 700; vertical-align: 1px;
+}
+.gra-mark { display: inline-block; margin-right: 5px; font-weight: 700; }
+.gra-mark.ok { color: var(--ok); }
+.gra-mark.bad { color: var(--danger); }
+.gra-mark.warn { color: #b7791f; }
+.gra-zh { margin-top: 1px; font-size: 12px; color: var(--ink2); line-height: 1.7; }
+.gra-note { margin-top: 3px; font-size: 11px; color: var(--ink3); line-height: 1.7; }
+.gra-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.gra-badge {
+  padding: 3px 9px; border-radius: 99px; border: 1px solid transparent;
+  font-family: inherit; font-size: 10.5px; font-weight: 600; cursor: pointer;
+  background: var(--accent-soft); color: var(--accent-deep);
+}
+.gra-badge.rec:hover { border-color: var(--accent); }
+.gra-badge.nb { background: var(--jade-soft); color: var(--jade); }
+.gra-badge.nb:hover { border-color: var(--jade); }
+.gra-say {
+  flex: none; width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--line-strong); background: var(--surface);
+  font-size: 13px; cursor: pointer; line-height: 1;
+}
+.gra-say:hover { border-color: var(--accent); background: var(--accent-soft); }
+.gra-cell-t { vertical-align: middle; }
+.gra-cell-say {
+  width: 20px; height: 20px; margin-left: 5px; border-radius: 50%;
+  border: 1px solid var(--line-strong); background: var(--surface);
+  font-size: 9.5px; line-height: 1; cursor: pointer; vertical-align: middle;
+  color: var(--ink2);
+}
+.gra-cell-say:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-deep); }
+.gra-hit { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: var(--r-md); transition: outline-color .3s; }
+
+@media (max-width: 420px) {
+  .gra-ex-line { font-size: 14.5px; }
+  .gra-table { font-size: 11.5px; }
+  .gra-table th, .gra-table td { padding: 6px 7px; }
+}
