@@ -2961,6 +2961,16 @@ function nbClipsRender(box, clips, w) {
     audio.play().catch(() => toast('音频播放失败'));
   };
   thumbs.forEach((t, i) => { t.onclick = (e) => { e.stopPropagation(); playAt(i); }; });
+  const strip = box.querySelector('.wclip-strip');
+  const revealThumb = (i) => {
+    const t = thumbs[i];
+    if (!strip || !t) return;
+    const sr = strip.getBoundingClientRect();
+    const tr = t.getBoundingClientRect();
+    const delta = (tr.left - sr.left) - (strip.clientWidth - tr.width) / 2;
+    // smooth 滚动会被容器上的 scroll-snap 取消（Chrome），只能用瞬时滚动
+    if (Math.abs(delta) > 2) strip.scrollLeft += delta;
+  };
   audio.addEventListener('play', () => setOn(true));
   audio.addEventListener('pause', () => setOn(false));
   audio.addEventListener('ended', () => setOn(false));
@@ -2976,6 +2986,7 @@ function nbClipsRender(box, clips, w) {
     if (e.key === 'ArrowRight') {
       e.preventDefault();
       playAt((sel + 1) % clips.length);
+      revealThumb(sel);
     } else if (e.key === ' ' || e.key === 'Spacebar') {
       e.preventDefault();
       playAt(sel);
