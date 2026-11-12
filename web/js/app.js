@@ -421,6 +421,12 @@ function usageRow(x) {
 // 后端按词缓存最多 6 条；这里（生词库/背词）每次展示 2 条，点"换两条"本地轮换（不消耗 API 配额）。
 const CLIP_MEM = new Map();
 
+// 影视原声面板的键盘监听（→ 切下一条、空格播放/暂停）
+let NB_CLIPS_KEYS = null;
+function nbClipsUnbindKeys() {
+  if (NB_CLIPS_KEYS) { document.removeEventListener('keydown', NB_CLIPS_KEYS); NB_CLIPS_KEYS = null; }
+}
+
 function clipStopAll() {
   document.querySelectorAll('.wclip-audio').forEach(x => { try { x.pause(); } catch {} });
   document.querySelectorAll('.wclip-mini.on, .wclip-poster.on').forEach(b => b.classList.remove('on'));
@@ -2813,6 +2819,7 @@ function nbToggleWord(w, div) {
   const ex = div.querySelector('.nb-sents');
   if (ex) { ex.remove(); return; }
   document.querySelectorAll('.nb-clips').forEach(x => x.remove());
+  nbClipsUnbindKeys();
   clipStopAll();
   document.querySelectorAll('.nb-sents').forEach(x => x.remove());
   div.appendChild(nbBuildSents(w));
@@ -2821,10 +2828,11 @@ function nbToggleWord(w, div) {
 // ---- 生词本 / 影视原声：横滑剧照条，点图听原声 ----
 function nbToggleClips(w, div) {
   const panel = div.querySelector('.nb-clips');
-  if (panel) { panel.remove(); clipStopAll(); return; }
+  if (panel) { panel.remove(); clipStopAll(); nbClipsUnbindKeys(); return; }
   nbPlayStop();
   document.querySelectorAll('.nb-sents').forEach(x => x.remove());
   document.querySelectorAll('.nb-clips').forEach(x => x.remove());
+  nbClipsUnbindKeys();
   clipStopAll();
   const box = document.createElement('div');
   box.className = 'nb-clips';
@@ -2956,6 +2964,25 @@ function nbClipsRender(box, clips, w) {
   audio.addEventListener('play', () => setOn(true));
   audio.addEventListener('pause', () => setOn(false));
   audio.addEventListener('ended', () => setOn(false));
+
+  nbClipsUnbindKeys();
+  const onKey = (e) => {
+    if (!box.isConnected) { nbClipsUnbindKeys(); return; }
+    if (CUR_SCREEN !== 'notebook' || PL) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+    if (['picker-mask', 'nb-cfg-mask'].some(id => $(id) && getComputedStyle($(id)).display !== 'none')) return;
+    const t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      playAt((sel + 1) % clips.length);
+    } else if (e.key === ' ' || e.key === 'Spacebar') {
+      e.preventDefault();
+      playAt(sel);
+    }
+  };
+  NB_CLIPS_KEYS = onKey;
+  document.addEventListener('keydown', onKey);
 }
 
 // sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
