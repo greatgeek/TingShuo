@@ -1135,7 +1135,7 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
   border-radius: 18px; padding: 12px 14px 10px; margin-top: 12px;
   box-shadow: var(--shadow-sm);
 }
-.ai-inputcard input { width: 100%; border: 0; background: transparent; outline: none; font-size: 14px; padding: 2px 0; box-shadow: none; }
+.ai-inputcard input { width: 100%; border: 0; border-radius: 0; background: transparent; outline: none; font-size: 14px; padding: 2px 0; box-shadow: none; }
 .ai-inputfoot { display: flex; justify-content: flex-end; align-items: center; margin-top: 6px; }
 .ai-sendbtn {
   width: 34px; height: 34px; border-radius: 50%; border: 0;
