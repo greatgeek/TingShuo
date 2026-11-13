@@ -971,6 +971,11 @@ body.no-rt rt { display: none; }
   color: #FFF9F2;
 }
 .nb-nowbar .btn:hover { background: rgba(255, 255, 255, .22); color: #fff; }
+.nb-nowbar .btn.nb-now-cfg {
+  width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.nb-nowbar .btn.nb-now-cfg svg { width: 14px; height: 14px; }
 #nb-words .playing { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 body.nb-playing #sc-notebook { padding-bottom: 92px; }
 

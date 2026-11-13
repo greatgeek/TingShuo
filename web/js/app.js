@@ -5734,6 +5734,7 @@ document.addEventListener('toggle', (e) => {
   if (d && d.classList && d.classList.contains('ws-hint') && d.open) WS_HINT_USED = true;
 }, true);
 $('nb-now-stop').onclick = () => nbPlayStop();
+$('nb-now-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-now-pause').onclick = nbPlayPause;
 // 全播中 ←/↑ 上一个、→/↓ 下一个、空格暂停/继续（只在生词库列表页、非输入框里生效）
 document.addEventListener('keydown', e => {
