@@ -435,7 +435,7 @@ function clipStopAll() {
 }
 
 function clipPauseOthers(el) {
-  if (PL) nbPlayStop();
+  if (PL && !PL.paused) nbPlayPause(); // 只暂停全播，保留播放条，用户可手动继续
   if (playing) { playing.pause(); playing = null; }
   if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
   if (RV_AUDIO) RV_AUDIO.pause();
