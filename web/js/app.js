@@ -2832,7 +2832,7 @@ function nbToggleWord(w, div) {
 function nbToggleClips(w, div) {
   const panel = div.querySelector('.nb-clips');
   if (panel) { panel.remove(); clipStopAll(); nbClipsUnbindKeys(); return; }
-  nbPlayStop();
+  if (PL && !PL.paused) nbPlayPause(); // 只暂停全播：播放条保留，用户在条上按「继续」接着播
   document.querySelectorAll('.nb-sents').forEach(x => x.remove());
   document.querySelectorAll('.nb-clips').forEach(x => x.remove());
   nbClipsUnbindKeys();
@@ -3421,6 +3421,7 @@ function nbPlayPause() {
   if (PL.paused) {
     PL.paused = false;
     $('nb-now-pause').textContent = '⏸ 暂停';
+    clipStopAll(); // 继续全播时停掉原声面板里的音频，避免两路声音重叠
     if (PL.gapPending) { PL.gapPending = false; nbPlayStep(); return; } // 停顿中暂停：继续时直接推进
     playUnlock(PL.audio).catch(() => nbPlayNext());
   } else {
