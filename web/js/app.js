@@ -422,11 +422,14 @@ function usageRow(x) {
 // 后端按词缓存最多 6 条；这里（生词库/背词）每次展示 2 条，点"换两条"本地轮换（不消耗 API 配额）。
 const CLIP_MEM = new Map();
 
-// 影视原声面板的键盘监听（→ 切下一条、空格播放/暂停）
-let NB_CLIPS_KEYS = null;
-function nbClipsUnbindKeys() {
-  if (NB_CLIPS_KEYS) { document.removeEventListener('keydown', NB_CLIPS_KEYS); NB_CLIPS_KEYS = null; }
-}
+// 原声面板注册给键盘路由的控制器 {alive, step, toggle}；面板销毁或重绘时置空
+let NB_CLIPS_CTL = null;
+function nbClipsClear() { NB_CLIPS_CTL = null; }
+
+// 原声面板开着时空格的归属：'clips' 原声模式（切原声条）/ 'play' 全播模式（暂停继续全播）。
+// 不能用"全播是否暂停"推断：在全播模式里用空格暂停后，空格仍应继续管全播。
+let NB_CLIPS_MODE = 'play';
+function setNbMode(m) { NB_CLIPS_MODE = m; }
 
 function clipStopAll() {
   document.querySelectorAll('.wclip-audio').forEach(x => { try { x.pause(); } catch {} });
@@ -2822,7 +2825,7 @@ function nbToggleWord(w, div) {
   const ex = div.querySelector('.nb-sents');
   if (ex) { ex.remove(); return; }
   document.querySelectorAll('.nb-clips').forEach(x => x.remove());
-  nbClipsUnbindKeys();
+  nbClipsClear();
   clipStopAll();
   document.querySelectorAll('.nb-sents').forEach(x => x.remove());
   div.appendChild(nbBuildSents(w));
@@ -2831,11 +2834,12 @@ function nbToggleWord(w, div) {
 // ---- 生词本 / 影视原声：横滑剧照条，点图听原声 ----
 function nbToggleClips(w, div) {
   const panel = div.querySelector('.nb-clips');
-  if (panel) { panel.remove(); clipStopAll(); nbClipsUnbindKeys(); return; }
+  if (panel) { panel.remove(); clipStopAll(); nbClipsClear(); setNbMode('play'); return; }
   if (PL && !PL.paused) nbPlayPause(); // 只暂停全播：播放条保留，用户在条上按「继续」接着播
+  setNbMode('clips');
   document.querySelectorAll('.nb-sents').forEach(x => x.remove());
   document.querySelectorAll('.nb-clips').forEach(x => x.remove());
-  nbClipsUnbindKeys();
+  nbClipsClear();
   clipStopAll();
   const box = document.createElement('div');
   box.className = 'nb-clips';
@@ -2952,6 +2956,7 @@ function nbClipsRender(box, clips, w) {
   const playAt = (i) => {
     const c = clips[i];
     if (!c.audio_url) { toast('这条没有音频'); return; }
+    setNbMode('clips');
     if (sel === i && audio.src) {
       if (!audio.paused) { audio.pause(); return; }
       if (!audio.ended) { audio.play().catch(() => toast('音频播放失败')); return; }
@@ -2978,25 +2983,14 @@ function nbClipsRender(box, clips, w) {
   audio.addEventListener('pause', () => setOn(false));
   audio.addEventListener('ended', () => setOn(false));
 
-  nbClipsUnbindKeys();
-  const onKey = (e) => {
-    if (!box.isConnected) { nbClipsUnbindKeys(); return; }
-    if (CUR_SCREEN !== 'notebook' || PL) return;
-    if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
-    if (['picker-mask', 'nb-cfg-mask'].some(id => $(id) && getComputedStyle($(id)).display !== 'none')) return;
-    const t = e.target;
-    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      playAt((sel + 1) % clips.length);
+  NB_CLIPS_CTL = {
+    alive: () => box.isConnected,
+    step: (d) => {
+      playAt((sel + d + clips.length) % clips.length);
       revealThumb(sel);
-    } else if (e.key === ' ' || e.key === 'Spacebar') {
-      e.preventDefault();
-      playAt(sel);
-    }
+    },
+    toggle: () => playAt(sel),
   };
-  NB_CLIPS_KEYS = onKey;
-  document.addEventListener('keydown', onKey);
 }
 
 // sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
@@ -3382,6 +3376,7 @@ function nbPlayJumpToSent(w, si) {
 }
 
 function nbPlayJumpToIndex(idx) {
+  setNbMode('play'); // 跳词句即回到全播模式
   PL.i = idx;
   PL.follow = true;
   PL.paused = false;
@@ -3389,6 +3384,7 @@ function nbPlayJumpToIndex(idx) {
   clearTimeout(PL.gapTimer);
   $('nb-now-pause').textContent = '⏸ 暂停';
   try { PL.audio.pause(); } catch (e) {}
+  clipStopAll(); // 跳词时停掉原声面板音频，避免和全播两路重叠
   nbPlayStep();
 }
 
@@ -3420,6 +3416,7 @@ function nbPlayPause() {
   if (!PL) return;
   if (PL.paused) {
     PL.paused = false;
+    setNbMode('play'); // 从播放条继续全播：空格回到全播模式
     $('nb-now-pause').textContent = '⏸ 暂停';
     clipStopAll(); // 继续全播时停掉原声面板里的音频，避免两路声音重叠
     if (PL.gapPending) { PL.gapPending = false; nbPlayStep(); return; } // 停顿中暂停：继续时直接推进
@@ -5737,25 +5734,43 @@ document.addEventListener('toggle', (e) => {
 $('nb-now-stop').onclick = () => nbPlayStop();
 $('nb-now-cfg').onclick = (e) => { e.stopPropagation(); openNbCfg(); };
 $('nb-now-pause').onclick = nbPlayPause;
-// 全播中 ←/↑ 上一个、→/↓ 下一个、空格暂停/继续（只在生词库列表页、非输入框里生效）
+// 生词库键盘唯一入口：按"原声面板是否打开 + 当前模式"分派。
+// 面板打开时 ←/→ 归原声，空格按模式（clips 切原声 / play 暂停继续全播）；↑/↓ 始终归全播跳词句。
 document.addEventListener('keydown', e => {
-  if (!PL || CUR_SCREEN !== 'notebook') return;
+  if (CUR_SCREEN !== 'notebook') return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (['picker-mask', 'nb-cfg-mask'].some(id => $(id) && getComputedStyle($(id)).display !== 'none')) return;
   const t = e.target;
   if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
-  if (e.key === ' ' || e.key === 'Spacebar') {
-    if (e.repeat) return;
-    if (t && t.closest && t.closest('button, a, [role="button"]')) return; // 焦点在按钮上时留给原生空格激活
-    nbPlayPause();
-    e.preventDefault();
-    return;
+
+  if (NB_CLIPS_CTL && !NB_CLIPS_CTL.alive()) nbClipsClear();
+  if (NB_CLIPS_CTL) {
+    const space = e.key === ' ' || e.key === 'Spacebar';
+    const panelKey = space || e.key === 'ArrowRight' || e.key === 'ArrowLeft';
+    if (panelKey && e.repeat) return; // 按住不重复切原声；↑/↓ 的连跳不受影响
+    if (e.key === 'ArrowRight') { e.preventDefault(); NB_CLIPS_CTL.step(1); return; }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); NB_CLIPS_CTL.step(-1); return; }
+    if (space) {
+      if (PL && NB_CLIPS_MODE === 'play') { nbPlayToggle(e); return; }
+      e.preventDefault();
+      NB_CLIPS_CTL.toggle();
+      return;
+    }
   }
+  if (!PL) return;
   const step = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? 1
     : (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -1 : 0;
-  if (!step) return;
-  if (nbPlaySkip(step)) e.preventDefault();
+  if (step) { if (nbPlaySkip(step)) e.preventDefault(); return; }
+  if (e.key === ' ' || e.key === 'Spacebar') nbPlayToggle(e);
 });
+
+function nbPlayToggle(e) {
+  if (e.repeat) return;
+  const t = e.target;
+  if (t && t.closest && t.closest('button, a, [role="button"]')) return; // 焦点在按钮上时留给原生空格激活
+  nbPlayPause();
+  e.preventDefault();
+}
 $('pod-btn').onclick = () => podOpen('lesson', LESSON && LESSON.lesson && LESSON.lesson.id, null);
 $('nb-pod-btn').onclick = (e) => {
   e.stopPropagation(); // 横条点击会开选择面板，需阻断
