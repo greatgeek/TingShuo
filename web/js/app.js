@@ -3627,7 +3627,7 @@ function renderGraList() {
   }
   box.innerHTML = GRAM_LESSONS.map(it => {
     const tags = (it.recitation_lesson_id ? '<span class="gra-tag">有课文本</span>' : '') +
-      (it.has_notebook ? '<span class="gra-tag nb">生词本已有本科</span>' : '');
+      (it.has_notebook ? '<span class="gra-tag nb">生词本已有本课</span>' : '');
     return `<button class="gra-item" data-no="${it.lesson_no}">
       <div class="gra-item-top">
         <span class="gra-item-title">${esc(it.title)}</span>
