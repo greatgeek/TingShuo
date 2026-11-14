@@ -97,6 +97,20 @@ func TestDateMonthReading(t *testing.T) {
 	}
 }
 
+func TestTimeReading(t *testing.T) {
+	cases := map[string]string{
+		"地下鉄がなかった時は、車がほしかったです。": "ちかてつがなかったときは、くるまがほしかったです。",
+		"小さい時は、まだ日本語を習っていなかった。": "ちいさいときは、まだにほんごをならっていなかった。",
+		"3時に駅で待ち合わせましょう。":       "3じにえきでまちあわせましょう。",
+		"何時ですか。": "なんじですか。",
+	}
+	for text, want := range cases {
+		if got := Reading(text); got != want {
+			t.Fatalf("Reading(%q) = %q, want %q", text, got, want)
+		}
+	}
+}
+
 func TestKataToHira(t *testing.T) {
 	if got := kataToHira("カイケイ"); got != "かいけい" {
 		t.Fatalf("片→平转换错误: %q", got)

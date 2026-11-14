@@ -61,7 +61,6 @@ var readingFix = map[[2]string]string{
 // singleFix 孤立词元读音纠正（无上下文歧义或语料中义项单一）。
 var singleFix = map[string]string{
 	"今":  "いま",
-	"時":  "じ",
 	"他人": "たにん",
 	"形":  "かたち",
 }
@@ -113,6 +112,13 @@ func BuildRubyTokens(text string) [][]any {
 		if i+1 < len(toks) {
 			if r, ok := nextFix[[2]string{toks[i].surface, toks[i+1].surface}]; ok {
 				toks[i].reading = r
+				continue
+			}
+		}
+		// 「時」：数词/何之后读 じ（三時・何時），其余读 とき（食べた時・小さい時）
+		if toks[i].surface == "時" && toks[i].reading != "" {
+			if i == 0 || !(isRubyNumeral(toks[i-1]) || toks[i-1].surface == "何") {
+				toks[i].reading = "とき"
 				continue
 			}
 		}
