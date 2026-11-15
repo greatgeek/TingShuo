@@ -6,7 +6,7 @@ import (
 	"unicode"
 )
 
-const maxClips = 6
+const maxClips = 18
 
 // 目标词匹配候选：同一句里可能有多个同词，取第一个实词 token。
 type candidate struct {
@@ -158,11 +158,11 @@ func hasPredicate(tokens []Token) bool {
 	return false
 }
 
-// scoreSegment 给候选句打分：先保证词形准确，再看句子完整、时长合适、内容充实。
+// scoreSegment 给候选句打分：短句优先，其次词形准确、句子完整、时长合适。
 func scoreSegment(seg Segment, rank int, surface string, idx int) float64 {
 	t := seg.TextJa.Tokens[idx]
 	content := strings.TrimSpace(seg.TextJa.Content)
-	score := 100 - float64(rank)*2
+	score := 100 - float64(rank)*0.4
 
 	if t.S == surface {
 		score += 18
@@ -175,18 +175,32 @@ func scoreSegment(seg Segment, rank int, surface string, idx int) float64 {
 		strings.HasSuffix(content, "！") || strings.HasSuffix(content, "!") {
 		score += 8
 	}
+	// 短句优先：8–20 字最合适；更短但没有谓语的（「卒業試験」）是碎片，不成句
 	n := runeLen(content)
 	switch {
-	case n >= 10 && n <= 28:
+	case n >= 8 && n <= 20:
+		score += 16
+	case n < 8:
+		score += 4
+	case n <= 28:
 		score += 8
-	case n < 10:
-		score -= 2
-	case n > 35:
-		score -= 4
+	case n <= 35:
+		score += 0
+	default:
+		score -= 12
 	}
 	dur := seg.EndTimeMs - seg.StartTimeMs
-	if dur >= 2000 && dur <= 8000 {
+	switch {
+	case dur < 2000:
+		score += 2
+	case dur <= 5000:
+		score += 10
+	case dur <= 7000:
 		score += 6
+	case dur <= 9000:
+		score += 0
+	default:
+		score -= 6
 	}
 	contentTokens := 0
 	for _, tok := range seg.TextJa.Tokens {
@@ -202,6 +216,8 @@ func scoreSegment(seg Segment, rank int, surface string, idx int) float64 {
 	}
 	if hasPredicate(seg.TextJa.Tokens) {
 		score += 6
+	} else {
+		score -= 6
 	}
 	if len(seg.TextJa.Tokens) > 30 {
 		score -= 4
@@ -216,16 +232,36 @@ func scoreSegment(seg Segment, rank int, surface string, idx int) float64 {
 	return score
 }
 
-// pickClips 从搜索结果里挑最多 6 条：词形精确、句子完整、媒体尽量分散。
-func pickClips(surface, reading string, segs []Segment, media mediaSet) []candidate {
+type pickOptions struct {
+	limit       int
+	excludeSeg  map[string]bool
+	excludeText map[string]bool
+	usedMedia   map[string]bool
+}
+
+// pickClips 从搜索结果里挑候选：词形精确、句子完整、短句优先、媒体尽量分散。
+func pickClips(surface, reading string, segs []Segment, media mediaSet, opt pickOptions) []candidate {
+	limit := opt.limit
+	if limit <= 0 || limit > maxClips {
+		limit = maxClips
+	}
 	cands := make([]candidate, 0, len(segs))
 	seenText := map[string]bool{}
 	for i, seg := range segs {
 		if seg.Status != "" && seg.Status != "ACTIVE" {
 			continue
 		}
+		if opt.excludeSeg[seg.PublicID] {
+			continue
+		}
 		content := strings.TrimSpace(seg.TextJa.Content)
 		if content == "" || seg.Urls.VideoURL == "" || seg.Urls.ImageURL == "" {
+			continue
+		}
+		if opt.excludeText[content] {
+			continue
+		}
+		if runeLen(content) < 8 && !hasPredicate(seg.TextJa.Tokens) {
 			continue
 		}
 		// 歌词/被截断的句子不适合做例句：以《 开头的是歌词，含 " -" 的是断句
@@ -264,15 +300,15 @@ func pickClips(surface, reading string, segs []Segment, media mediaSet) []candid
 	}
 	sort.SliceStable(cands, func(i, j int) bool { return cands[i].score > cands[j].score })
 
-	// 两轮：第一轮每个作品最多 1 条，第二轮再补，避免 6 条全来自同一部剧
-	selected := make([]candidate, 0, maxClips)
+	// 两轮：第一轮换新作品（避开已缓存的剧），第二轮再补，避免全来自同一部剧
+	selected := make([]candidate, 0, limit)
 	mediaCount := map[string]int{}
-	for pass := 0; pass < 2 && len(selected) < maxClips; pass++ {
+	for pass := 0; pass < 2 && len(selected) < limit; pass++ {
 		for _, c := range cands {
-			if len(selected) >= maxClips {
+			if len(selected) >= limit {
 				break
 			}
-			if pass == 0 && mediaCount[c.seg.MediaPublicID] > 0 {
+			if pass == 0 && (mediaCount[c.seg.MediaPublicID] > 0 || opt.usedMedia[c.seg.MediaPublicID]) {
 				continue
 			}
 			dup := false

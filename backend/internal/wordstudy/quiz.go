@@ -48,9 +48,10 @@ func parseMode(s string) Mode {
 }
 
 type sentAudio struct {
-	Kind string `json:"kind"` // asset=audio_asset 点播；say=/audio/say 文本合成缓存
-	ID   string `json:"id,omitempty"`
-	Text string `json:"text,omitempty"`
+	Kind string          `json:"kind"` // asset=audio_asset 点播；say=/audio/say 文本合成缓存
+	ID   string          `json:"id,omitempty"`
+	Text string          `json:"text,omitempty"`
+	Ruby json.RawMessage `json:"ruby,omitempty"` // say 时传注音，纠多音字误读
 }
 
 type sentToken struct {
@@ -60,15 +61,15 @@ type sentToken struct {
 }
 
 type Quiz struct {
-	Type    quizType  `json:"type"`
-	Options []string  `json:"options,omitempty"` // pick_mean/hear_mean=释义；cloze_pick=词面
-	Answer  int       `json:"answer"`            // Options 下标
-	Tokens  []sentToken `json:"tokens,omitempty"` // 挖空句逐 token（空白 token 无读音）
-	Hint    *string   `json:"hint"`               // 模糊化句子翻译；nil=本卡不提供提示
-	Trans   *string   `json:"trans,omitempty"`    // 背面第二层：完整句子翻译
-	Audio   *sentAudio `json:"audio,omitempty"`
-	BlankText string    `json:"blank_text,omitempty"` // 空白处正解显示文本（句式条目=句式部分）
-	Accept    []string  `json:"accept,omitempty"`     // 输入题可接受答案（词面/读音/句式部分）
+	Type      quizType    `json:"type"`
+	Options   []string    `json:"options,omitempty"` // pick_mean/hear_mean=释义；cloze_pick=词面
+	Answer    int         `json:"answer"`            // Options 下标
+	Tokens    []sentToken `json:"tokens,omitempty"`  // 挖空句逐 token（空白 token 无读音）
+	Hint      *string     `json:"hint"`              // 模糊化句子翻译；nil=本卡不提供提示
+	Trans     *string     `json:"trans,omitempty"`   // 背面第二层：完整句子翻译
+	Audio     *sentAudio  `json:"audio,omitempty"`
+	BlankText string      `json:"blank_text,omitempty"` // 空白处正解显示文本（句式条目=句式部分）
+	Accept    []string    `json:"accept,omitempty"`     // 输入题可接受答案（词面/读音/句式部分）
 }
 
 // blankTokens 把词面在句中的位置换成单个空白 token 且剥掉读音。
@@ -254,7 +255,7 @@ func buildQuiz(ctx context.Context, pool *pgxpool.Pool, userID string, w word, i
 	if sr.Audio != nil {
 		q.Audio = &sentAudio{Kind: "asset", ID: *sr.Audio}
 	} else {
-		q.Audio = &sentAudio{Kind: "say", Text: sr.Text}
+		q.Audio = &sentAudio{Kind: "say", Text: sr.Text, Ruby: sr.Ruby}
 	}
 	if idx%2 == 1 {
 		q.Type = qClozeType

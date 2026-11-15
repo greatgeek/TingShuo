@@ -1,0 +1,5 @@
+BEGIN;
+ALTER TABLE word_clip_queue
+    ADD COLUMN expanded BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN expand_pending BOOLEAN NOT NULL DEFAULT false;
+COMMIT;

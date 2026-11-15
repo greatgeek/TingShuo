@@ -23,12 +23,41 @@ func New(apiKey, region string) *Client {
 	return &Client{
 		apiKey: apiKey,
 		region: region,
-		http: &http.Client{Timeout: 30 * time.Second},
+		http:   &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// RubyToken 是一对「表记 / 读音」。
+type RubyToken struct {
+	Surface string
+	Reading string
 }
 
 // Synthesize 按句生成 MP3（§8.4 SSML 模板；P0 不带 express-as 风格）。
 func (c *Client) Synthesize(ctx context.Context, text, voice string, rate float64) ([]byte, error) {
+	return c.synthesize(ctx, voice, rate, escapeXML(text))
+}
+
+// SynthesizeRuby 按注音合成：读音非空且与表记不同时用 <sub alias> 强制读音，
+// 修 Azure 对多音字自作主张（如「町」读成 ちょう）。其余部分仍是原表记，保住上下文语调。
+func (c *Client) SynthesizeRuby(ctx context.Context, voice string, rate float64, tokens []RubyToken) ([]byte, error) {
+	return c.synthesize(ctx, voice, rate, rubyMarkup(tokens))
+}
+
+// rubyMarkup 生成 <sub> 注音标记；读音为空或与表记相同（假名）时原样输出。
+func rubyMarkup(tokens []RubyToken) string {
+	var b strings.Builder
+	for _, t := range tokens {
+		if t.Reading != "" && t.Reading != t.Surface {
+			b.WriteString(`<sub alias="` + escapeXML(t.Reading) + `">` + escapeXML(t.Surface) + `</sub>`)
+			continue
+		}
+		b.WriteString(escapeXML(t.Surface))
+	}
+	return b.String()
+}
+
+func (c *Client) synthesize(ctx context.Context, voice string, rate float64, inner string) ([]byte, error) {
 	// voice 既支持短名（Nanami → ja-JP-NanamiNeural）也支持完整 locale 名
 	// （zh-CN-XiaoxiaoNeural → 语言取前两段），中文含义播报靠后者
 	lang, name := "ja-JP", "ja-JP-NanamiNeural"
@@ -46,7 +75,7 @@ func (c *Client) Synthesize(ctx context.Context, text, voice string, rate float6
 	ratePct := fmt.Sprintf("%g%%", (rate-1)*100) // 0.85 → -15%，1.15 → +15%
 	ssml := fmt.Sprintf(`<speak version="1.0" xml:lang="%s" xmlns="http://www.w3.org/2001/10/synthesis">`+
 		`<voice name="%s"><prosody rate="%s">%s</prosody></voice></speak>`,
-		lang, name, ratePct, escapeXML(text))
+		lang, name, ratePct, inner)
 
 	endpoint := fmt.Sprintf("https://%s.tts.speech.microsoft.com/cognitiveservices/v1", c.region)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(ssml))

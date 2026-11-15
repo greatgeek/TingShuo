@@ -421,6 +421,8 @@ function usageRow(x) {
 // Nadeshiko 的「视频」实际是静帧+音频，这里按剧照呈现：点图播原声。
 // 后端按词缓存最多 6 条；这里（生词库/背词）每次展示 2 条，点"换两条"本地轮换（不消耗 API 配额）。
 const CLIP_MEM = new Map();
+const NB_CLIP_MEM = new Map();
+const NB_CLIP_META = new Map();
 
 // 原声面板注册给键盘路由的控制器 {alive, step, toggle}；面板销毁或重绘时置空
 let NB_CLIPS_CTL = null;
@@ -2247,7 +2249,7 @@ async function wsPlayQuizSent(btn) {
   try {
     if (btn) btn.textContent = '⏳';
     if (q.audio.kind === 'say') {
-      await sayAudio(q.audio.text, btn);
+      await sayAudio(q.audio.text, btn, false, q.audio.ruby);
       if (btn) btn.textContent = '🎧'; // sayAudio 结束会写回 ▶，句子按钮保持 🎧
       return;
     }
@@ -2814,7 +2816,7 @@ function nbBuildSents(w) {
     row.appendChild(ask);
     const btn = document.createElement('button');
     btn.className = 'play'; btn.textContent = '▶'; btn.title = '点播';
-    btn.onclick = (e) => { e.stopPropagation(); sayAudio(s.text, btn); };
+    btn.onclick = (e) => { e.stopPropagation(); sayAudio(s.text, btn, false, s.ruby_tokens); };
     row.appendChild(btn);
     wrap.appendChild(row);
   });
@@ -2849,8 +2851,11 @@ function nbToggleClips(w, div) {
 
 async function nbLoadClips(w, box) {
   const head = '<div class="nb-clips-head"><span class="usage-head">影视原声</span></div>';
-  const cached = CLIP_MEM.get(w.word_id);
-  if (cached && cached.length) { nbClipsRender(box, cached, w); return; }
+  const cached = NB_CLIP_MEM.get(w.word_id);
+  if (cached && cached.length) {
+    nbClipsRender(box, cached, w, 6, NB_CLIP_META.get(w.word_id));
+    return;
+  }
   box.innerHTML = head + '<p class="hint">加载原声…</p>';
   let tries = 0;
   let autoTried = false;
@@ -2877,7 +2882,13 @@ async function nbLoadClips(w, box) {
       const r = await api('/words/' + w.word_id + '/clips');
       if (!box.isConnected) return;
       const items = r.items || [];
-      if (items.length) { CLIP_MEM.set(w.word_id, items); nbClipsRender(box, items, w); return; }
+      if (items.length) {
+        const meta = { expanded: !!r.expanded, can_expand: !!r.can_expand, max: r.max || 18 };
+        NB_CLIP_MEM.set(w.word_id, items);
+        NB_CLIP_META.set(w.word_id, meta);
+        nbClipsRender(box, items, w, 6, meta);
+        return;
+      }
       if (!r.enabled) { box.innerHTML = head + '<p class="hint">原声例句服务暂不可用</p>'; return; }
       if (r.pending) {
         tries++;
@@ -2908,12 +2919,20 @@ async function nbLoadClips(w, box) {
   tick();
 }
 
-function nbClipsRender(box, clips, w) {
+function nbClipsRender(box, clips, w, shown, meta) {
   clipStopAll();
+  meta = meta || {};
+  const total = clips.length;
+  const n = Math.max(1, Math.min(shown || 6, total));
+  const view = clips.slice(0, n);
+  const canExpand = !!meta.can_expand;
+  const countText = n < total ? `${n} / ${total} 条` : `共 ${total} 条 · 点剧照听原声`;
+  const moreBtn = (n < total || canExpand)
+    ? '<button class="wclip-swap nb-clips-more" data-act="more">＋ 获取更多</button>' : '';
   let html = `<div class="nb-clips-head"><span class="usage-head">影视原声</span>
-    <span class="nb-clips-count">${clips.length} 条 · 点剧照听原声</span></div>
+    <span class="nb-clips-count">${countText}</span></div>
     <div class="wclip-strip">`;
-  clips.forEach((c, i) => {
+  view.forEach((c, i) => {
     html += `<button class="wclip-thumb${i === 0 ? ' sel' : ''}" data-i="${i}" title="播放第 ${i + 1} 条原声">
       ${c.image_url ? `<img src="${esc(c.image_url)}" alt="" decoding="async">` : '<span class="wclip-thumb-ph"></span>'}
       <span class="wclip-play">▶</span>
@@ -2928,7 +2947,7 @@ function nbClipsRender(box, clips, w) {
   const thumbs = [...box.querySelectorAll('.wclip-thumb')];
   let sel = 0;
   const fillDetail = (i) => {
-    const c = clips[i];
+    const c = view[i];
     const src = [c.media_name || '原声',
       c.episode_title || (c.episode ? '第' + c.episode + '集' : '')].filter(Boolean).join(' · ');
     const zh = c.text_zh || c.text_en || '';
@@ -2938,7 +2957,7 @@ function nbClipsRender(box, clips, w) {
       <button class="ai-ask wclip-ask" title="就这句问 AI">问AI</button>
     </div>
       ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
-      <div class="wclip-src">${esc(src)}</div>`;
+      <div class="wclip-foot"><span class="wclip-src">${esc(src)}</span>${moreBtn}</div>`;
     detail.querySelector('.wclip-ask').onclick = (e) => {
       e.stopPropagation();
       openAiAsk({ text: c.text_ja, translation: c.text_zh || c.text_en || '' }, w);
@@ -2954,7 +2973,7 @@ function nbClipsRender(box, clips, w) {
     });
   };
   const playAt = (i) => {
-    const c = clips[i];
+    const c = view[i];
     if (!c.audio_url) { toast('这条没有音频'); return; }
     setNbMode('clips');
     if (sel === i && audio.src) {
@@ -2986,18 +3005,87 @@ function nbClipsRender(box, clips, w) {
   NB_CLIPS_CTL = {
     alive: () => box.isConnected,
     step: (d) => {
-      playAt((sel + d + clips.length) % clips.length);
+      playAt((sel + d + view.length) % view.length);
       revealThumb(sel);
     },
     toggle: () => playAt(sel),
   };
+  detail.addEventListener('click', (e) => {
+    if (!e.target.closest('.nb-clips-more')) return;
+    e.stopPropagation();
+    if (n < total) {
+      nbClipsRender(box, clips, w, Math.min(n + 6, total), meta);
+      return;
+    }
+    if (canExpand) nbExpandClips(w, box, clips, meta, n);
+  });
+}
+
+// nbExpandClips 老词补抓：每词只补一次，worker 追加新片段，前端轮询到新结果后展开下一批。
+async function nbExpandClips(w, box, clips, meta, shown) {
+  const btn = box.querySelector('.nb-clips-more');
+  if (btn) { btn.disabled = true; btn.textContent = '正在获取更多…'; }
+  const renderWith = async (r) => {
+    const items = r.items || [];
+    const m = { expanded: !!r.expanded, can_expand: !!r.can_expand, max: r.max || 18 };
+    NB_CLIP_MEM.set(w.word_id, items);
+    NB_CLIP_META.set(w.word_id, m);
+    nbClipsRender(box, items, w, items.length > clips.length ? Math.min(shown + 6, items.length) : shown, m);
+    return items.length;
+  };
+  try {
+    const p = await api('/words/' + w.word_id + '/clips?more=1', { method: 'POST' });
+    if (!box.isConnected) return;
+    if (!p.pending) {
+      const r = await api('/words/' + w.word_id + '/clips');
+      if (!box.isConnected) return;
+      const count = await renderWith(r);
+      toast(count > clips.length ? `新增 ${count - clips.length} 条原声` : '没有更多原声了');
+      return;
+    }
+    let tries = 0;
+    const poll = async () => {
+      if (!box.isConnected) return;
+      try {
+        const r = await api('/words/' + w.word_id + '/clips');
+        if (!box.isConnected) return;
+        if (r.pending) {
+          if (tries < 48) {
+            tries++;
+            setTimeout(poll, 2500);
+            return;
+          }
+          // 超时不写缓存：保留原数据和「获取更多」，后台完成后再点一次即可拿到
+          nbClipsRender(box, clips, w, shown, meta);
+          toast('仍在生成，稍后再试');
+          return;
+        }
+        const count = await renderWith(r);
+        if (count > clips.length) toast(`新增 ${count - clips.length} 条原声`);
+        else toast('没有更多原声了');
+      } catch (err) {
+        if (box.isConnected) {
+          toast('获取更多失败：' + err.message);
+          nbClipsRender(box, clips, w, shown, meta);
+        }
+      }
+    };
+    setTimeout(poll, 1500);
+  } catch (e) {
+    toast('获取更多失败：' + e.message);
+    if (box.isConnected) nbClipsRender(box, clips, w, shown, meta);
+  }
 }
 
 // sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
-async function sayAudio(text, btn, retry) {
+// ruby 传入时按注音合成，纠 Azure 多音字误读（如 町→ちょう）；缓存键带读音避免命中旧误读音频
+async function sayAudio(text, btn, retry, ruby) {
   try {
     if (btn) btn.textContent = '⏳';
-    const key = 'say:' + text;
+    const spoken = Array.isArray(ruby) && ruby.length
+      ? ruby.map(([w, r]) => r || w || '').join('') : '';
+    const useRuby = !!spoken && spoken !== text;
+    const key = 'say:' + text + (useRuby ? '|rb:' + spoken : '');
     let url;
     const hit = await idbGet(key);
     // 小于 1KB 的缓存块视为坏缓存（曾出现空/截断 blob 被照播成"没声音"）：丢弃重取
@@ -3007,7 +3095,7 @@ async function sayAudio(text, btn, retry) {
       const r = await fetchAuth('/api/v1/audio/say', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify(useRuby ? { text, ruby } : { text }),
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const blob = await r.blob();
@@ -3023,7 +3111,7 @@ async function sayAudio(text, btn, retry) {
     // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
     setTimeout(() => {
       if (!retry && WS_AUDIO === a && !a.paused && a.currentTime < 0.05) {
-        wsStopAudio(); idbDel(key); sayAudio(text, btn, true);
+        wsStopAudio(); idbDel(key); sayAudio(text, btn, true, ruby);
       }
     }, 800);
     setTimeout(() => wsAudioDbg(a, '句'), 900);
@@ -3033,32 +3121,69 @@ async function sayAudio(text, btn, retry) {
   }
 }
 
-// ============ 问AI（句子上下文对话，MiniMax M3 最高思考）============
-let AI_CTX = null;  // {text, ruby_tokens, translation, word}
+// ============ 问AI（句子/语法点上下文对话，MiniMax M3 最高思考）============
+let AI_CTX = null;  // 句子：{text, ruby_tokens, translation, word}；语法点：{kind:'grammar', point_id}
 
 async function openAiAsk(s, w) {
   AI_CTX = {
     text: s.text, ruby_tokens: s.ruby_tokens || [], translation: s.translation || '',
     word: { surface: w.surface, reading: w.reading || '', meaning: w.meaning || '' },
   };
+  aiOpen(AI_CTX.text, {
+    hint: '可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…',
+    placeholder: '关于这句想问什么？',
+    ctxHTML: `
+      <div class="txt" style="font-size:15px">${rubyHTML(AI_CTX.ruby_tokens) || esc(AI_CTX.text)}</div>
+      <div class="zh">${esc(AI_CTX.translation)}</div>
+      <div class="zh lib-meta">生词：${esc(AI_CTX.word.surface)}${AI_CTX.word.reading ? '（' + esc(AI_CTX.word.reading) + '）' : ''} ${esc(AI_CTX.word.meaning)}</div>`,
+  });
+}
+
+function openAiAskExample(p, e) {
+  if (!p || !e) return;
+  AI_CTX = { text: e.text, ruby_tokens: e.ruby_tokens || [], translation: e.translation || '' };
+  aiOpen(e.text, {
+    hint: '可以问这句例句的任何问题：语法、助词、活用、使用场景、近义词辨析…',
+    placeholder: '关于这句例句想问什么？',
+    ctxHTML: `
+      <div class="txt" style="font-size:15px">${rubyHTML(AI_CTX.ruby_tokens) || esc(AI_CTX.text)}</div>
+      <div class="zh">${esc(AI_CTX.translation)}</div>
+      <div class="zh lib-meta">${esc(GRAM ? GRAM.title : '')} · ${esc(p.pattern)}</div>`,
+  });
+}
+
+function openAiAskGrammar(p) {
+  if (!p || !GRAM) return;
+  AI_CTX = { kind: 'grammar', point_id: p.id };
+  const sec = p.section === 'expression' ? '表达扩展' : '语法解释';
+  aiOpen('g:' + p.id, {
+    hint: '可以问这个语法点的任何问题：接续、意义、例句、易错点、近义表达辨析…',
+    placeholder: '关于这个语法点想问什么？',
+    ctxHTML: `
+      <div class="txt" style="font-size:15px">${esc(p.pattern)}</div>
+      ${p.formation ? `<div class="zh">接续：${esc(p.formation)}</div>` : ''}
+      <div class="zh lib-meta">${esc(GRAM.title)} · ${sec}</div>`,
+  });
+}
+
+async function aiOpen(histKey, { hint, placeholder, ctxHTML }) {
   $('ai-ctx').innerHTML = `
-    <button class="ai-clear" id="ai-clear" title="清空这句的聊天记录">清空记录</button>
-    <div class="txt" style="font-size:15px">${rubyHTML(AI_CTX.ruby_tokens) || esc(AI_CTX.text)}</div>
-    <div class="zh">${esc(AI_CTX.translation)}</div>
-    <div class="zh lib-meta">生词：${esc(AI_CTX.word.surface)}${AI_CTX.word.reading ? '（' + esc(AI_CTX.word.reading) + '）' : ''} ${esc(AI_CTX.word.meaning)}</div>`;
+    <button class="ai-clear" id="ai-clear" title="清空聊天记录">清空记录</button>
+    ${ctxHTML}`;
   $('ai-msgs').innerHTML = '<p class="hint">载入聊天记录…</p>';
   $('ai-q').value = '';
+  $('ai-q').placeholder = placeholder;
   go('aiask');
   $('ai-clear').onclick = async () => {
     try {
-      await api('/ai/chat?text=' + encodeURIComponent(AI_CTX.text), { method: 'DELETE' });
+      await api('/ai/chat?text=' + encodeURIComponent(histKey), { method: 'DELETE' });
     } catch (e) { toast('清空失败：' + e.message); return; }
-    $('ai-msgs').innerHTML = '<p class="hint">可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…</p>';
-    toast('已清空这句的聊天记录');
+    $('ai-msgs').innerHTML = `<p class="hint">${esc(hint)}</p>`;
+    toast('已清空聊天记录');
   };
-  const HINT = '<p class="hint">可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…</p>';
+  const HINT = `<p class="hint">${esc(hint)}</p>`;
   try {
-    const r = await api('/ai/chat?text=' + encodeURIComponent(AI_CTX.text));
+    const r = await api('/ai/chat?text=' + encodeURIComponent(histKey));
     const items = r.items || [];
     $('ai-msgs').innerHTML = items.length ? '' : HINT;
     for (const m of items) {
@@ -3708,17 +3833,24 @@ function graExampleHTML(p, e) {
       ${e.note ? `<div class="gra-note">${esc(e.note)}</div>` : ''}
       ${badges ? `<div class="gra-badges">${badges}</div>` : ''}
     </div>
-    <button class="gra-say" title="朗读例句">🔊</button>
+    <div class="gra-ex-actions">
+      <button class="ai-ask gra-ex-ask" title="就这句例句问 AI">问AI</button>
+      <button class="gra-say" title="朗读例句">🔊</button>
+    </div>
   </div>`;
 }
 
 function graPointHTML(p, open) {
+  const ask = (p.section || 'grammar') === 'grammar'
+    ? '<button class="ai-ask gra-ask" title="就这个语法点问 AI">问AI</button>' : '';
   return `<div class="card gra-point${open ? ' open' : ''}" data-pid="${esc(p.id)}">
-    <button class="gra-point-head" aria-expanded="${open}">
-      <span class="gra-seq">${p.seq}</span>
-      <span class="gra-pattern">${esc(p.pattern)}</span>
-      <span class="gra-chev">▾</span>
-    </button>
+    <div class="gra-point-head">
+      <button class="gra-head-toggle" aria-expanded="${open}">
+        <span class="gra-seq">${p.seq}</span>
+        <span class="gra-pattern">${esc(p.pattern)}</span>
+        <span class="gra-chev">▾</span>
+      </button>${ask}
+    </div>
     <div class="gra-point-body"${open ? '' : ' hidden'}>
       ${p.formation ? `<p class="gra-formation"><b>接续</b>${esc(p.formation)}</p>` : ''}
       ${graRenderBody(p.body, p)}
@@ -3745,12 +3877,17 @@ function renderGraDetail() {
   box.innerHTML = html;
 
   box.querySelectorAll('.gra-point').forEach(cardEl => {
-    const head = cardEl.querySelector('.gra-point-head');
+    const head = cardEl.querySelector('.gra-head-toggle');
     const body = cardEl.querySelector('.gra-point-body');
     head.onclick = () => {
       body.hidden = !body.hidden;
       cardEl.classList.toggle('open', !body.hidden);
       head.setAttribute('aria-expanded', String(!body.hidden));
+    };
+    const ask = cardEl.querySelector('.gra-ask');
+    if (ask) ask.onclick = (ev) => {
+      ev.stopPropagation();
+      openAiAskGrammar(points.find(x => x.id === cardEl.dataset.pid));
     };
   });
 
@@ -3762,7 +3899,9 @@ function renderGraDetail() {
     const p = points.find(x => x.id === el.dataset.pid);
     const e = p && p.examples.find(x => String(x.seq) === el.dataset.seq);
     if (!e) return;
-    el.querySelector('.gra-say').onclick = (ev) => { ev.stopPropagation(); sayAudio(e.text, ev.currentTarget); };
+    el.querySelector('.gra-say').onclick = (ev) => { ev.stopPropagation(); sayAudio(e.text, ev.currentTarget, false, e.ruby_tokens); };
+    const ask = el.querySelector('.gra-ex-ask');
+    if (ask) ask.onclick = (ev) => { ev.stopPropagation(); openAiAskExample(p, e); };
     const recBtn = el.querySelector('[data-link="rec"]');
     if (recBtn) recBtn.onclick = (ev) => { ev.stopPropagation(); openRec(e.rec.lesson_id, { lineNo: e.rec.line_no }); };
     const nbBtn = el.querySelector('[data-link="nb"]');

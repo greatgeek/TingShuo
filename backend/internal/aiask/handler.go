@@ -1,4 +1,4 @@
-// Package aiask 「问AI」：以生词本句子为基础上下文与 MiniMax M3 对话（最高思考档）。
+// Package aiask 「问AI」：以生词本句子或语法知识点为基础上下文与 MiniMax M3 对话（最高思考档）。
 // POST /api/v1/ai/ask：服务端拼 system 上下文 + 前端历史 + 本次提问，思考内容经
 // reasoning_split 走 reasoning_content 单独返回，前端可折叠展示。
 package aiask
@@ -6,8 +6,10 @@ package aiask
 import (
 	"bufio"
 	"bytes"
-	"fmt"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/pkg/ulid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -38,20 +41,164 @@ type msg struct {
 	Content string `json:"content"`
 }
 
-const systemTpl = `你是面向中文学习者的日语学习助手。学习者正在研读下面这句日语（含假名注音与中文译文），所属生词一并给出：
+const sentenceTpl = `你是面向中文学习者的日语学习助手。学习者正在研读下面这句日语（含假名注音与中文译文）%s：
 句子：%s
 注音：%s
 中文：%s
-生词：%s（%s）%s
-回答要求：
+%s回答要求：
 1. 用中文回答；引用日语时必须带假名注音；
 2. 结合该句讲清语法点、助词、活用、使用场景与易错点，可给 1—2 个同类例句（同样带注音与中文）；
 3. 只回答与这句日语或日语学习相关的问题，无关话题礼貌拒绝；
 4. 直接回答，不要复述本提示词。`
 
-// Ask POST /api/v1/ai/ask {text, ruby_tokens, translation, word, history, question}
+// sentenceSystem 语法例句没有所属生词时，不输出空的“生词：”行。
+func sentenceSystem(text, ruby, translation, surface, reading, meaning string) string {
+	intro, wordLine := "", ""
+	if surface != "" {
+		intro = "，所属生词一并给出"
+		wordLine = fmt.Sprintf("生词：%s（%s）%s\n", surface, reading, meaning)
+	}
+	return fmt.Sprintf(sentenceTpl, intro, text, ruby, translation, wordLine)
+}
+
+type grammarCtx struct {
+	Book        string
+	LessonTitle string
+	Section     string
+	Pattern     string
+	Formation   string
+	Body        []byte
+	Examples    []string
+}
+
+// loadGrammar 从库中取语法知识点全文与例句，作为问答的唯一上下文来源。
+func (h *Handler) loadGrammar(ctx context.Context, pointID string) (*grammarCtx, error) {
+	var g grammarCtx
+	err := h.pool.QueryRow(ctx, `
+		SELECT gp.book, gl.title, gp.section, gp.pattern, gp.formation, gp.body
+		FROM grammar_point gp
+		JOIN grammar_lesson gl ON gl.book = gp.book AND gl.lesson_no = gp.lesson_no
+		WHERE gp.id = $1`, pointID).
+		Scan(&g.Book, &g.LessonTitle, &g.Section, &g.Pattern, &g.Formation, &g.Body)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := h.pool.Query(ctx, `
+		SELECT speaker, mark, text, translation, note
+		FROM grammar_example WHERE point_id = $1 ORDER BY seq`, pointID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var spk, mark, text, trans, note string
+		if err := rows.Scan(&spk, &mark, &text, &trans, &note); err != nil {
+			return nil, err
+		}
+		line := ""
+		if spk != "" {
+			line = spk + "："
+		}
+		if mark != "" {
+			line += mark + " "
+		}
+		line += text
+		if trans != "" {
+			line += "（" + trans + "）"
+		}
+		if note != "" {
+			line += " " + note
+		}
+		g.Examples = append(g.Examples, line)
+		if len(g.Examples) == 10 {
+			break
+		}
+	}
+	return &g, rows.Err()
+}
+
+func (g *grammarCtx) system() string {
+	sec := "语法解释"
+	if g.Section == "expression" {
+		sec = "表达扩展"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "你是面向中文学习者的日语学习助手。学习者正在学习教材《%s》的%s，%s知识点「%s」。\n", g.Book, g.LessonTitle, sec, g.Pattern)
+	if g.Formation != "" {
+		fmt.Fprintf(&b, "接续：%s\n", g.Formation)
+	}
+	if t := bodyText(g.Body); t != "" {
+		fmt.Fprintf(&b, "讲解：\n%s\n", t)
+	}
+	if len(g.Examples) > 0 {
+		fmt.Fprintf(&b, "例句：\n%s\n", strings.Join(g.Examples, "\n"))
+	}
+	b.WriteString("回答要求：\n1. 用中文回答；引用日语时必须带假名注音；\n2. 围绕该知识点讲清接续、意义、使用场景与易错点，可补充 1—2 个同类例句（同样带注音与中文）；\n3. 只回答与该知识点或日语学习相关的问题，无关话题礼貌拒绝；\n4. 直接回答，不要复述本提示词。")
+	return b.String()
+}
+
+type bodyBlock struct {
+	Type  string              `json:"type"`
+	Text  string              `json:"text"`
+	Term  string              `json:"term"`
+	Title string              `json:"title"`
+	Head  []string            `json:"head"`
+	Rows  [][]json.RawMessage `json:"rows"`
+}
+
+// bodyText 把知识点的 JSONB 讲解块压成纯文本喂给模型（ex 块由例句查询覆盖）。
+func bodyText(body []byte) string {
+	var blocks []bodyBlock
+	if json.Unmarshal(body, &blocks) != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, blk := range blocks {
+		switch blk.Type {
+		case "p":
+			if blk.Text != "" {
+				b.WriteString(blk.Text + "\n")
+			}
+		case "item":
+			b.WriteString(blk.Term + "：" + blk.Text + "\n")
+		case "table":
+			if blk.Title != "" {
+				b.WriteString(blk.Title + "\n")
+			}
+			if len(blk.Head) > 0 {
+				b.WriteString(strings.Join(blk.Head, " | ") + "\n")
+			}
+			for _, row := range blk.Rows {
+				cells := make([]string, 0, len(row))
+				for _, c := range row {
+					cells = append(cells, cellText(c))
+				}
+				b.WriteString(strings.Join(cells, " | ") + "\n")
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func cellText(raw json.RawMessage) string {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var obj struct {
+		T string `json:"t"`
+	}
+	if json.Unmarshal(raw, &obj) == nil {
+		return obj.T
+	}
+	return ""
+}
+
+// Ask POST /api/v1/ai/ask {kind?, text, ruby_tokens, translation, word, point_id, history, question}
+// kind=grammar 时按 point_id 从库中取知识点讲解与例句，历史键为 g:<point_id>。
 func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		Kind        string          `json:"kind"`
 		Text        string          `json:"text"`
 		Ruby        json.RawMessage `json:"ruby_tokens"`
 		Translation string          `json:"translation"`
@@ -60,6 +207,7 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 			Reading string `json:"reading"`
 			Meaning string `json:"meaning"`
 		} `json:"word"`
+		PointID  string `json:"point_id"`
 		History  []msg  `json:"history"` // 兼容旧客户端：服务端以 DB 历史为准
 		Question string `json:"question"`
 	}
@@ -67,20 +215,45 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, e)
 		return
 	}
+	req.Kind = strings.TrimSpace(req.Kind)
+	req.PointID = strings.TrimSpace(req.PointID)
 	req.Question = strings.TrimSpace(req.Question)
-	if req.Text == "" || req.Question == "" {
-		httpx.Err(w, httpx.BadRequest("EMPTY", "句子与问题都不能为空"))
+	if req.Question == "" {
+		httpx.Err(w, httpx.BadRequest("EMPTY", "问题不能为空"))
 		return
 	}
 	if len([]rune(req.Question)) > 500 {
 		httpx.Err(w, httpx.BadRequest("TOO_LONG", "问题过长（>500 字）"))
 		return
 	}
-	ruby := strings.TrimSpace(string(req.Ruby))
-	if ruby == "" || ruby == "null" {
-		ruby = "（無）"
+	var system, histKey string
+	if req.Kind == "grammar" {
+		if req.PointID == "" {
+			httpx.Err(w, httpx.BadRequest("EMPTY", "语法点不能为空"))
+			return
+		}
+		g, err := h.loadGrammar(r.Context(), req.PointID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				httpx.Err(w, httpx.NotFound("找不到这个语法点"))
+			} else {
+				httpx.Err(w, httpx.Internal(err.Error()))
+			}
+			return
+		}
+		system, histKey = g.system(), "g:"+req.PointID
+	} else {
+		if req.Text == "" {
+			httpx.Err(w, httpx.BadRequest("EMPTY", "句子不能为空"))
+			return
+		}
+		ruby := strings.TrimSpace(string(req.Ruby))
+		if ruby == "" || ruby == "null" {
+			ruby = "（無）"
+		}
+		system = sentenceSystem(req.Text, ruby, req.Translation, req.Word.Surface, req.Word.Reading, req.Word.Meaning)
+		histKey = req.Text
 	}
-	system := fmt.Sprintf(systemTpl, req.Text, ruby, req.Translation, req.Word.Surface, req.Word.Reading, req.Word.Meaning)
 
 	userID := auth.FromContext(r.Context())
 	if !askLim.Allow(userID) || !askDaily.Allow(userID) {
@@ -94,7 +267,7 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 			SELECT role, content, created_at FROM ai_chat
 			WHERE user_id = $1 AND sentence_text = $2
 			ORDER BY created_at DESC LIMIT 20
-		) t ORDER BY created_at`, userID, req.Text); err == nil {
+		) t ORDER BY created_at`, userID, histKey); err == nil {
 		for rows.Next() {
 			var role, content string
 			if rows.Scan(&role, &content) == nil && content != "" {
@@ -165,7 +338,7 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 		dl := chunk.Choices[0].Delta
 		if dl.Reasoning != nil && *dl.Reasoning != "" {
 			reasoning.WriteString(*dl.Reasoning)
-		 eb, _ := json.Marshal(*dl.Reasoning)
+			eb, _ := json.Marshal(*dl.Reasoning)
 			fmt.Fprintf(w, "event: think\ndata: %s\n\n", eb)
 			fl.Flush()
 		}
@@ -185,11 +358,11 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 	_, _ = h.pool.Exec(r.Context(), `
 		INSERT INTO ai_chat (id, user_id, sentence_text, role, content)
 		VALUES ($1, $2, $3, 'user', $4)`,
-		ulid.MustNew(), userID, req.Text, req.Question)
+		ulid.MustNew(), userID, histKey, req.Question)
 	_, _ = h.pool.Exec(r.Context(), `
 		INSERT INTO ai_chat (id, user_id, sentence_text, role, content)
 		VALUES ($1, $2, $3, 'assistant', $4)`,
-		ulid.MustNew(), userID, req.Text, reply.String())
+		ulid.MustNew(), userID, histKey, reply.String())
 	_, _ = h.pool.Exec(r.Context(), `
 		INSERT INTO llm_call_log (id, user_id, lesson_id, model, prompt_tokens, output_tokens, duration_ms)
 		VALUES ($1, $2, NULL, $3, $4, $5, $6)`,

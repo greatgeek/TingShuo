@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	searchTake     = 20
+	searchTake     = 50
 	maxAttempts    = 3
 	quotaReserve   = 500 // 月度配额留 500 次缓冲，不在试点/补词时打满
 	idleInterval   = 2 * time.Second
@@ -92,11 +92,12 @@ func (w *Worker) loop(ctx context.Context) {
 }
 
 type clipJob struct {
-	wordKey  string
-	surface  string
-	reading  string
-	meaning  string
-	attempts int
+	wordKey       string
+	surface       string
+	reading       string
+	meaning       string
+	attempts      int
+	expandPending bool
 }
 
 func (w *Worker) claim(ctx context.Context) (clipJob, error) {
@@ -114,14 +115,18 @@ func (w *Worker) claim(ctx context.Context) (clipJob, error) {
 		SET status = 'running', attempts = q.attempts + 1, updated_at = now()
 		FROM next
 		WHERE q.word_key = next.word_key
-		RETURNING q.word_key, q.surface, q.reading, q.meaning, q.attempts`,
-	).Scan(&j.wordKey, &j.surface, &j.reading, &j.meaning, &j.attempts)
+		RETURNING q.word_key, q.surface, q.reading, q.meaning, q.attempts, q.expand_pending`,
+	).Scan(&j.wordKey, &j.surface, &j.reading, &j.meaning, &j.attempts, &j.expandPending)
 	return j, err
 }
 
 func (w *Worker) process(ctx context.Context, job clipJob) {
 	if skipSurface(job.surface) {
-		w.finish(ctx, job.wordKey, "skipped", "词面不适配原声例句")
+		if job.expandPending {
+			w.finishExpanded(ctx, job.wordKey, "词面不适配原声例句")
+		} else {
+			w.finish(ctx, job.wordKey, "skipped", "词面不适配原声例句")
+		}
 		return
 	}
 	if err := w.searchAndStore(ctx, job); err != nil {
@@ -130,6 +135,23 @@ func (w *Worker) process(ctx context.Context, job clipJob) {
 }
 
 func (w *Worker) searchAndStore(ctx context.Context, job clipJob) error {
+	existing := existingClips{
+		segs:  map[string]bool{},
+		texts: map[string]bool{},
+		media: map[string]bool{},
+	}
+	if job.expandPending {
+		var err error
+		existing, err = w.loadExisting(ctx, job.wordKey)
+		if err != nil {
+			return err
+		}
+		if len(existing.segs) >= maxClips {
+			w.finishExpanded(ctx, job.wordKey, "原声例句已达到上限")
+			return nil
+		}
+	}
+
 	segs, media, err := w.cli.Search(ctx, job.surface, searchTake)
 	w.quotaUsed++
 	w.searches++
@@ -139,14 +161,27 @@ func (w *Worker) searchAndStore(ctx context.Context, job clipJob) error {
 	if err != nil {
 		return err
 	}
-	cands := pickClips(job.surface, job.reading, segs, media)
+	limit := maxClips
+	if job.expandPending {
+		limit = maxClips - len(existing.segs)
+	}
+	cands := pickClips(job.surface, job.reading, segs, media, pickOptions{
+		limit:       limit,
+		excludeSeg:  existing.segs,
+		excludeText: existing.texts,
+		usedMedia:   existing.media,
+	})
 	if len(cands) == 0 {
-		w.finish(ctx, job.wordKey, "skipped", "未找到含该词的合适台词")
+		if job.expandPending {
+			w.finishExpanded(ctx, job.wordKey, "没有更多合适的原声例句")
+		} else {
+			w.finish(ctx, job.wordKey, "skipped", "未找到含该词的合适台词")
+		}
 		return nil
 	}
 
 	texts, terr := translateClips(ctx, job.surface, job.reading, job.meaning, cands)
-	kept := make([]keptClip, 0, maxClips)
+	kept := make([]keptClip, 0, limit)
 	if terr == nil {
 		for i, c := range cands {
 			t, ok := texts[i]
@@ -167,18 +202,65 @@ func (w *Worker) searchAndStore(ctx context.Context, job clipJob) error {
 		}
 	}
 	if len(kept) == 0 {
-		msg := "句中没有词单所记的词义"
-		if terr != nil {
-			msg = "翻译失败且无英文回退"
+		if job.expandPending {
+			w.finishExpanded(ctx, job.wordKey, "没有更多合适的原声例句")
+		} else {
+			msg := "句中没有词单所记的词义"
+			if terr != nil {
+				msg = "翻译失败且无英文回退"
+			}
+			w.finish(ctx, job.wordKey, "skipped", msg)
 		}
-		w.finish(ctx, job.wordKey, "skipped", msg)
 		return nil
 	}
-	if err := w.store(ctx, job.wordKey, kept); err != nil {
+	keepStart := 0
+	if job.expandPending {
+		keepStart = existing.maxSort + 1
+	}
+	if err := w.store(ctx, job.wordKey, kept, job.expandPending, keepStart); err != nil {
 		return err
 	}
 	w.finish(ctx, job.wordKey, "done", "")
 	return nil
+}
+
+type existingClips struct {
+	segs    map[string]bool
+	texts   map[string]bool
+	media   map[string]bool
+	maxSort int
+}
+
+func (w *Worker) loadExisting(ctx context.Context, wordKey string) (existingClips, error) {
+	ex := existingClips{
+		segs:    map[string]bool{},
+		texts:   map[string]bool{},
+		media:   map[string]bool{},
+		maxSort: -1,
+	}
+	rows, err := w.pool.Query(ctx, `
+		SELECT segment_id, text_ja, media_id, sort_order
+		FROM word_clip WHERE word_key = $1`, wordKey)
+	if err != nil {
+		return ex, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var segID, text, mediaID string
+		var sortOrder int
+		if err := rows.Scan(&segID, &text, &mediaID, &sortOrder); err != nil {
+			return ex, err
+		}
+		ex.segs[segID] = true
+		ex.texts[text] = true
+		if mediaID != "" {
+			ex.media[mediaID] = true
+		}
+		if sortOrder > ex.maxSort {
+			ex.maxSort = sortOrder
+		}
+	}
+	return ex, rows.Err()
 }
 
 type keptClip struct {
@@ -187,15 +269,17 @@ type keptClip struct {
 	src string
 }
 
-func (w *Worker) store(ctx context.Context, wordKey string, kept []keptClip) error {
+func (w *Worker) store(ctx context.Context, wordKey string, kept []keptClip, appendMode bool, startSort int) error {
 	tx, err := w.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
 
-	if _, err := tx.Exec(ctx, `DELETE FROM word_clip WHERE word_key = $1`, wordKey); err != nil {
-		return err
+	if !appendMode {
+		if _, err := tx.Exec(ctx, `DELETE FROM word_clip WHERE word_key = $1`, wordKey); err != nil {
+			return err
+		}
 	}
 	for i, k := range kept {
 		tokens, _ := json.Marshal(k.c.tokens)
@@ -217,13 +301,15 @@ func (w *Worker) store(ctx context.Context, wordKey string, kept []keptClip) err
 			k.c.seg.StartTimeMs, k.c.seg.EndTimeMs,
 			k.c.seg.MediaPublicID, mediaName, k.c.seg.Episode, k.c.seg.EpisodeTitle,
 			k.c.seg.Urls.ImageURL, k.c.seg.Urls.AudioURL, k.c.seg.Urls.VideoURL,
-			k.c.score, i)
+			k.c.score, startSort+i)
 		if err != nil {
 			return err
 		}
 	}
 	_, err = tx.Exec(ctx, `
-		UPDATE word_clip_queue SET status = 'done', last_error = '', updated_at = now()
+		UPDATE word_clip_queue
+		SET status = 'done', expanded = true, expand_pending = false,
+		    last_error = '', updated_at = now()
 		WHERE word_key = $1`, wordKey)
 	if err != nil {
 		return err
@@ -269,6 +355,15 @@ func (w *Worker) finish(ctx context.Context, key, status, msg string) {
 	_, _ = w.pool.Exec(ctx, `
 		UPDATE word_clip_queue SET status = $2, last_error = $3, updated_at = now()
 		WHERE word_key = $1`, key, status, truncate(msg, 300))
+}
+
+// finishExpanded 补抓结束（无论是否新增）：保留已有片段，标记该词不再补抓。
+func (w *Worker) finishExpanded(ctx context.Context, key, msg string) {
+	_, _ = w.pool.Exec(ctx, `
+		UPDATE word_clip_queue
+		SET status = 'done', expanded = true, expand_pending = false,
+		    last_error = $2, updated_at = now()
+		WHERE word_key = $1`, key, truncate(msg, 300))
 }
 
 func (w *Worker) quotaLeft() int {

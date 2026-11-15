@@ -1,6 +1,6 @@
-// Say POST /audio/say {text, voice?, rate?}：任意文本合成 MP3（生词本例句等不在 sentence 表的文本）。
-// 与 /audio/synthesize 的区别：不登记 audio_asset、不绑句子；按 (text,voice,rate) 哈希落 text_audio 缓存，
-// 同文本同参数零重复计费。
+// Say POST /audio/say {text, voice?, rate?, ruby?}：任意文本合成 MP3（生词本例句等不在 sentence 表的文本）。
+// ruby 非空时按注音纠读多音字（SSML <sub>）；与 /audio/synthesize 的区别：不登记 audio_asset、不绑句子；
+// 按 (text,voice,rate,读音) 哈希落 text_audio 缓存，同文本同参数零重复计费。
 package tts
 
 import (
@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/generate"
@@ -17,15 +18,16 @@ import (
 )
 
 var (
-	sayLim   = httpx.NewLimiter(30, 60)  // 每用户 30/分钟
+	sayLim   = httpx.NewLimiter(30, 60) // 每用户 30/分钟
 	sayDaily = httpx.NewDailyQuota(500) // 每用户 500/天（TTS 成本护栏）
 )
 
 func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Text  string  `json:"text"`
-		Voice string  `json:"voice"`
-		Rate  float64 `json:"rate"`
+		Text  string      `json:"text"`
+		Voice string      `json:"voice"`
+		Rate  float64     `json:"rate"`
+		Ruby  [][]*string `json:"ruby"` // [[表记, 读音|null], ...]：按注音纠多音字
 	}
 	if e := httpx.Decode(r, &req); e != nil {
 		httpx.Err(w, e)
@@ -62,7 +64,15 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ck := CacheKey(req.Text, Params{Voice: req.Voice, Rate: req.Rate, Style: "", EngineVer: "say-v1"})
+	// 注音有效且确有纠读时：合成走 <sub>，缓存键带上读音，避免命中旧的误读音频
+	tokens, spoken, rubyOK := parseRuby(req.Text, req.Ruby)
+	useRuby := rubyOK && spoken != req.Text
+	ckText := req.Text
+	if useRuby {
+		ckText += "\x1frb:" + spoken
+	}
+
+	ck := CacheKey(ckText, Params{Voice: req.Voice, Rate: req.Rate, Style: "", EngineVer: "say-v1"})
 	key := "say-" + ck // OSS 对象 key 前缀，与句子音频/单词音频区分
 
 	// OSS 缓存命中；DB 只留元信息（空对象视为未命中，自愈重合成）
@@ -81,7 +91,11 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	var audio []byte
 	var serr error
 	for i := 0; i < 2; i++ {
-		audio, serr = h.azure.Synthesize(r.Context(), req.Text, req.Voice, req.Rate)
+		if useRuby {
+			audio, serr = h.azure.SynthesizeRuby(r.Context(), req.Voice, req.Rate, tokens)
+		} else {
+			audio, serr = h.azure.Synthesize(r.Context(), req.Text, req.Voice, req.Rate)
+		}
 		if serr == nil && ttsclient.ValidMP3(audio) {
 			break
 		}
@@ -104,3 +118,33 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	w.Write(audio)
 }
 
+// parseRuby 校验前端注音：各 token 表记拼起来必须与 text 完全一致，否则整组丢弃退回纯文本，
+// 防止 SSML 念出的内容与页面展示不一致。返回值 spoken 为按注音展开后的读音串。
+func parseRuby(text string, in [][]*string) ([]ttsclient.RubyToken, string, bool) {
+	if len(in) == 0 {
+		return nil, "", false
+	}
+	var surfaces, spoken strings.Builder
+	tokens := make([]ttsclient.RubyToken, 0, len(in))
+	for _, p := range in {
+		if len(p) == 0 || p[0] == nil {
+			return nil, "", false
+		}
+		s := *p[0]
+		r := ""
+		if len(p) > 1 && p[1] != nil {
+			r = *p[1]
+		}
+		tokens = append(tokens, ttsclient.RubyToken{Surface: s, Reading: r})
+		surfaces.WriteString(s)
+		if r != "" && r != s {
+			spoken.WriteString(r)
+		} else {
+			spoken.WriteString(s)
+		}
+	}
+	if surfaces.String() != text {
+		return nil, "", false
+	}
+	return tokens, spoken.String(), true
+}

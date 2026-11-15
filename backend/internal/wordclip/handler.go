@@ -63,7 +63,7 @@ func (h *Handler) Clips(w http.ResponseWriter, r *http.Request) {
 		FROM word_clip
 		WHERE word_key = $1
 		ORDER BY sort_order
-		LIMIT 6`, key)
+		LIMIT $2`, key, maxClips)
 	if err != nil {
 		httpx.Err(w, httpx.Internal(err.Error()))
 		return
@@ -84,14 +84,20 @@ func (h *Handler) Clips(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := ""
+	expanded := false
 	_ = h.pool.QueryRow(r.Context(),
-		`SELECT status FROM word_clip_queue WHERE word_key = $1`, key).Scan(&status)
+		`SELECT status, expanded FROM word_clip_queue WHERE word_key = $1`, key).
+		Scan(&status, &expanded)
+	pending := status == "pending" || status == "running"
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
-		"items":   items,
-		"count":   len(items),
-		"enabled": h.cli != nil,
-		"pending": status == "pending" || status == "running",
-		"status":  status,
+		"items":      items,
+		"count":      len(items),
+		"enabled":    h.cli != nil,
+		"pending":    pending,
+		"status":     status,
+		"expanded":   expanded,
+		"max":        maxClips,
+		"can_expand": h.cli != nil && len(items) > 0 && len(items) < maxClips && !expanded && !pending,
 	})
 }
 
@@ -120,8 +126,60 @@ func (h *Handler) Enqueue(w http.ResponseWriter, r *http.Request) {
 	_ = h.pool.QueryRow(r.Context(),
 		`SELECT count(*) FROM word_clip WHERE word_key = $1`, key).Scan(&count)
 	if count > 0 {
+		if r.URL.Query().Get("more") != "1" {
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{
+				"count": count, "pending": false, "status": "done",
+			})
+			return
+		}
+		var status string
+		var expanded bool
+		rowErr := h.pool.QueryRow(r.Context(),
+			`SELECT status, expanded FROM word_clip_queue WHERE word_key = $1`, key).
+			Scan(&status, &expanded)
+		if rowErr == nil && (expanded || count >= maxClips) {
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{
+				"count": count, "pending": false, "status": status,
+				"expanded": expanded, "can_expand": false,
+			})
+			return
+		}
+		if rowErr == nil && (status == "pending" || status == "running") {
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{
+				"count": count, "pending": true, "status": status,
+				"expanded": false, "can_expand": false,
+			})
+			return
+		}
+		// 老词只补抓一次：拿满 18 条或补到没有新片段后 expanded 置真
+		tag, err := h.pool.Exec(r.Context(), `
+			INSERT INTO word_clip_queue (word_key, surface, reading, meaning, status, expand_pending)
+			VALUES ($1, $2, $3, $4, 'pending', true)
+			ON CONFLICT (word_key) DO UPDATE
+			SET status = 'pending', expand_pending = true, attempts = 0,
+			    last_error = '', created_at = now(), updated_at = now()
+			WHERE word_clip_queue.expanded = false
+			  AND word_clip_queue.status NOT IN ('pending', 'running')`,
+			key, surface, reading, meaning)
+		if err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+		if tag.RowsAffected() == 0 {
+			var nowStatus string
+			var nowExpanded bool
+			_ = h.pool.QueryRow(r.Context(),
+				`SELECT status, expanded FROM word_clip_queue WHERE word_key = $1`, key).
+				Scan(&nowStatus, &nowExpanded)
+			httpx.WriteJSON(w, http.StatusOK, map[string]any{
+				"count": count, "pending": nowStatus == "pending" || nowStatus == "running",
+				"status": nowStatus, "expanded": nowExpanded, "can_expand": false,
+			})
+			return
+		}
 		httpx.WriteJSON(w, http.StatusOK, map[string]any{
-			"count": count, "pending": false, "status": "done",
+			"count": count, "pending": true, "status": "pending",
+			"expanded": false, "can_expand": false,
 		})
 		return
 	}
