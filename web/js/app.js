@@ -537,12 +537,10 @@ function wclipRender(box, clips, w, opts, state) {
   const meta = (state && state.meta) || {};
   const n = Math.max(1, Math.min((state && state.shown) || 2, total));
   const shown = clips.slice(0, n);
-  const canExpand = !!meta.can_expand;
-  const more = n < total || canExpand;
 
   let html = `<div class="wclip-head">
       <span class="usage-head">${title}</span>
-      ${more ? '<button class="wclip-swap" data-act="more">＋ 获取更多</button>' : ''}
+      <button class="wclip-swap" data-act="more">＋ 获取更多</button>
     </div>`;
   shown.forEach(c => {
     const src = [c.media_name || '原声',
@@ -642,7 +640,7 @@ async function wclipExpand(box, clips, w, opts, shown, meta) {
       const r = await api('/words/' + w.id + '/clips');
       if (!box.isConnected) return;
       const count = renderWith(r);
-      toast(count > clips.length ? `新增 ${count - clips.length} 条原声` : '没有更多原声了');
+      toast(count > clips.length ? `新增 ${count - clips.length} 条原声` : '没有更多原声片段了');
       return;
     }
     let tries = 0;
@@ -664,7 +662,7 @@ async function wclipExpand(box, clips, w, opts, shown, meta) {
         }
         const count = renderWith(r);
         if (count > clips.length) toast(`新增 ${count - clips.length} 条原声`);
-        else toast('没有更多原声了');
+        else toast('没有更多原声片段了');
       } catch (err) {
         if (box.isConnected) {
           toast('获取更多失败：' + err.message);
@@ -3024,16 +3022,14 @@ function nbClipsRender(box, clips, w, shown, meta) {
   const total = clips.length;
   const n = Math.max(1, Math.min(shown || 6, total));
   const view = clips.slice(0, n);
-  const canExpand = !!meta.can_expand;
   const countText = n < total ? `${n} / ${total} 条` : `共 ${total} 条 · 点剧照听原声`;
-  const moreBtn = (n < total || canExpand)
-    ? '<button class="wclip-swap nb-clips-more" data-act="more">＋ 获取更多</button>' : '';
+  const moreBtn = '<button class="wclip-swap nb-clips-more" data-act="more">＋ 获取更多</button>';
   let html = `<div class="nb-clips-head"><span class="usage-head">影视原声</span>
     <span class="nb-clips-count">${countText}</span></div>
     <div class="wclip-strip">`;
   view.forEach((c, i) => {
     html += `<button class="wclip-thumb${i === 0 ? ' sel' : ''}" data-i="${i}" title="播放第 ${i + 1} 条原声">
-      ${c.image_url ? `<img src="${esc(c.image_url)}" alt="" decoding="async">` : '<span class="wclip-thumb-ph"></span>'}
+      ${c.image_url ? `<img src="${esc(c.image_url)}" alt="" decoding="async" loading="lazy">` : '<span class="wclip-thumb-ph"></span>'}
       <span class="wclip-play">▶</span>
     </button>`;
   });
@@ -3116,7 +3112,7 @@ function nbClipsRender(box, clips, w, shown, meta) {
       nbClipsRender(box, clips, w, Math.min(n + 6, total), meta);
       return;
     }
-    if (canExpand) nbExpandClips(w, box, clips, meta, n);
+    nbExpandClips(w, box, clips, meta, n);
   });
 }
 
@@ -3139,7 +3135,7 @@ async function nbExpandClips(w, box, clips, meta, shown) {
       const r = await api('/words/' + w.word_id + '/clips');
       if (!box.isConnected) return;
       const count = await renderWith(r);
-      toast(count > clips.length ? `新增 ${count - clips.length} 条原声` : '没有更多原声了');
+      toast(count > clips.length ? `新增 ${count - clips.length} 条原声` : '没有更多原声片段了');
       return;
     }
     let tries = 0;
@@ -3161,7 +3157,7 @@ async function nbExpandClips(w, box, clips, meta, shown) {
         }
         const count = await renderWith(r);
         if (count > clips.length) toast(`新增 ${count - clips.length} 条原声`);
-        else toast('没有更多原声了');
+        else toast('没有更多原声片段了');
       } catch (err) {
         if (box.isConnected) {
           toast('获取更多失败：' + err.message);
