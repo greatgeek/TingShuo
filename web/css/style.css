@@ -497,6 +497,7 @@ body.no-rt rt { display: none; }
   padding: 4px 10px; cursor: pointer; font-family: inherit; flex: none;
 }
 .wclip-swap:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.wclip-swap:disabled { opacity: .6; cursor: default; }
 .wclip-card {
   background: var(--surface); border: 1px solid var(--line);
   border-radius: 14px; overflow: hidden; margin-top: 8px;

@@ -364,9 +364,13 @@ async function toggleWordUsage(w, div) {
   box.innerHTML = '<p class="hint">加载用法…</p>';
   div.appendChild(box);
   try {
-    const u = await api('/words/' + w.id + '/usage');
+    const [u, nb] = await Promise.all([
+      api('/words/' + w.id + '/usage'),
+      api('/word-study/' + w.id + '/sentences').catch(() => ({ items: [] })),
+    ]);
     const phrases = (u.items || []).filter(x => x.type === 'phrases');
     const sents = (u.items || []).filter(x => x.type !== 'phrases');
+    const nbItems = nb.items || [];
     let html = '';
     if (phrases.length) {
       html += '<div class="usage-head">生词短语</div>';
@@ -379,10 +383,22 @@ async function toggleWordUsage(w, div) {
         html += usageRow(x);
       });
     }
-    if (!html) html = '<p class="hint">该词暂无关联句子（此课的材料生成于关联功能上线前，重新生成可建立索引）。</p>';
+    if (nbItems.length) {
+      html += '<div class="usage-head">生词本例句</div>';
+      nbItems.forEach(x => {
+        const tag = (x.src || '').startsWith('llm') ? '补' : '本';
+        html += `<div class="sent usage-sent nb-usage-sent">
+          <span class="spk">${tag}</span>
+          <div class="wrap"><div class="txt">${rubyHTML(x.ruby_tokens) || esc(x.text)}</div>
+          <div class="zh">${esc(x.translation || '')}</div></div>
+          <button class="play" title="点播">▶</button>
+        </div>`;
+      });
+    }
+    if (!html) html = '<p class="hint">该词暂无关联例句。</p>';
     box.innerHTML = html;
     // 绑定点播（阻止冒泡到词行——否则会触发 toggleWordUsage 的收起逻辑）
-    box.querySelectorAll('.usage-sent').forEach((row, i) => {
+    box.querySelectorAll('.usage-sent[data-sid]').forEach((row, i) => {
       const sid = row.dataset.sid;
       const it = (u.items || []).find(x2 => x2.sentence_id === sid);
       row.onclick = (e) => {
@@ -394,6 +410,16 @@ async function toggleWordUsage(w, div) {
         };
         playOne(s, i, row);
       };
+    });
+    box.querySelectorAll('.nb-usage-sent').forEach((row, i) => {
+      const x = nbItems[i];
+      const btn = row.querySelector('.play');
+      const say = (e) => {
+        e.stopPropagation();
+        sayAudio(x.text, btn, false, x.ruby_tokens);
+      };
+      row.onclick = say;
+      btn.onclick = say;
     });
   } catch (e) {
     box.innerHTML = '<p class="hint">加载失败：' + esc(e.message) + '</p>';
@@ -419,8 +445,10 @@ function usageRow(x) {
 
 // ============ 生词原声例句（剧照 + 原声）============
 // Nadeshiko 的「视频」实际是静帧+音频，这里按剧照呈现：点图播原声。
-// 后端按词缓存最多 6 条；这里（生词库/背词）每次展示 2 条，点"换两条"本地轮换（不消耗 API 配额）。
+// 后端按词缓存最多 18 条；这里（生词库/背词）每次展示 2 条，点「获取更多」先展开缓存，
+// 缓存用尽且后端还可补抓时再请求 ?more=1。
 const CLIP_MEM = new Map();
+const CLIP_META = new Map();
 const NB_CLIP_MEM = new Map();
 const NB_CLIP_META = new Map();
 
@@ -467,7 +495,7 @@ async function loadWordClips(w, box, opts = {}) {
     box.addEventListener('click', e => e.stopPropagation());
   }
   const cached = CLIP_MEM.get(w.id);
-  if (cached && cached.length) { wclipRender(box, cached, w, opts, 0); return; }
+  if (cached && cached.length) { wclipRender(box, cached, w, opts, { shown: 2, meta: CLIP_META.get(w.id) || {} }); return; }
 
   const title = opts.title || '原声台词';
   box.innerHTML = `<div class="wclip-head"><span class="usage-head">${title}</span></div><p class="hint">加载原声…</p>`;
@@ -480,7 +508,13 @@ async function loadWordClips(w, box, opts = {}) {
       const items = r.items || [];
       // 已缓存的片段即使搜索服务未配置也照常展示
       if (!r.enabled && !items.length) { box.innerHTML = ''; return; }
-      if (items.length) { CLIP_MEM.set(w.id, items); wclipRender(box, items, w, opts, 0); return; }
+      if (items.length) {
+        const meta = clipMeta(r);
+        CLIP_MEM.set(w.id, items);
+        CLIP_META.set(w.id, meta);
+        wclipRender(box, items, w, opts, { shown: 2, meta });
+        return;
+      }
       if (r.pending && tries < 20) {
         tries++;
         box.innerHTML = `<div class="wclip-head"><span class="usage-head">${title}</span></div>
@@ -496,17 +530,19 @@ async function loadWordClips(w, box, opts = {}) {
   tick();
 }
 
-function wclipRender(box, clips, w, opts, offset) {
+function wclipRender(box, clips, w, opts, state) {
   clipStopAll();
   const title = opts.title || '原声台词';
   const total = clips.length;
-  const n = Math.min(2, total);
-  const shown = [];
-  for (let i = 0; i < n; i++) shown.push(clips[(offset + i) % total]);
+  const meta = (state && state.meta) || {};
+  const n = Math.max(1, Math.min((state && state.shown) || 2, total));
+  const shown = clips.slice(0, n);
+  const canExpand = !!meta.can_expand;
+  const more = n < total || canExpand;
 
   let html = `<div class="wclip-head">
       <span class="usage-head">${title}</span>
-      ${total > n ? '<button class="wclip-swap" data-act="swap">换两条 ↻</button>' : ''}
+      ${more ? '<button class="wclip-swap" data-act="more">＋ 获取更多</button>' : ''}
     </div>`;
   shown.forEach(c => {
     const src = [c.media_name || '原声',
@@ -571,12 +607,75 @@ function wclipRender(box, clips, w, opts, offset) {
     a.addEventListener('pause', () => setOn(false));
     a.addEventListener('ended', () => setOn(false));
   });
-  const swap = box.querySelector('.wclip-swap');
-  if (swap) {
-    swap.onclick = (e) => {
+  const moreBtn = box.querySelector('.wclip-swap');
+  if (moreBtn) {
+    moreBtn.onclick = (e) => {
       e.stopPropagation();
-      wclipRender(box, clips, w, opts, (offset + n) % total);
+      if (n < total) wclipRender(box, clips, w, opts, { shown: n + 2, meta });
+      else wclipExpand(box, clips, w, opts, n, meta);
     };
+  }
+}
+
+function clipMeta(r) {
+  return { expanded: !!r.expanded, can_expand: !!r.can_expand, max: r.max || 18 };
+}
+
+// wclipExpand 生词库/背词面板的后端补抓：缓存已全部展示时向 ?more=1 追加新片段。
+async function wclipExpand(box, clips, w, opts, shown, meta) {
+  const btn = box.querySelector('.wclip-swap');
+  if (btn) { btn.disabled = true; btn.textContent = '正在获取更多…'; }
+  const renderWith = (r) => {
+    const items = r.items || [];
+    const m = clipMeta(r);
+    CLIP_MEM.set(w.id, items);
+    CLIP_META.set(w.id, m);
+    const n = items.length > clips.length
+      ? Math.min(shown + 2, items.length) : Math.min(shown, items.length);
+    wclipRender(box, items, w, opts, { shown: n, meta: m });
+    return items.length;
+  };
+  try {
+    const p = await api('/words/' + w.id + '/clips?more=1', { method: 'POST' });
+    if (!box.isConnected) return;
+    if (!p.pending) {
+      const r = await api('/words/' + w.id + '/clips');
+      if (!box.isConnected) return;
+      const count = renderWith(r);
+      toast(count > clips.length ? `新增 ${count - clips.length} 条原声` : '没有更多原声了');
+      return;
+    }
+    let tries = 0;
+    const poll = async () => {
+      if (!box.isConnected) return;
+      try {
+        const r = await api('/words/' + w.id + '/clips');
+        if (!box.isConnected) return;
+        if (r.pending) {
+          if (tries < 48) {
+            tries++;
+            setTimeout(poll, 2500);
+            return;
+          }
+          // 超时不写缓存：保留原数据和「获取更多」，后台完成后再点一次即可拿到
+          wclipRender(box, clips, w, opts, { shown, meta });
+          toast('仍在生成，稍后再试');
+          return;
+        }
+        const count = renderWith(r);
+        if (count > clips.length) toast(`新增 ${count - clips.length} 条原声`);
+        else toast('没有更多原声了');
+      } catch (err) {
+        if (box.isConnected) {
+          toast('获取更多失败：' + err.message);
+          wclipRender(box, clips, w, opts, { shown, meta });
+        }
+      }
+    };
+    setTimeout(poll, 1500);
+  } catch (e) {
+    toast('获取更多失败：' + e.message);
+    if (box.isConnected) wclipRender(box, clips, w, opts, { shown, meta });
   }
 }
 
