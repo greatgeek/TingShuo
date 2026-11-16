@@ -7,6 +7,8 @@ package wordstudy
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +37,12 @@ const (
 var kanaOnlyReadingRe = regexp.MustCompile(`^[ぁ-ゖァ-ヺー・]+$`)
 
 func kanaOnlyReading(s string) bool { return kanaOnlyReadingRe.MatchString(s) }
+
+// audioTag 词音缓存标识：读音（speakText）变化即失效，修正注音后无需手工清缓存。
+func audioTag(speakText string) string {
+	sum := sha256.Sum256([]byte(speakText))
+	return hex.EncodeToString(sum[:4])
+}
 
 // speakTextOverrides 个别词改用词面合成：Nanami 把孤立的「てん」读成近似「せん」
 // （起音是 7-8kHz 摩擦而非 t 爆破，2026-11-07 报障），读汉字「点」则正常。
@@ -200,16 +208,6 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// OSS 缓存命中（对象 key = word-v3-<word_id>.mp3）；DB 只留元信息。
-	// v2 前缀：线上 word-<id> 曾写入坏音频（不同词返回同尺寸静音块，2026-11-06 报障），
-	// 换前缀让旧对象自然弃用；不删对象，回滚只需改回前缀。
-	// v3 前缀：v2 里「点/てん」按假名合成被 Nanami 读成近似「せん」，换前缀强制重合成。
-	key := "word-v3-" + wordID
-	if data, ok := fetchOSS(r.Context(), h.store, key); ok {
-		serveMP3(w, data)
-		return
-	}
-
 	// 未命中：合成。读音有注音尾码（如「もじ ①」）时截掉，只用假名
 	speakText := surface
 	if reading != nil {
@@ -221,6 +219,18 @@ func (h *Handler) Audio(w http.ResponseWriter, r *http.Request) {
 				speakText = v
 			}
 		}
+	}
+
+	// OSS 缓存命中（对象 key = word-v4-<word_id>-<读音哈希>.mp3）；DB 只留元信息。
+	// v2 前缀：线上 word-<id> 曾写入坏音频（不同词返回同尺寸静音块，2026-11-06 报障），
+	// 换前缀让旧对象自然弃用；不删对象，回滚只需改回前缀。
+	// v3 前缀：v2 里「点/てん」按假名合成被 Nanami 读成近似「せん」，换前缀强制重合成。
+	// v4 带读音哈希：读音修正（如 キャプテン翼 つばさ→キャプテンつばさ）后自然换 key，
+	// 不必手动清 OSS/word_audio。
+	key := "word-v4-" + wordID + "-" + audioTag(speakText)
+	if data, ok := fetchOSS(r.Context(), h.store, key); ok {
+		serveMP3(w, data)
+		return
 	}
 	audio, err := h.azure.Synthesize(r.Context(), speakText, defaultVoice, defaultRate)
 	if err == nil && !ttsclient.ValidMP3(audio) {

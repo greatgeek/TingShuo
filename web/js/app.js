@@ -1432,6 +1432,22 @@ function isCounterTok(w) {
 function keepsNumRun(w) {
   return isNumTok(w) || (isCounterTok(w) && DATE_JOIN.has(Array.from(w)[0]));
 }
+// rubyCore 词内假名前缀/后缀与读音同形时，只给汉字核心标音：
+// キャプテン翼/キャプテンつばさ → キャプテン + 翼(つばさ)，好きな/すきな → 好き(すき) + な。
+// 避免振假名横跨片假名、窄屏换行时读音被拆到两行。
+function rubyCore(w, r) {
+  const sr = Array.from(w), rr = Array.from(r || '');
+  const isKana = c => /[\u3041-\u3096\u30A1-\u30FA]/.test(c);
+  let p = 0;
+  while (p < sr.length && p < rr.length && sr[p] === rr[p] && isKana(sr[p])) p++;
+  let s = 0;
+  while (s < sr.length - p && s < rr.length - p
+    && sr[sr.length - 1 - s] === rr[rr.length - 1 - s] && isKana(sr[sr.length - 1 - s])) s++;
+  const coreS = sr.slice(p, sr.length - s).join('');
+  const coreR = rr.slice(p, rr.length - s).join('');
+  if (!coreS || !coreR || !/[一-龯]/.test(coreS)) return null;
+  return { pre: sr.slice(0, p).join(''), suf: sr.slice(sr.length - s).join(''), coreS, coreR };
+}
 // force=true 时单个词也分词（消失术等逐词渲染）；'plain' 用于词条本身不分词
 function rubyHTML(tokens, force) {
   if (!Array.isArray(tokens) || !tokens.length) return '';
@@ -1441,7 +1457,15 @@ function rubyHTML(tokens, force) {
   let numRun = false;
   return tokens
     .map(([w, r]) => {
-      const inner = (r && /[一-龯]/.test(w)) ? `<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>` : esc(w);
+      let inner;
+      if (r && /[一-龯]/.test(w)) {
+        const rc = rubyCore(w, r);
+        inner = rc
+          ? `${esc(rc.pre)}<ruby>${esc(rc.coreS)}<rt>${esc(rc.coreR)}</rt></ruby>${esc(rc.suf)}`
+          : `<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>`;
+      } else {
+        inner = esc(w);
+      }
       if (!seg || !w || recIsPunct(w)) { numRun = false; return inner; }
       const join = !first && numRun && (isNumTok(w) || isCounterTok(w));
       const cls = first ? 'wseg wseg-first' : (join ? 'wseg wseg-join' : 'wseg');
@@ -1751,10 +1775,10 @@ async function audioBlobURL(audioId) {
   idbPut(audioId, blob);
   return URL.createObjectURL(blob);
 }
-// 缓存优先取单词发音 blob URL（key 加 w2: 前缀与句子音频区分；w2 使旧词音缓存全部失效，
-// 2026-11-07 修复「点/てん」被读成近似「せん」后需要重新拉取）
+// 缓存优先取单词发音 blob URL（key 加 w3: 前缀与句子音频区分；w3 使旧词音缓存全部失效，
+// 2026-11-16 修复「キャプテン翼」读音缺字导致词音只念「つばさ」后需要重新拉取）
 async function wordAudioBlobURL(wordId) {
-  const key = 'w2:' + wordId;
+  const key = 'w3:' + wordId;
   const hit = await idbGet(key);
   if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/word-study/' + wordId + '/audio');
@@ -2281,7 +2305,7 @@ function wsSpeakWord(wordId, btn, retry) {
       // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
       setTimeout(() => {
         if (!retry && WS_AUDIO === a && !a.paused && a.currentTime < 0.05) {
-          wsStopAudio(); idbDel('w2:' + wordId); wsSpeakWord(wordId, btn, true);
+          wsStopAudio(); idbDel('w3:' + wordId); wsSpeakWord(wordId, btn, true);
         }
       }, 800);
       setTimeout(() => wsAudioDbg(a, '词'), 900);
@@ -2579,6 +2603,22 @@ function wsAutoPlayFront() {
 }
 
 function wsNext() { WS_IDX = wsNextUndone(WS_IDX + 1); renderWordStudyItem(); wsAutoPlayFront(); }
+
+// 揭晓面回车进入下一词；输入框回车已由 ws-type-in 自行提交，这里跳过输入框和
+// 可见的按钮/链接（留给原生激活），避免焦点在控件上时一次回车既激活又跳词。
+// 选项按钮随题面隐藏后仍可能保留焦点（Chrome 不因 display:none 立即 blur），
+// 这种已不可见的控件不算数，否则选答题揭晓后回车没反应。
+document.addEventListener('keydown', e => {
+  if (CUR_SCREEN !== 'wordstudy') return;
+  if (e.key !== 'Enter' || e.repeat || e.isComposing) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT|SUMMARY)$/.test(t.tagName || ''))) return;
+  if (t && /^(BUTTON|A)$/.test(t.tagName || '') && t.getClientRects().length) return;
+  if (!document.querySelector('#ws-back [data-act="ws-next"]')) return;
+  e.preventDefault();
+  wsNext();
+});
 
 async function wsPick(i) {
   if (WS_GRADING) return; // 连点防护：一次作答只提交一次

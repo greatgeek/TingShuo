@@ -73,8 +73,11 @@ type Quiz struct {
 }
 
 // blankTokens 把词面在句中的位置换成单个空白 token 且剥掉读音。
-// 与空白区间有任何重叠的 token 都并进空白，避免半个词漏在外面提示答案。
-func blankTokens(raw json.RawMessage, text, surface string) []sentToken {
+// 只空白目标词本身：与目标词重叠的 token 若还有词外文字（言語学習 里的 言語、
+// 李さん 里的 李），这些文字照常显示——否则揭晓时整块被词面替换，句子会缺字，
+// 听起来的整句发音就和屏幕对不上（2026-11-16「学習にも便利です」报障）。
+// 整块都在词内的 token 并进空白，避免半个词漏在外面提示答案。
+func blankTokens(raw json.RawMessage, text, surface, reading string) []sentToken {
 	// ruby_tokens 落库形态是 [[text, reading|null], ...] 的二元组数组
 	var src [][2]*string
 	if err := json.Unmarshal(raw, &src); err != nil || len(src) == 0 {
@@ -92,21 +95,80 @@ func blankTokens(raw json.RawMessage, text, surface string) []sentToken {
 		if p[0] == nil {
 			continue
 		}
-		tStart, tEnd := off, off+len(*p[0])
+		s := *p[0]
+		tStart, tEnd := off, off+len(s)
 		off = tEnd
-		if tStart < end && tEnd > start { // 与空白区间重叠
-			if !blanked {
-				out = append(out, sentToken{Text: "＿＿＿", Blank: true})
-				blanked = true
-			}
+		if tEnd <= start || tStart >= end { // 词外 token 原样保留
+			out = append(out, sentToken{Text: s, Reading: p[1]})
 			continue
 		}
-		out = append(out, sentToken{Text: *p[0], Reading: p[1]})
+		var rd string
+		if p[1] != nil {
+			rd = *p[1]
+		}
+		// 词左残留（如 言語学習 的 言語）：整词位于本 token 尾部才按读音尾部切分
+		if tStart < start {
+			pre := s[:start-tStart]
+			var preR *string
+			if tEnd == end && s[start-tStart:] == surface {
+				preR = splitReading(rd, reading, true)
+			}
+			out = append(out, sentToken{Text: pre, Reading: preR})
+		}
+		if !blanked {
+			out = append(out, sentToken{Text: "＿＿＿", Blank: true})
+			blanked = true
+		}
+		// 词右残留（如 李さん 的 さん）：整词位于本 token 头部才按读音头部切分
+		if tEnd > end {
+			suf := s[end-tStart:]
+			var sufR *string
+			if tStart == start && s[:end-tStart] == surface {
+				sufR = splitReading(rd, reading, false)
+			}
+			out = append(out, sentToken{Text: suf, Reading: sufR})
+		}
 	}
 	if !blanked {
 		return nil
 	}
 	return out
+}
+
+// wordReading 词读音，缺省空串（切不出读音时前端就不显示振假名）。
+func wordReading(w word) string {
+	if w.Reading != nil {
+		return *w.Reading
+	}
+	return ""
+}
+
+// splitReading 把整块读音切给空白两侧的残留文字：token 读音必须以词读音结尾
+// （前缀侧）或开头（后缀侧）才切；切不准就不给读音，宁缺勿错。
+func splitReading(reading, wordReading string, prefix bool) *string {
+	if reading == "" || wordReading == "" || reading == wordReading {
+		return nil
+	}
+	rr, wr := []rune(reading), []rune(wordReading)
+	if len(rr) <= len(wr) {
+		return nil
+	}
+	var s string
+	if prefix {
+		if !strings.HasSuffix(reading, wordReading) {
+			return nil
+		}
+		s = string(rr[:len(rr)-len(wr)])
+	} else {
+		if !strings.HasPrefix(reading, wordReading) {
+			return nil
+		}
+		s = string(rr[len(wr):])
+	}
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // blurHint 句子翻译含词义 → 替换成○○；不含 → nil（前端不显示提示按钮）。
@@ -239,7 +301,7 @@ func buildQuiz(ctx context.Context, pool *pgxpool.Pool, userID string, w word, i
 	if err != nil || sr == nil {
 		return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
 	}
-	tokens := blankTokens(sr.Ruby, sr.Text, target)
+	tokens := blankTokens(sr.Ruby, sr.Text, target, wordReading(w))
 	if tokens == nil {
 		return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
 	}
