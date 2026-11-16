@@ -2641,7 +2641,7 @@ function renderWordStudyDone() {
 }
 
 // ============ 生词本浏览 ============
-let NB_LIST = [], NB_CUR = null, NB_DIRS = [], NB_WORDS = {}, NB_CURDIR = null;
+let NB_LIST = [], NB_CUR = null, NB_DIRS = [], NB_WORDS = {}, NB_CURDIR = null, NB_SEL_WORD = null;
 
 async function loadNbCount() {
   try {
@@ -2785,12 +2785,19 @@ async function nbOpenDir(dirId) {
   api('/word-study/dir/' + dirId + '/enrich', { method: 'POST' }).catch(() => {});
 }
 
+function nbSelectWord(w, div) {
+  NB_SEL_WORD = w.word_id;
+  document.querySelectorAll('#nb-words .wordrow.sel').forEach(x => x.classList.remove('sel'));
+  if (div && div.isConnected) div.classList.add('sel');
+}
+
 function renderNbWords() {
   const items = NB_WORDS[NB_CURDIR] || [];
+  if (NB_SEL_WORD && !items.some(w => w.word_id === NB_SEL_WORD)) NB_SEL_WORD = null;
   const box = $('nb-words'); box.innerHTML = '';
   items.forEach((w, i) => {
     const div = document.createElement('div');
-    div.className = 'sent wordrow';
+    div.className = 'sent wordrow' + (w.word_id === NB_SEL_WORD ? ' sel' : '');
     div.innerHTML = `
       <span class="spk">${i + 1}</span>
       <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : `<ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>`}</div>
@@ -2798,9 +2805,9 @@ function renderNbWords() {
       <button class="word-clip-btn" title="影视原声例句"><span class="ic">🎬</span><span class="tx">影视原声</span></button>
       <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开例句">▾</button>`;
-    div.querySelector('.word-clip-btn').onclick = (e) => { e.stopPropagation(); nbToggleClips(w, div); };
-    div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.word_id, e.currentTarget); };
-    div.onclick = () => { if (PL && nbPlayJumpTo(w)) return; nbToggleWord(w, div); };
+    div.querySelector('.word-clip-btn').onclick = (e) => { e.stopPropagation(); nbSelectWord(w, div); nbToggleClips(w, div); };
+    div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); nbSelectWord(w, div); wsSpeakWord(w.word_id, e.currentTarget); };
+    div.onclick = () => { nbSelectWord(w, div); if (PL && nbPlayJumpTo(w)) return; nbToggleWord(w, div); };
     box.appendChild(div);
   });
   $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 🎬 影视原声 · 点词展开例句（▶ 点播）`;
@@ -2905,6 +2912,7 @@ function nbBuildSents(w) {
     row.innerHTML = `<div class="wrap"><div class="txt">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div><div class="zh">${esc(s.translation || '')}</div></div>`;
     row.onclick = (e) => {
       e.stopPropagation();
+      nbSelectWord(w, row.closest('.wordrow'));
       if (PL) nbPlayJumpToSent(w, si);
     };
     const ask = document.createElement('button');
@@ -2913,7 +2921,7 @@ function nbBuildSents(w) {
     row.appendChild(ask);
     const btn = document.createElement('button');
     btn.className = 'play'; btn.textContent = '▶'; btn.title = '点播';
-    btn.onclick = (e) => { e.stopPropagation(); sayAudio(s.text, btn, false, s.ruby_tokens); };
+    btn.onclick = (e) => { e.stopPropagation(); nbSelectWord(w, row.closest('.wordrow')); sayAudio(s.text, btn, false, s.ruby_tokens); };
     row.appendChild(btn);
     wrap.appendChild(row);
   });
@@ -3498,7 +3506,12 @@ async function nbPlayStart() {
   closeNbPicker();
   const items = nbPlayItems();
   if (!items.length) { toast('本目录没有可播放内容'); return; }
-  PL = { items, i: 0, loop: 0, audio: new Audio(), follow: true, autoScrolling: false, paused: false };
+  let start = 0;
+  if (NB_SEL_WORD) {
+    const k = items.findIndex(it => it.w.word_id === NB_SEL_WORD);
+    if (k > 0) start = k;
+  }
+  PL = { items, i: start, loop: 0, audio: new Audio(), follow: true, autoScrolling: false, paused: false };
   PL.audio.addEventListener('ended', () => nbPlayNext());
   PL.audio.addEventListener('error', () => { toast('音频播放出错，跳下一条'); nbPlayNext(); });
   // 部分移动端浏览器要等元数据就绪才认 playbackRate：加载后补设一次

@@ -979,6 +979,9 @@ body.no-rt rt { display: none; }
 }
 .nb-nowbar .btn.nb-now-cfg svg { width: 14px; height: 14px; }
 #nb-words .playing { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+/* 选中的词：全播的起点。播放中的行仍用 .playing 样式，不叠加底色 */
+#nb-words .wordrow.sel:not(.playing) { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--line-strong); }
+#nb-words .wordrow.sel .spk { color: var(--accent); font-weight: 700; }
 body.nb-playing #sc-notebook { padding-bottom: 92px; }
 
 /* ===== 播客播放器 ===== */
