@@ -342,7 +342,7 @@ function renderWordsView() {
     div.innerHTML = `
       <span class="spk">${w.is_key ? '★' : ''}</span>
       <div class="wrap">
-        <div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
+        <div class="txt">${rubyWordHTML(w.surface, w.reading)}</div>
         <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div>
       </div>
       <button class="play" title="展开用法">▾</button>`;
@@ -1448,6 +1448,30 @@ function rubyCore(w, r) {
   if (!coreS || !coreR || !/[一-龯]/.test(coreS)) return null;
   return { pre: sr.slice(0, p).join(''), suf: sr.slice(sr.length - s).join(''), coreS, coreR };
 }
+// 按字读音表（tools/liangshuang/gen_ruby_splits.js 生成）：苦手/にがて → 苦(にが)+手(て)。
+// 表缺失、词不在表内或数据对不齐时返回 null，回落整词注音（宁整勿错）。
+function rubySplitParts(coreS, coreR) {
+  const m = window.RUBY_SPLITS;
+  const p = m && m[coreS + '|' + coreR];
+  if (!Array.isArray(p)) return null;
+  let s = '', r = '';
+  for (const [t, rt] of p) { s += t; if (rt) r += rt; }
+  return s === coreS && r === coreR ? p : null;
+}
+function rubyCoreHTML(rc) {
+  const parts = rubySplitParts(rc.coreS, rc.coreR);
+  if (!parts) return `<ruby>${esc(rc.coreS)}<rt>${esc(rc.coreR)}</rt></ruby>`;
+  return parts.map(([t, rt]) => rt
+    ? `<ruby>${esc(t)}<rt>${esc(rt)}</rt></ruby>`
+    : esc(t)).join('');
+}
+// 单词语注音：生词库/背词/生词本等处共用，拆字规则与 rubyHTML 一致
+function rubyWordHTML(surface, reading) {
+  if (!reading || !/[一-龯]/.test(surface)) return esc(surface);
+  const rc = rubyCore(surface, reading);
+  if (!rc) return `<ruby>${esc(surface)}<rt>${esc(reading)}</rt></ruby>`;
+  return esc(rc.pre) + rubyCoreHTML(rc) + esc(rc.suf);
+}
 // force=true 时单个词也分词（消失术等逐词渲染）；'plain' 用于词条本身不分词
 function rubyHTML(tokens, force) {
   if (!Array.isArray(tokens) || !tokens.length) return '';
@@ -1461,7 +1485,7 @@ function rubyHTML(tokens, force) {
       if (r && /[一-龯]/.test(w)) {
         const rc = rubyCore(w, r);
         inner = rc
-          ? `${esc(rc.pre)}<ruby>${esc(rc.coreS)}<rt>${esc(rc.coreR)}</rt></ruby>${esc(rc.suf)}`
+          ? `${esc(rc.pre)}${rubyCoreHTML(rc)}${esc(rc.suf)}`
           : `<ruby>${esc(w)}<rt>${esc(r)}</rt></ruby>`;
       } else {
         inner = esc(w);
@@ -2122,7 +2146,7 @@ function renderLibrary() {
     div.innerHTML = `
       <span class="spk">${w.is_key ? '★' : ''}</span>
       <div class="wrap">
-        <div class="txt"><ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby></div>
+        <div class="txt">${rubyWordHTML(w.surface, w.reading)}</div>
         <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')} <span class="lib-meta">· ${w.lesson_count} 课${w.first_seen ? ' · 首见 ' + w.first_seen : ''}</span></div>
       </div>
       <button class="word-speak" title="听单词发音">🔊</button>
@@ -2346,7 +2370,7 @@ function wsTokensHTML(q, withInput) {
     ? (withInput
       ? '<input class="ws-inline-in" id="ws-type-in" maxlength="24" autocomplete="off" aria-label="输入空格里的词">'
       : '<span class="ws-blank">＿＿＿</span>')
-    : (t.reading ? `<ruby>${esc(t.text)}<rt>${esc(t.reading)}</rt></ruby>` : esc(t.text))).join('');
+    : rubyWordHTML(t.text, t.reading)).join('');
 }
 
 // 揭晓面把空白填回并高亮目标词
@@ -2354,7 +2378,7 @@ function wsTokensFullHTML(q, w) {
   const fill = q.blank_text || w.surface;
   return (q.tokens || []).map(t => t.blank
     ? `<span class="ws-answord">${esc(fill)}</span>`
-    : (t.reading ? `<ruby>${esc(t.text)}<rt>${esc(t.reading)}</rt></ruby>` : esc(t.text))).join('');
+    : rubyWordHTML(t.text, t.reading)).join('');
 }
 
 function wsOptsHTML(q) {
@@ -2447,7 +2471,7 @@ function wsFrontFlip(w) {
 
 function wsBackFlipHTML(w) {
   return `<div class="ws-word-line">
-      <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
+      ${rubyWordHTML(w.surface, w.reading)}
       <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
@@ -2475,7 +2499,7 @@ function wsBackQuizHTML(w, ok, chosen) {
   }
   return `<div class="ws-mark ${ok ? 'ok' : 'no'}">${ok ? '答对了' : '答错了'}</div>
     <div class="ws-word-line">
-      <ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>
+      ${rubyWordHTML(w.surface, w.reading)}
       <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
       ${q.audio ? `<button class="ws-mini" data-act="ws-sent" title="听整句">🎧</button>` : ''}
     </div>
@@ -2840,7 +2864,7 @@ function renderNbWords() {
     div.className = 'sent wordrow' + (w.word_id === NB_SEL_WORD ? ' sel' : '');
     div.innerHTML = `
       <span class="spk">${i + 1}</span>
-      <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : `<ruby>${esc(w.surface)}<rt>${esc(w.reading || '')}</rt></ruby>`}</div>
+      <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : rubyWordHTML(w.surface, w.reading)}</div>
       <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>
       <button class="word-clip-btn" title="影视原声例句"><span class="ic">🎬</span><span class="tx">影视原声</span></button>
       <button class="word-speak" title="听单词发音">🔊</button>
