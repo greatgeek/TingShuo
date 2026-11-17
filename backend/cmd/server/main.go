@@ -29,6 +29,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
 	"github.com/greatgeek/TingShuo/backend/internal/word"
+	"github.com/greatgeek/TingShuo/backend/internal/wordassoc"
 	"github.com/greatgeek/TingShuo/backend/internal/wordclip"
 	"github.com/greatgeek/TingShuo/backend/internal/wordstudy"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
@@ -96,6 +97,7 @@ func run() error {
 	favH := favorite.NewHandler(pool)
 	wordH := word.NewHandler(pool)
 	clipH := wordclip.NewHandler(pool)
+	assocH := wordassoc.NewHandler(pool)
 	wordclip.NewWorker(pool).Start(ctx)
 
 	r := chi.NewRouter()
@@ -148,6 +150,7 @@ func run() error {
 			sec.Get("/ai/chat", aiH.Chat)
 			sec.Delete("/ai/chat", aiH.ChatClear)
 			sec.Get("/words/{id}/usage", wordH.Usage)
+			sec.Get("/words/{id}/association", assocH.Get)
 			sec.Get("/words/{id}/clips", clipH.Clips)
 			sec.Post("/words/{id}/clips", clipH.Enqueue)
 			sec.Post("/words/clips/backfill", clipH.Backfill)
@@ -166,6 +169,7 @@ func run() error {
 			sec.Get("/notebooks", nbH.List)
 			sec.Get("/notebooks/{id}/tree", nbH.Tree)
 			sec.Get("/notebooks/dir/{dir_id}/words", nbH.DirWords)
+			sec.Post("/notebooks/dir/{dir_id}/words", assocH.AddWord)
 			sec.Get("/notebooks/dir/{dir_id}/copy", nbH.CopyWords)
 
 			recH := recitation.NewHandler(pool, store)

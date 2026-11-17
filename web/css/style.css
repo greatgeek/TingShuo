@@ -891,16 +891,60 @@ body.no-rt rt { display: none; }
 .nb-sent .zh { font-size: 11.5px; color: var(--ink2); margin-top: 3px; display: block; }
 .nb-sent .play { width: 32px; height: 32px; font-size: 11px; flex: none; margin-top: 2px; }
 
-/* 生词行「影视原声」按钮与横滑剧照条 */
-.word-clip-btn {
+/* 生词行「影视原声」「联想」按钮与横滑剧照条 */
+.word-clip-btn, .word-assoc-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
   height: 34px; padding: 0 9px; flex: none; margin-top: 4px;
   border: 1px solid var(--line); border-radius: 10px;
   background: var(--surface-2); color: var(--ink2);
   font-family: inherit; font-size: 11.5px; cursor: pointer; white-space: nowrap;
 }
-.word-clip-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.word-clip-btn .ic { font-size: 13px; line-height: 1; }
+.word-clip-btn:hover, .word-assoc-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.word-clip-btn .ic, .word-assoc-btn .ic { font-size: 13px; line-height: 1; }
+
+/* 联想悬浮卡片：近义词 / 反义词 / 联想词，点词加入当前目录 */
+.assoc-pop {
+  position: fixed; z-index: 80;
+  width: min(360px, calc(100vw - 16px));
+  max-height: min(440px, 70vh); overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 15px; box-shadow: var(--shadow-md);
+  padding: 12px 14px 14px;
+}
+.assoc-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.assoc-title { display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--ink2); }
+.assoc-title .ic { font-size: 13px; line-height: 1; }
+.assoc-x {
+  width: 24px; height: 24px; flex: none; padding: 0;
+  border: none; border-radius: 6px; background: transparent;
+  color: var(--ink3); font-size: 12px; cursor: pointer; font-family: inherit;
+}
+.assoc-x:hover { background: var(--surface-2); color: var(--ink); }
+.assoc-sub {
+  font-size: 12px; color: var(--ink2); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.assoc-body { margin-top: 8px; }
+.assoc-hint { font-size: 12px; color: var(--ink3); margin: 8px 0; }
+.assoc-retry { margin-top: 4px; }
+.assoc-group + .assoc-group { margin-top: 10px; }
+.assoc-glabel { font-size: 11px; color: var(--ink3); letter-spacing: .06em; margin-bottom: 6px; }
+.assoc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.assoc-chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 5px 8px 6px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); color: var(--ink);
+  font-family: inherit; text-align: left; cursor: pointer;
+}
+.assoc-chip:hover { border-color: var(--accent); background: var(--accent-soft); }
+.assoc-chip:disabled { cursor: default; opacity: .8; }
+.assoc-chip.added { border-color: var(--line-strong); background: var(--surface); color: var(--ink2); }
+.assoc-chip .aw { font-family: var(--serif); font-size: 14.5px; line-height: 1.6; }
+.assoc-chip .aw ruby rt { font-size: 8.5px; }
+.assoc-chip .am { font-size: 11px; color: var(--ink2); }
+.assoc-chip .ap { font-size: 12px; color: var(--ink3); }
+.assoc-chip.added .ap { color: var(--accent); }
+
 .nb-clips { flex: 0 0 100%; min-width: 0; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .nb-clips-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .nb-clips-count { font-size: 10.5px; color: var(--ink3); white-space: nowrap; }
@@ -1225,9 +1269,9 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
   .sent .fav { width: 30px; height: 30px; font-size: 19px; }
   .sent .play { width: 34px; height: 34px; font-size: 11px; }
   .sent .word-speak { width: 32px; height: 32px; font-size: 12px; }
-  .word-clip-btn { width: 32px; height: 32px; padding: 0; }
-  .word-clip-btn .tx { display: none; }
-  .word-clip-btn .ic { font-size: 14px; }
+  .word-clip-btn, .word-assoc-btn { width: 32px; height: 32px; padding: 0; }
+  .word-clip-btn .tx, .word-assoc-btn .tx { display: none; }
+  .word-clip-btn .ic, .word-assoc-btn .ic { font-size: 14px; }
   .wclip-thumb, .nb-clips-skel span { width: 124px; }
   #nb-words .sent { padding: 11px 12px; }
   #nb-words .spk { width: 20px; height: 20px; margin-top: 11px; }

@@ -51,6 +51,7 @@ function histOwn() {
 function applyScreen(name) {
   if (CUR_SCREEN !== name) clipStopAll();
   if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
+  assocClose(); // 联想悬浮卡片不属于任何屏，切屏时收起
   CUR_SCREEN = name;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   $('sc-' + name).classList.add('on');
@@ -2419,15 +2420,8 @@ async function wsPrefetchSent() {
   if (!q || !q.audio) return;
   try {
     if (q.audio.kind === 'say') {
-      const key = 'say:' + q.audio.text;
-      const hit = await idbGet(key);
-      if (hit && hit.blob) return;
-      const r = await fetchAuth('/api/v1/audio/say', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: q.audio.text }),
-      });
-      if (r.ok) idbPut(key, await r.blob());
+      // 与 🎧 的 sayAudio 同键同注音预热，预热命中才有意义
+      URL.revokeObjectURL(await sayBlobURL(q.audio.text, undefined, q.audio.ruby));
     } else {
       await audioBlobURL(q.audio.id);
     }
@@ -2834,6 +2828,7 @@ function renderNbPickerList() {
 }
 
 async function nbOpenDir(dirId) {
+  assocClose();
   nbPlayStop();
   clipStopAll();
   NB_CURDIR = dirId;
@@ -2866,15 +2861,17 @@ function renderNbWords() {
       <span class="spk">${i + 1}</span>
       <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : rubyWordHTML(w.surface, w.reading)}</div>
       <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>
+      <button class="word-assoc-btn" title="联想近义词、反义词、关联词"><span class="ic">💡</span><span class="tx">联想</span></button>
       <button class="word-clip-btn" title="影视原声例句"><span class="ic">🎬</span><span class="tx">影视原声</span></button>
       <button class="word-speak" title="听单词发音">🔊</button>
       <button class="play" title="展开例句">▾</button>`;
+    div.querySelector('.word-assoc-btn').onclick = (e) => { e.stopPropagation(); nbToggleAssoc(w, div, e.currentTarget); };
     div.querySelector('.word-clip-btn').onclick = (e) => { e.stopPropagation(); nbSelectWord(w, div); nbToggleClips(w, div); };
     div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); nbSelectWord(w, div); wsSpeakWord(w.word_id, e.currentTarget); };
     div.onclick = () => { nbSelectWord(w, div); if (PL && nbPlayJumpTo(w)) return; nbToggleWord(w, div); };
     box.appendChild(div);
   });
-  $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 🎬 影视原声 · 点词展开例句（▶ 点播）`;
+  $('nb-hint').textContent = `共 ${items.length} 词 · 🔊 听词音 · 💡 联想 · 🎬 影视原声 · 点词展开例句（▶ 点播）`;
 }
 
 // ---- 本单元导出/复制：数据已在 NB_WORDS 里（DirWords 接口返回词+例句），纯前端拼装 ----
@@ -3016,6 +3013,149 @@ function nbToggleClips(w, div) {
   box.className = 'nb-clips';
   div.appendChild(box);
   nbLoadClips(w, box);
+}
+
+// ---- 生词本 / 联想：💡 悬浮卡片（近义词 / 反义词 / 联想词），点词加入当前目录 ----
+const ASSOC_CACHE = new Map();
+let ASSOC_POP = null, ASSOC_WORD = null, ASSOC_ADDED = [];
+
+function assocClose() {
+  if (!ASSOC_POP) return;
+  ASSOC_POP.remove();
+  ASSOC_POP = null; ASSOC_WORD = null;
+  document.removeEventListener('click', assocOutside, true);
+  document.removeEventListener('keydown', assocEsc, true);
+  window.removeEventListener('scroll', assocScroll, true);
+  window.removeEventListener('resize', assocClose);
+  if (ASSOC_ADDED.length) {
+    const items = NB_WORDS[NB_CURDIR] || [];
+    ASSOC_ADDED.forEach(it => { if (!items.some(x => x.word_id === it.word_id)) items.push(it); });
+    NB_WORDS[NB_CURDIR] = items;
+    ASSOC_ADDED = [];
+    renderNbWords();
+    toast('联想词已加入生词本');
+  }
+}
+function assocOutside(e) {
+  if (!ASSOC_POP) return;
+  if (ASSOC_POP.contains(e.target) || (e.target.closest && e.target.closest('.word-assoc-btn'))) return;
+  assocClose();
+}
+function assocEsc(e) { if (e.key === 'Escape') assocClose(); }
+function assocScroll(e) {
+  if (ASSOC_POP && (e.target === ASSOC_POP || ASSOC_POP.contains(e.target))) return;
+  assocClose();
+}
+
+function assocPlace(btn) {
+  if (!ASSOC_POP || !btn || !btn.isConnected) return;
+  const r = btn.getBoundingClientRect();
+  const pw = ASSOC_POP.offsetWidth, ph = ASSOC_POP.offsetHeight;
+  const left = Math.min(Math.max(8, r.right - pw), Math.max(8, innerWidth - pw - 8));
+  let top = r.bottom + 8;
+  if (top + ph > innerHeight - 8) top = Math.max(8, r.top - ph - 8);
+  ASSOC_POP.style.left = left + 'px';
+  ASSOC_POP.style.top = top + 'px';
+}
+
+function nbToggleAssoc(w, div, btn) {
+  if (ASSOC_POP && ASSOC_WORD === w.word_id) { assocClose(); return; }
+  assocClose();
+  nbSelectWord(w, div);
+  ASSOC_WORD = w.word_id;
+  ASSOC_ADDED = [];
+  const pop = document.createElement('div');
+  pop.className = 'assoc-pop';
+  pop._btn = btn;
+  pop.innerHTML = `
+    <div class="assoc-head">
+      <span class="assoc-title"><span class="ic">💡</span>联想</span>
+      <button class="assoc-x" title="关闭">✕</button>
+    </div>
+    <div class="assoc-sub">${esc(w.surface)}${w.reading ? '（' + esc(w.reading) + '）' : ''}${w.meaning ? ' · ' + esc(w.meaning) : ''}</div>
+    <div class="assoc-body"></div>`;
+  document.body.appendChild(pop);
+  ASSOC_POP = pop;
+  pop.querySelector('.assoc-x').onclick = (e) => { e.stopPropagation(); assocClose(); };
+  assocPlace(btn);
+  document.addEventListener('click', assocOutside, true);
+  document.addEventListener('keydown', assocEsc, true);
+  window.addEventListener('scroll', assocScroll, true);
+  window.addEventListener('resize', assocClose);
+  assocLoad(w, pop);
+}
+
+async function assocLoad(w, pop) {
+  const body = pop.querySelector('.assoc-body');
+  const cached = ASSOC_CACHE.get(w.word_id);
+  if (cached) { assocRender(pop, w, cached); return; }
+  body.innerHTML = '<p class="assoc-hint">正在联想…（首次生成约需十几秒，之后直接读缓存）</p>';
+  try {
+    const r = await api('/words/' + w.word_id + '/association');
+    ASSOC_CACHE.set(w.word_id, r.groups);
+    if (ASSOC_POP === pop) assocRender(pop, w, r.groups);
+  } catch (e) {
+    if (ASSOC_POP !== pop) return;
+    body.innerHTML = `<p class="assoc-hint">${esc(e.message || '联想失败，请重试')}</p>
+      <button class="wclip-swap assoc-retry">重试 ↻</button>`;
+    body.querySelector('.assoc-retry').onclick = (ev) => { ev.stopPropagation(); assocLoad(w, pop); };
+    assocPlace(pop._btn);
+  }
+}
+
+const ASSOC_GROUPS = [['synonyms', '近义词'], ['antonyms', '反义词'], ['related', '联想词']];
+function assocRender(pop, w, groups) {
+  const body = pop.querySelector('.assoc-body');
+  let html = '';
+  for (const [key, label] of ASSOC_GROUPS) {
+    const list = (groups && groups[key]) || [];
+    if (!list.length) continue;
+    html += `<div class="assoc-group"><div class="assoc-glabel">${label}</div><div class="assoc-chips">`;
+    list.forEach((it, i) => {
+      html += `<button class="assoc-chip" data-g="${key}" data-i="${i}" title="加入生词本">
+        <span class="aw">${rubyWordHTML(it.surface, it.reading)}</span>
+        <span class="am">${esc(it.meaning || '')}</span>
+        <span class="ap">＋</span>
+      </button>`;
+    });
+    html += '</div></div>';
+  }
+  body.innerHTML = html || '<p class="assoc-hint">没有找到相关词</p>';
+  body.querySelectorAll('.assoc-chip').forEach(btn => {
+    const it = groups[btn.dataset.g][Number(btn.dataset.i)];
+    btn.onclick = (e) => { e.stopPropagation(); assocAdd(w, it, btn); };
+  });
+  assocPlace(pop._btn);
+}
+
+async function assocAdd(w, it, btn) {
+  if (btn.disabled) return;
+  if (!NB_CURDIR) { toast('先选择目录'); return; }
+  btn.disabled = true;
+  btn.classList.add('on');
+  const ap = btn.querySelector('.ap');
+  if (ap) ap.textContent = '…';
+  try {
+    const r = await api('/notebooks/dir/' + NB_CURDIR + '/words', {
+      method: 'POST',
+      body: JSON.stringify({ surface: it.surface, reading: it.reading, meaning: it.meaning }),
+    });
+    if (ap) ap.textContent = '✓';
+    btn.classList.add('added');
+    btn.title = r.added ? '已加入生词本' : '已在生词本';
+    if (r.added) {
+      ASSOC_ADDED.push({
+        link_id: r.link_id, word_id: r.word_id, surface: r.surface,
+        reading: r.reading, pos: r.pos, meaning: r.meaning, sentences: [],
+      });
+    }
+    toast(r.added ? `已加入生词本：${it.surface}` : `已在生词本：${it.surface}`);
+  } catch (e) {
+    btn.disabled = false;
+    btn.classList.remove('on');
+    if (ap) ap.textContent = '＋';
+    toast('加入失败：' + e.message);
+  }
 }
 
 async function nbLoadClips(w, box) {
@@ -3244,14 +3384,20 @@ async function nbExpandClips(w, box, clips, meta, shown) {
   }
 }
 
+// rubySpoken 把 ruby_tokens 展开成读音串；与原文相同或无注音时返回 ''（退回纯文本合成）
+function rubySpoken(text, ruby) {
+  const spoken = Array.isArray(ruby) && ruby.length
+    ? ruby.map(([w, r]) => r || w || '').join('') : '';
+  return spoken && spoken !== text ? spoken : '';
+}
+
 // sayAudio 任意文本发音：/audio/say（服务端 text_audio 缓存）+ 本地 IndexedDB 二级缓存
 // ruby 传入时按注音合成，纠 Azure 多音字误读（如 町→ちょう）；缓存键带读音避免命中旧误读音频
 async function sayAudio(text, btn, retry, ruby) {
   try {
     if (btn) btn.textContent = '⏳';
-    const spoken = Array.isArray(ruby) && ruby.length
-      ? ruby.map(([w, r]) => r || w || '').join('') : '';
-    const useRuby = !!spoken && spoken !== text;
+    const spoken = rubySpoken(text, ruby);
+    const useRuby = !!spoken;
     const key = 'say:' + text + (useRuby ? '|rb:' + spoken : '');
     let url;
     const hit = await idbGet(key);
@@ -3532,13 +3678,16 @@ function zhSpeechText(s) {
   return t.replace(/^[,，、;；:：.。\-—]+|[,，、;；:：.。\-—]+$/g, '').trim();
 }
 
-async function sayBlobURL(text, voice) {
-  const key = 'say:' + (voice || '') + ':' + text;
+async function sayBlobURL(text, voice, ruby) {
+  // 日语（无 voice）与 sayAudio 共用缓存键，带注音时按读音合成，避免全播把 良い 读成 いい
+  const spoken = voice ? '' : rubySpoken(text, ruby);
+  const key = voice ? 'say:' + voice + ':' + text
+    : 'say:' + text + (spoken ? '|rb:' + spoken : '');
   const hit = await idbGet(key);
   if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/audio/say', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(voice ? { text, voice } : { text }),
+    body: JSON.stringify(spoken ? { text, ruby } : voice ? { text, voice } : { text }),
   });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const blob = await r.blob();
@@ -3757,7 +3906,7 @@ async function nbPlayStep(autoplay = true) {
     if (it.kind === 'word') url = await wordAudioBlobURL(it.w.word_id);
     else if (it.kind === 'wmean') url = await sayBlobURL(it.say, ZH_VOICE);
     else if (it.kind === 'smean') url = await sayBlobURL(it.s.translation, ZH_VOICE);
-    else url = await sayBlobURL(it.s.text);
+    else url = await sayBlobURL(it.s.text, undefined, it.s.ruby_tokens);
     if (PL !== pl || PL.i !== idx) return;
     PL.audio.src = url;
     const rate = rateFor(it);

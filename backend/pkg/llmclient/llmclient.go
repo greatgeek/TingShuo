@@ -47,12 +47,26 @@ type chatResponse struct {
 // ChatJSON 发送单轮 user prompt 并返回模型回复文本。
 // 返回的 prompt/completion token 数供成本观测（llm_call_log）。
 func (c *Client) ChatJSON(ctx context.Context, prompt string) (content string, promptTokens, completionTokens int, err error) {
-	body, err := json.Marshal(map[string]any{
+	return c.chat(ctx, prompt, nil)
+}
+
+// ChatJSONNoThinking 关闭思考（M3 thinking disabled）：短结构化任务用，
+// 延迟从分钟级降到秒级（联想词等交互式请求必需）。
+func (c *Client) ChatJSONNoThinking(ctx context.Context, prompt string) (content string, promptTokens, completionTokens int, err error) {
+	return c.chat(ctx, prompt, map[string]any{"thinking": map[string]any{"type": "disabled"}})
+}
+
+func (c *Client) chat(ctx context.Context, prompt string, extra map[string]any) (content string, promptTokens, completionTokens int, err error) {
+	payload := map[string]any{
 		"model": c.model,
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
-	})
+	}
+	for k, v := range extra {
+		payload[k] = v
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", 0, 0, err
 	}
