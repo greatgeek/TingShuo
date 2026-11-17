@@ -4074,14 +4074,92 @@ function renderGraList() {
   box.innerHTML = GRAM_LESSONS.map(it => {
     const tags = (it.recitation_lesson_id ? '<span class="gra-tag">有课文本</span>' : '') +
       (it.has_notebook ? '<span class="gra-tag nb">生词本已有本课</span>' : '');
-    return `<button class="gra-item" data-no="${it.lesson_no}">
+    return `<div class="gra-item" data-no="${it.lesson_no}" role="button" tabindex="0">
       <div class="gra-item-top">
-        <span class="gra-item-title">${esc(it.title)}</span>
+        <span class="gra-item-title-row">
+          <span class="gra-item-title">${esc(it.title)}</span>
+          <button class="gra-copy" data-no="${it.lesson_no}" title="复制本课全部语法内容" aria-label="复制本课全部语法内容">⧉</button>
+        </span>
         <span class="gra-item-meta">语法 ${it.grammar_points} · 表达 ${it.expression_points}</span>
       </div>
       <div class="gra-item-sub">${it.examples} 条例句 ${tags}</div>
-    </button>`;
+    </div>`;
   }).join('');
+}
+
+// graExampleText / graPointText / graLessonText 把一课语法拼成纯文本：
+// 与页面同序（正文块内嵌例句按原位置，未引用的例句补在点末尾），表格转 Markdown 行。
+function graExampleText(e) {
+  const lead = (e.speaker ? e.speaker + '：' : '') + (e.mark ? e.mark + ' ' : '');
+  const out = [`- ${lead}${e.text}`];
+  if (e.translation) out.push(`  ${e.translation}`);
+  if (e.note) out.push(`  （${e.note}）`);
+  return out;
+}
+
+function graPointText(p) {
+  const out = [`${p.seq}. ${p.pattern}`];
+  if (p.formation) out.push(`接续：${p.formation}`);
+  const bySeq = new Map((p.examples || []).map(e => [e.seq, e]));
+  const used = new Set();
+  for (const b of p.body || []) {
+    if (b.type === 'ex') {
+      const e = bySeq.get(b.seq);
+      if (e) { out.push(...graExampleText(e)); used.add(b.seq); }
+      continue;
+    }
+    if (b.type === 'p') { out.push(b.text); continue; }
+    if (b.type === 'item') { out.push(`・${b.term}：${b.text}`); continue; }
+    if (b.type === 'table') {
+      if (b.title) out.push(`〔${b.title}〕`);
+      const cell = c => String((c && typeof c === 'object' ? c.t : c) ?? '').replace(/\s*\n\s*/g, ' ');
+      if ((b.head || []).length) {
+        out.push('| ' + b.head.map(cell).join(' | ') + ' |');
+        out.push('| ' + b.head.map(() => '---').join(' | ') + ' |');
+      }
+      (b.rows || []).forEach(r => out.push('| ' + r.map(cell).join(' | ') + ' |'));
+    }
+  }
+  (p.examples || []).filter(e => !used.has(e.seq)).forEach(e => out.push(...graExampleText(e)));
+  return out;
+}
+
+function graLessonText(lesson) {
+  const L = [`${lesson.title}（${lesson.book || GRAM_BOOK}）`, ''];
+  for (const [key, label] of [['grammar', '语法解释'], ['expression', '表达扩展']]) {
+    const list = (lesson.points || []).filter(p => (p.section || 'grammar') === key);
+    if (!list.length) continue;
+    L.push(`【${label}】`, '');
+    list.forEach(p => L.push(...graPointText(p), ''));
+  }
+  return L.join('\n').trim() + '\n';
+}
+
+async function copyGraLesson(no, btn) {
+  if (!TOKEN) { go('login'); return; }
+  const icon = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳';
+  try {
+    const lesson = await api(`/grammar/lessons/${no}?book=${encodeURIComponent(GRAM_BOOK)}`);
+    const txt = graLessonText(lesson);
+    let ok = true;
+    try { await navigator.clipboard.writeText(txt); }
+    catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      ok = document.execCommand('copy');
+      ta.remove();
+    }
+    const n = (lesson.points || []).length;
+    toast(ok ? `已复制「${lesson.title}」全部语法（${n} 个知识点）` : '复制失败，请重试');
+  } catch (e) {
+    toast('复制失败：' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = icon;
+  }
 }
 
 async function openGrammarLesson(no) {
@@ -6126,8 +6204,17 @@ $('nb-gra-btn').onclick = (e) => {
 
 // ---- 课文本 ----
 $('gra-list').addEventListener('click', e => {
+  const cp = e.target.closest('.gra-copy');
+  if (cp) { e.stopPropagation(); copyGraLesson(parseInt(cp.dataset.no, 10), cp); return; }
   const el = e.target.closest('.gra-item');
   if (el) openGrammarLesson(parseInt(el.dataset.no, 10));
+});
+$('gra-list').addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target.closest('.gra-item');
+  if (!el || e.target.closest('.gra-copy')) return;
+  e.preventDefault();
+  openGrammarLesson(parseInt(el.dataset.no, 10));
 });
 $('gra-back-list').onclick = goGrammar;
 $('gra-books').addEventListener('click', e => {
