@@ -324,12 +324,31 @@
         <button class="gra-book" data-book="初级上">初级上</button>
         <button class="gra-book" data-book="初级下">初级下</button>
       </div>
+      <button class="gra-quiz-entry" id="gra-quiz-random">
+        <span class="gra-quiz-entry-main">
+          <b>综合测验 · 随机 20 题</b>
+          <span class="hint">全书随机抽题，点选即判分</span>
+        </span>
+        <span class="gra-quiz-entry-go">开始 →</span>
+      </button>
       <div id="gra-list"></div>
     </div>
     <div id="gra-lesson" hidden>
       <button class="btn ghost gra-back" id="gra-back-list">← 课列表</button>
       <div id="gra-detail"></div>
     </div>
+  </section>
+
+  <!-- 语法测验 -->
+  <section class="screen" id="sc-quiz">
+    <div class="card quiz-head">
+      <div class="quiz-head-top">
+        <h2 id="quiz-title">语法测验</h2>
+        <span class="quiz-count" id="quiz-count"></span>
+      </div>
+      <div class="quiz-bar"><div id="quiz-bar-fill"></div></div>
+    </div>
+    <div id="quiz-body"></div>
   </section>
 
   <!-- 课文本列表 -->

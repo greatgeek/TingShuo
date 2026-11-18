@@ -182,6 +182,8 @@ func run() error {
 			gpH := grammar.NewHandler(pool)
 			sec.Get("/grammar/lessons", gpH.Lessons)
 			sec.Get("/grammar/lessons/{no}", gpH.Lesson)
+			sec.Get("/grammar/quiz", gpH.Quiz)
+			sec.Post("/grammar/quiz/attempt", gpH.Attempt)
 
 			sec.Post("/audio/say", ttsH.Say)
 			sec.Post("/podcast/jobs", podH.CreateJob)

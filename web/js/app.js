@@ -31,7 +31,7 @@ const NAV_PARENT = {
   create: 'home', learn: 'home', review: 'home',
   library: 'home', wordstudy: 'home', notebook: 'home',
   recite: 'home', 'recite-play': 'recite',
-  grammar: 'home',
+  grammar: 'home', quiz: 'grammar',
   aiask: 'notebook',
 };
 let CUR_SCREEN = 'login';
@@ -50,6 +50,7 @@ function histOwn() {
 }
 function applyScreen(name) {
   if (CUR_SCREEN !== name) clipStopAll();
+  if (CUR_SCREEN === 'quiz' && name !== 'quiz' && WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
   if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
   assocClose(); // 联想悬浮卡片不属于任何屏，切屏时收起
   CUR_SCREEN = name;
@@ -4079,6 +4080,7 @@ function renderGraList() {
         <span class="gra-item-title-row">
           <span class="gra-item-title">${esc(it.title)}</span>
           <button class="gra-copy" data-no="${it.lesson_no}" title="复制本课全部语法内容" aria-label="复制本课全部语法内容">⧉</button>
+          <button class="gra-test" data-no="${it.lesson_no}" title="测验本课语法" aria-label="测验本课语法">测</button>
         </span>
         <span class="gra-item-meta">语法 ${it.grammar_points} · 表达 ${it.expression_points}</span>
       </div>
@@ -4261,7 +4263,10 @@ function renderGraDetail() {
   const points = GRAM.points || [];
   const secs = [['grammar', '语法解释'], ['expression', '表达扩展']];
   let html = `<div class="card gra-head">
-    <h2>${esc(GRAM.title)}</h2>
+    <div class="rec-head-top">
+      <h2>${esc(GRAM.title)}</h2>
+      <button class="btn ghost rec-gra-btn" id="gra-test-lesson">测本课</button>
+    </div>
     <p class="hint">点知识点展开 · 🔊 朗读例句与词表 · 「原声」「生词本」可直接跳到对应位置</p>
   </div>`;
   for (const [key, label] of secs) {
@@ -4274,6 +4279,8 @@ function renderGraDetail() {
   }
   const box = $('gra-detail');
   box.innerHTML = html;
+  const testBtn = $('gra-test-lesson');
+  if (testBtn) testBtn.onclick = () => startGraQuiz({ lesson: GRAM.lesson_no });
 
   box.querySelectorAll('.gra-point').forEach(cardEl => {
     const head = cardEl.querySelector('.gra-head-toggle');
@@ -4342,6 +4349,179 @@ async function openNotebookAt(ref) {
   row.scrollIntoView({ block: 'center', behavior: 'smooth' });
   setTimeout(() => row.classList.remove('gra-hit'), 2600);
 }
+
+// ============ 语法测验（题目预生成入库，点选即判，答完给结果）============
+let QZ = null;      // {title, book, lesson, questions, i, answers:[{chosen,ok}]}
+let QZ_REQ = 0;     // 请求序号：离开/重开后丢弃旧响应
+
+const QZ_KIND = { cloze: '完形', form: '接续', discriminate: '辨析', expression: '情景' };
+
+async function startGraQuiz(opts = {}) {
+  if (!TOKEN) { go('login'); return; }
+  const req = ++QZ_REQ;
+  stopPlay();
+  if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
+  QZ = null;
+  go('quiz');
+  $('quiz-title').textContent = opts.lesson ? `第${opts.lesson}课 · 语法测验` : '语法测验';
+  $('quiz-count').textContent = '';
+  $('quiz-bar-fill').style.width = '0%';
+  $('quiz-body').innerHTML = '<div class="card"><p class="hint">正在准备题目…</p></div>';
+  const params = new URLSearchParams({ book: GRAM_BOOK });
+  if (opts.lesson) params.set('lesson', String(opts.lesson));
+  else params.set('n', '20');
+  let r;
+  try { r = await api('/grammar/quiz?' + params.toString()); }
+  catch (e) {
+    if (req !== QZ_REQ) return;
+    $('quiz-body').innerHTML = `<div class="card"><p class="hint">加载失败：${esc(e.message)}</p></div>`;
+    return;
+  }
+  if (req !== QZ_REQ || CUR_SCREEN !== 'quiz') return;
+  const qs = r.questions || [];
+  QZ = {
+    title: r.title || '', book: r.book || GRAM_BOOK, lesson: r.lesson_no || 0,
+    questions: qs, i: 0, answers: [],
+  };
+  $('quiz-title').textContent = QZ.lesson ? `${r.title || '第' + QZ.lesson + '课'} · 语法测验` : `综合测验 · 随机 ${qs.length} 题`;
+  if (!qs.length) {
+    $('quiz-body').innerHTML = `<div class="card"><p class="hint">${QZ.lesson ? '这一课还没有题目，题库生成后再来。' : '题库还没有题目，稍后再试。'}</p>
+      <button class="btn ghost" data-act="quiz-back">回语法本</button></div>`;
+    return;
+  }
+  qzRender();
+}
+
+function qzStemHTML(q) {
+  const html = rubyHTML(q.stem_ruby) || esc(q.stem);
+  return html.replace(/[_＿]{2,}/g, '<span class="quiz-blank">＿＿＿</span>');
+}
+
+function qzRender() {
+  const q = QZ.questions[QZ.i];
+  const n = QZ.questions.length;
+  $('quiz-count').textContent = `${QZ.i + 1} / ${n}`;
+  $('quiz-bar-fill').style.width = (QZ.i / n * 100) + '%';
+  const opts = q.options.map((o, i) => `<button class="quiz-opt" data-i="${i}">
+      <span class="quiz-opt-key">${'ABCD'[i]}</span>
+      <span class="quiz-opt-text">${rubyHTML(o.ruby) || esc(o.text)}</span>
+    </button>`).join('');
+  $('quiz-body').innerHTML = `<div class="card quiz-card">
+    <div class="quiz-meta"><span class="quiz-kind k-${esc(q.kind)}">${QZ_KIND[q.kind] || esc(q.kind)}</span></div>
+    <div class="quiz-stem">${qzStemHTML(q)}</div>
+    <div class="quiz-opts">${opts}</div>
+    <div id="quiz-feedback"></div>
+  </div>`;
+  $('quiz-body').querySelectorAll('.quiz-opt').forEach(btn => {
+    btn.onclick = () => qzPick(parseInt(btn.dataset.i, 10));
+  });
+  window.scrollTo(0, 0);
+}
+
+function qzPick(i) {
+  if (!QZ || !QZ.questions[QZ.i] || QZ.answers[QZ.i]) return;
+  const q = QZ.questions[QZ.i];
+  const chosen = q.options[i];
+  if (!chosen) return;
+  const ok = i === q.answer;
+  QZ.answers[QZ.i] = { chosen: i, ok };
+  // 记录作答（失败不打断练习，本地判分照常展示）
+  api('/grammar/quiz/attempt', {
+    method: 'POST',
+    body: JSON.stringify({ question_id: q.id, chosen_text: chosen.text }),
+  }).catch(() => {});
+
+  $('quiz-body').querySelectorAll('.quiz-opt').forEach((btn, idx) => {
+    btn.disabled = true;
+    if (idx === q.answer) btn.classList.add('ok');
+    else if (idx === i) btn.classList.add('bad');
+    else btn.classList.add('dim');
+  });
+  $('quiz-bar-fill').style.width = ((QZ.i + 1) / QZ.questions.length * 100) + '%';
+
+  const whys = q.options.map((o, idx) => `<div class="quiz-why${idx === q.answer ? ' ok' : ''}${idx === i && !ok ? ' bad' : ''}">
+      <b>${'ABCD'[idx]}</b><span>${esc(o.text)}</span>${o.why ? `<em>${esc(o.why)}</em>` : ''}
+    </div>`).join('');
+  const src = q.source ? `<div class="quiz-src">
+      <div class="quiz-src-label">原句</div>
+      <div class="quiz-src-line">${rubyHTML(q.source.ruby_tokens) || esc(q.source.text)}</div>
+      ${q.source.translation ? `<div class="quiz-src-zh">${esc(q.source.translation)}</div>` : ''}
+      <button class="gra-say quiz-src-say" title="朗读原句" aria-label="朗读原句">🔊</button>
+    </div>` : '';
+  const last = QZ.i + 1 >= QZ.questions.length;
+  $('quiz-feedback').innerHTML = `<div class="quiz-verdict ${ok ? 'ok' : 'bad'}">${ok ? '✓ 答对了' : '✗ 答错了，正确答案是 ' + 'ABCD'[q.answer]}</div>
+    ${src}
+    ${q.explain ? `<div class="quiz-explain"><b>解析</b>${esc(q.explain)}</div>` : ''}
+    <div class="quiz-whys">${whys}</div>
+    <div class="quiz-after">
+      <span class="quiz-pat-now">考点：${esc(q.point_pattern || '')}</span>
+      <button class="quiz-link" data-act="quiz-gra" data-arg="${q.lesson_no}">回看本课语法</button>
+    </div>
+    <button class="btn accent quiz-next">${last ? '查看结果 →' : '下一题 →'}</button>`;
+  $('quiz-feedback').querySelector('.quiz-next').onclick = qzNext;
+  const sayBtn = $('quiz-feedback').querySelector('.quiz-src-say');
+  if (sayBtn) sayBtn.onclick = () => sayAudio(q.source.text, sayBtn, false, q.source.ruby_tokens);
+  $('quiz-feedback').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function qzNext() {
+  if (!QZ || QZ.done || !QZ.answers[QZ.i]) return;
+  if (QZ.i + 1 < QZ.questions.length) {
+    QZ.i += 1;
+    qzRender();
+    return;
+  }
+  qzFinish();
+}
+
+function qzFinish() {
+  const n = QZ.questions.length;
+  const right = QZ.answers.filter(a => a && a.ok).length;
+  QZ.done = true;
+  const pct = Math.round(right / n * 100);
+  const msg = pct >= 90 ? '掌握得很好，继续保持。' : pct >= 70 ? '基本掌握，错题看一眼解析。' : '回语法本把错题的知识点再过一遍。';
+  const rows = QZ.questions.map((q, idx) => {
+    const a = QZ.answers[idx] || {};
+    const your = a.chosen != null && q.options[a.chosen] ? q.options[a.chosen].text : '—';
+    const stem = q.stem.replace(/[_＿]{2,}/g, q.options[q.answer].text);
+    return `<div class="quiz-rrow ${a.ok ? 'ok' : 'bad'}">
+      <span class="quiz-rmark">${a.ok ? '✓' : '✗'}</span>
+      <span class="quiz-rmain">
+        <span class="quiz-rstem">${esc(stem)}</span>
+        <span class="quiz-rans">${a.ok ? '答对' : `你选：${esc(your)} ｜ 正确答案：${esc(q.options[q.answer].text)}`}</span>
+      </span>
+      <button class="quiz-link" data-act="quiz-gra" data-arg="${q.lesson_no}">回看</button>
+    </div>`;
+  }).join('');
+  $('quiz-count').textContent = `${n} / ${n}`;
+  $('quiz-bar-fill').style.width = '100%';
+  $('quiz-body').innerHTML = `<div class="card quiz-summary">
+    <div class="quiz-score"><span class="quiz-score-num">${right}</span><span class="quiz-score-den">/ ${n}</span></div>
+    <div class="quiz-score-line">正确率 ${pct}% · ${msg}</div>
+    <div class="quiz-rlist">${rows}</div>
+    <button class="btn accent" id="quiz-again">再来一轮</button>
+    <button class="btn ghost" data-act="quiz-back">返回语法本</button>
+  </div>`;
+  $('quiz-again').onclick = () => startGraQuiz({ lesson: QZ.lesson });
+  window.scrollTo(0, 0);
+}
+
+// 测验键盘：1—4 选项，答完回车下一题（输入框/可点按钮上的回车让给原生行为）
+document.addEventListener('keydown', e => {
+  if (CUR_SCREEN !== 'quiz' || !QZ || e.ctrlKey || e.metaKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
+  if (QZ.answers[QZ.i]) {
+    if (e.key === 'Enter') {
+      if (t && /^(BUTTON|A)$/.test(t.tagName || '') && !t.disabled && t.getClientRects().length) return;
+      e.preventDefault();
+      qzNext();
+    }
+    return;
+  }
+  const k = '1234'.indexOf(e.key);
+  if (k >= 0) { e.preventDefault(); qzPick(k); }
+});
 
 // ============ 课文本（练口语课文：听读/背诵/听写/连听）============
 // 参照 DashPlayer：整课一条原声音频 + SRT 行时间轴。当前句只由时间轴决定，
@@ -6206,16 +6386,19 @@ $('nb-gra-btn').onclick = (e) => {
 $('gra-list').addEventListener('click', e => {
   const cp = e.target.closest('.gra-copy');
   if (cp) { e.stopPropagation(); copyGraLesson(parseInt(cp.dataset.no, 10), cp); return; }
+  const tst = e.target.closest('.gra-test');
+  if (tst) { e.stopPropagation(); startGraQuiz({ lesson: parseInt(tst.dataset.no, 10) }); return; }
   const el = e.target.closest('.gra-item');
   if (el) openGrammarLesson(parseInt(el.dataset.no, 10));
 });
 $('gra-list').addEventListener('keydown', e => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
   const el = e.target.closest('.gra-item');
-  if (!el || e.target.closest('.gra-copy')) return;
+  if (!el || e.target.closest('.gra-copy') || e.target.closest('.gra-test')) return;
   e.preventDefault();
   openGrammarLesson(parseInt(el.dataset.no, 10));
 });
+$('gra-quiz-random').onclick = () => startGraQuiz({});
 $('gra-back-list').onclick = goGrammar;
 $('gra-books').addEventListener('click', e => {
   const b = e.target.closest('.gra-book');
@@ -6256,6 +6439,8 @@ document.addEventListener('click', (e) => {
   switch (el.dataset.act) {
     case 'gen-phrases': genPhrases(); break;
     case 'gen-full': genFull(); break;
+    case 'quiz-back': go('grammar'); break;
+    case 'quiz-gra': if (arg) openGrammarLesson(parseInt(arg, 10)); break;
     case 'rv-play': reviewPlayAudio(); break;
     case 'rv-reveal': reviewReveal(); break;
     case 'rv-fail': reviewResult('fail'); break;
