@@ -8,6 +8,8 @@ const DURATION_MS = {
   7: 74928,
   8: 57144,
   9: 55848,
+  10: 56616,
+  11: 73143,
 };
 
 function q(s) {
@@ -19,7 +21,7 @@ function ms(sec) {
 
 const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const out = [];
-out.push('-- 课文本导入：练口语第5—9课（幂等 upsert，重跑不会丢背诵/听写进度）');
+out.push('-- 课文本导入（幂等 upsert，重跑不会丢背诵/听写进度）');
 out.push('BEGIN;');
 for (const L of data.lessons) {
   const id = `rec-${String(L.lesson).padStart(2, '0')}`;

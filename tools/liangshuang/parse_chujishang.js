@@ -1,6 +1,7 @@
-// 初级上（第5—16课）解析器：从 _summary/第N课.md 抽取
-//   三个词表（会话用单词/语法解释用单词/习题用单词）+ 句子池（会话原文/语法例句/听力训练）
+// 梁爽讲义解析器（初级上/初级下）：从 _summary/第N课.md 抽取
+//   三个词表（会话用单词或课文用单词/语法解释用单词/习题用单词）+ 句子池（会话原文/语法例句/听力训练）
 //   并做「汉字+振り仮名交错」清洗与 词↔句 绑定。
+//   初级下第17/24/25课无「## 会话原文」，改用「课文」「会 话」等裸标题，需走回退匹配。
 // 用法: node parse_chujishang.js <summaryDir> <outJson>
 const fs = require('fs');
 const path = require('path');
@@ -68,9 +69,23 @@ function parseWords(block) {
     if (mm) { surface = mm[2].replace(/\*\*/g, '').trim(); rest = body.slice(mm[0].length - 1); }
     else {
       mm = body.match(/^(\*\*)?([^·［⓪①③④⑤⑦⑧⑨⑪⑫⑬⑭⑮]+?)([⓪①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮]+)?\s*(·|［)/);
-      if (!mm) continue;
-      surface = mm[2].replace(/\*\*/g, '').trim();
-      rest = body.slice(mm[0].length);
+      if (!mm) {
+        // 假名【汉字】型（にぎやか【賑やか】② [形Ⅱ]…）：无括号读音且用半角 [ 时上面两条都不匹配
+        mm = body.match(/^(\*\*)?([^（【·［\[]+?)【[^】]*】/);
+        if (mm) {
+          surface = mm[2].replace(/\*\*/g, '').trim();
+          rest = body.slice(mm[0].length);
+        } else {
+          // 纯假名/无读音型（ガラケー⓪ [名]…、どうも① [副]…）：词性用半角 [ 或 〔〕，无 ·/［
+          mm = body.match(/^(\*\*)?([^（【·［\[〔⓪①-⑳]+?)(?=[⓪①-⑳]|\s*(?:·|［|\[|〔)|$)/);
+          if (!mm) continue;
+          surface = mm[2].replace(/\*\*/g, '').trim();
+          rest = body.slice(mm[0].length);
+        }
+      } else {
+        surface = mm[2].replace(/\*\*/g, '').trim();
+        rest = body.slice(mm[0].length);
+      }
     }
     surface = surface.replace(/\*\*/g, '').trim();
     surface = surface.replace(/【[^】]*】/g, '').replace(/^[-−–]+|[-−–]+$/g, '').trim(); // 去【别名】与接尾辞标记 -
@@ -79,6 +94,8 @@ function parseWords(block) {
     let reading = '';
     const rm = rest.match(/^（([^）]*)）/);
     if (rm) { reading = rm[1].replace(/[⓪①③④⑤⑦⑧⑨⑪⑫⑬⑭⑮＋+]/g, '').replace(/\s+/g, ''); rest = rest.slice(rm[0].length); }
+    // （Asia）（【法】enquête）等是语源/注释而非读音；非假名读音会让词音与导出变脏
+    if (reading && !/^[ぁ-ゖァ-ヺー・]+$/.test(reading)) reading = '';
     // 音调
     const pm = (body.match(/([⓪①③④⑤⑦⑧⑨⑪⑫⑬⑭⑮＋+]+)/) || [])[1] || '';
     // 词性：第一个［...］
@@ -104,11 +121,33 @@ function section(md, startRe, endRe) {
   return e < 0 ? rest : rest.slice(0, e + 1);
 }
 
+// 会话/课文正文：优先「## 会话原文」，否则裸标题「会 话」「课 文」（初级下 17/24/25）
+function conversationSection(md) {
+  let s = md.search(/^##\s*会话原文\s*$/m);
+  if (s < 0) s = md.search(/^\s*(?:会\s*话|课\s*文)\s*$/m);
+  if (s < 0) return '';
+  const rest = md.slice(s);
+  const e = rest.slice(1).search(/^\s*(?:###\s*会话用单词|###\s*语法解释用单词|课文(?:用)?单词)\s*$/m);
+  return e < 0 ? rest : rest.slice(0, e + 1);
+}
+
+// 主词表：会话用单词；初级下 17/25 课为「课文单词 / 课文用单词」
+function mainWordSection(md) {
+  let m = md.match(/^###\s*会话用单词\s*$/m);
+  let name = '会话用单词';
+  if (!m) { m = md.match(/^课文(?:用)?单词\s*$/m); name = '课文用单词'; }
+  if (!m) return { name, block: '' };
+  const rest = md.slice(m.index);
+  const e = rest.slice(1).search(/^###\s*语法解释用单词\s*$/m);
+  return { name, block: e < 0 ? rest : rest.slice(0, e + 1) };
+}
+
 function parseLesson(file) {
   const md = fs.readFileSync(file, 'utf8');
   const lesson = (path.basename(file).match(/第(\d+)课/) || [])[1];
-  const conv = section(md, /##\s*会话原文/, /###\s*会话用单词/);
-  const wConv = section(md, /###\s*会话用单词/, /###\s*语法解释用单词/);
+  const conv = conversationSection(md);
+  const wMain = mainWordSection(md);
+  const wConv = wMain.block;
   const wGram = section(md, /###\s*语法解释用单词/, /##\s*语法解释(?!用)/);
   const gram = section(md, /##\s*语法解释(?!用)/, /习题用单词/);
   const wExer = section(md, /习题用单词/, /听力训练/);
@@ -146,7 +185,7 @@ function parseLesson(file) {
   }
 
   const categories = [
-    { name: '会话用单词', words: parseWords(wConv) },
+    { name: wMain.name, words: parseWords(wConv) },
     { name: '语法解释用单词', words: parseWords(wGram) },
     { name: '习题用单词', words: parseWords(wExer) },
   ];
@@ -164,15 +203,18 @@ function parseLesson(file) {
     categories,
     sentencePool: sentences.length,
     unbound: categories.reduce((n, c) => n + c.words.filter(w => !w.sentences.length).length, 0),
+    // 原文留档给 clean_sentences.js：PDF 转写粘连严重时由 LLM 按原文还原，正则清洗只当兜底
+    raw: { mainName: wMain.name, conversation: conv, grammar: gram },
   };
 }
 
 const dir = process.argv[2];
 const out = process.argv[3];
+const level1 = (dir.match(/初级[上下]/) || ['初级上'])[0];
 const files = fs.readdirSync(dir).filter(f => /^第\d+课\.md$/.test(f))
   .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]));
 const lessons = files.map(f => parseLesson(path.join(dir, f)));
-fs.writeFileSync(out, JSON.stringify({ notebook: '梁爽日语课', level1: '初级上', lessons }, null, 1));
+fs.writeFileSync(out, JSON.stringify({ notebook: '梁爽日语课', level1, lessons }, null, 1));
 
 // 统计
 let tw = 0, uniq = new Set(), unbound = 0, sents = 0;

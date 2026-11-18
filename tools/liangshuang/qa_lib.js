@@ -32,11 +32,13 @@ function largestJSON(s) {
 async function llm(prompt, tries = 3) {
   for (let t = 0; t < tries; t++) {
     try {
-      const r = await fetch(BASE + '/chat/completions', {
+      const ac = new AbortController(); const to = setTimeout(() => ac.abort(), 300000);
+      const r = await fetch(BASE + '/chat/completions', { signal: ac.signal,
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.LLM_API_KEY },
         body: JSON.stringify({ model: env.LLM_MODEL, messages: [{ role: 'user', content: prompt }] }),
       });
+      clearTimeout(to);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
       return JSON.parse(largestJSON(j.choices?.[0]?.message?.content || ''));

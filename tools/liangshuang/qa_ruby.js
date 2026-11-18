@@ -1,16 +1,28 @@
 // QA 关④ 注音：结构审计（对齐/缺读音/非法字符）+ LLM 逐对核对汉字读音；
 // 误读写入 ruby_override.json（rubyfill/服务端生成时优先于 kagome）。
-// 用法: node qa_ruby.js [psqlBin]（默认本地库）
+// 用法: node qa_ruby.js [psqlBin] [rootDirId]（默认本地库、全库；rootDirId 如 nbd-cjs-xia 只看该教材子树）
 const { execFileSync } = require('child_process');
 const Q = require('./qa_lib');
 
 const PSQL = process.argv[2] || 'G:/TingShuo/pgsql/bin/psql';
+const ROOT = process.argv[3] || '';
+const SEL = ROOT
+  ? `WITH RECURSIVE sub AS (
+       SELECT id FROM notebook_dir WHERE id = '${ROOT}'
+       UNION ALL
+       SELECT nd.id FROM notebook_dir nd JOIN sub s ON nd.parent_id = s.id
+     )
+     SELECT ns.text, ns.ruby_tokens FROM notebook_sentence ns
+     JOIN notebook_word nw ON nw.id = ns.notebook_word_id
+     JOIN sub ON sub.id = nw.dir_id ORDER BY ns.id`
+  : 'SELECT text, ruby_tokens FROM notebook_sentence ORDER BY id';
 const out = execFileSync(PSQL, ['-U', 'tingshuo', '-d', 'tingshuo', '-t', '-A', '-F', '\x01',
-  '-c', 'SELECT text, ruby_tokens FROM notebook_sentence ORDER BY id'], { maxBuffer: 1 << 28 }).toString('utf8');
+  '-c', SEL], { maxBuffer: 1 << 28 }).toString('utf8');
+const seenText = new Set();
 const rows = out.split('\n').filter(x => x.trim()).map(l => {
   const [text, ruby] = l.split('\x01');
   return { text, toks: JSON.parse(ruby || '[]') };
-});
+}).filter(r => { if (seenText.has(r.text)) return false; seenText.add(r.text); return true; });
 const q = Q.loadQ();
 const KANJI = /[一-鿯]/;
 const HIRA = /^[ぁ-ゖー]+$/;
