@@ -4397,9 +4397,48 @@ function qzStemHTML(q) {
   return html.replace(/[_＿]{2,}/g, '<span class="quiz-blank">＿＿＿</span>');
 }
 
+// qzSayPlan 题干发音：仅纯日语题干（带逐字注音）可合成；
+// 空格处读成短停顿、不念答案，避免听音直接听出正确选项
+function qzSayPlan(q) {
+  const toks = Array.isArray(q.stem_ruby) ? q.stem_ruby : [];
+  if (!toks.length || toks.map(t => t[0] || '').join('') !== q.stem) return null;
+  const isBlank = w => /^[_＿]+$/.test(w);
+  const isPunct = ch => /[、。！？，,.!?：:\s「」『』（）【】〈〉《》]/.test(ch);
+  const out = [];
+  let blankDone = false;
+  for (let i = 0; i < toks.length; i++) {
+    const w = toks[i][0] || '';
+    if (isBlank(w)) {
+      if (blankDone) continue;
+      blankDone = true;
+      const prev = out.length ? out[out.length - 1][0].slice(-1) : '';
+      let next = '';
+      for (let j = i + 1; j < toks.length; j++) {
+        const nw = toks[j][0] || '';
+        if (nw && !isBlank(nw)) { next = nw[0]; break; }
+      }
+      // 空格在句首/句尾或紧贴标点时不留停顿，避免「、、」「、。」
+      if (!prev || !next || isPunct(prev) || isPunct(next)) continue;
+      out.push(['、', null]);
+      continue;
+    }
+    out.push([w, toks[i][1] || null]);
+  }
+  // 题干本身可能带「、＿＿＿、」列举结构，去掉空格后合并相邻顿号
+  const merged = [];
+  for (const t of out) {
+    if (t[0] === '、' && merged.length && merged[merged.length - 1][0].slice(-1) === '、') continue;
+    merged.push(t);
+  }
+  const text = merged.map(t => t[0]).join('');
+  if (!/[\u3041-\u30F6]/.test(text)) return null;
+  return { text, ruby: merged };
+}
+
 function qzRender() {
   const q = QZ.questions[QZ.i];
   const n = QZ.questions.length;
+  const stemSay = qzSayPlan(q);
   $('quiz-count').textContent = `${QZ.i + 1} / ${n}`;
   $('quiz-bar-fill').style.width = (QZ.i / n * 100) + '%';
   const opts = q.options.map((o, i) => `<button class="quiz-opt" data-i="${i}">
@@ -4408,13 +4447,15 @@ function qzRender() {
     </button>`).join('');
   $('quiz-body').innerHTML = `<div class="card quiz-card">
     <div class="quiz-meta"><span class="quiz-kind k-${esc(q.kind)}">${QZ_KIND[q.kind] || esc(q.kind)}</span></div>
-    <div class="quiz-stem">${qzStemHTML(q)}</div>
+    <div class="quiz-stem${stemSay ? ' has-say' : ''}">${qzStemHTML(q)}${stemSay ? '<button class="gra-say quiz-stem-say" title="朗读句子" aria-label="朗读句子">🔊</button>' : ''}</div>
     <div class="quiz-opts">${opts}</div>
     <div id="quiz-feedback"></div>
   </div>`;
   $('quiz-body').querySelectorAll('.quiz-opt').forEach(btn => {
     btn.onclick = () => qzPick(parseInt(btn.dataset.i, 10));
   });
+  const sayBtn = $('quiz-body').querySelector('.quiz-stem-say');
+  if (sayBtn) sayBtn.onclick = () => sayAudio(stemSay.text, sayBtn, false, stemSay.ruby);
   window.scrollTo(0, 0);
 }
 
