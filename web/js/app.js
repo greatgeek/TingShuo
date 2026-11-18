@@ -1482,7 +1482,7 @@ function rubyHTML(tokens, force) {
   let first = true;
   let numRun = false;
   return tokens
-    .map(([w, r]) => {
+    .map(([w, r, key]) => {
       let inner;
       if (r && /[一-龯]/.test(w)) {
         const rc = rubyCore(w, r);
@@ -1492,12 +1492,12 @@ function rubyHTML(tokens, force) {
       } else {
         inner = esc(w);
       }
-      if (!seg || !w || recIsPunct(w)) { numRun = false; return inner; }
+      if (!seg || !w || recIsPunct(w)) { numRun = false; return key ? `<span class="qz-key">${inner}</span>` : inner; }
       const join = !first && numRun && (isNumTok(w) || isCounterTok(w));
       const cls = first ? 'wseg wseg-first' : (join ? 'wseg wseg-join' : 'wseg');
       first = false;
       numRun = keepsNumRun(w);
-      return `<span class="${cls}">${inner}</span>`;
+      return `<span class="${cls}${key ? ' qz-key' : ''}">${inner}</span>`;
     })
     .join('');
 }
@@ -4392,9 +4392,23 @@ async function startGraQuiz(opts = {}) {
   qzRender();
 }
 
+// qzStemHTML 渲染题干；「現在・将来」这类时态限定标色加粗，防止扫题漏看限定
 function qzStemHTML(q) {
-  const html = rubyHTML(q.stem_ruby) || esc(q.stem);
+  const marked = qzMarkStemKeys(q.stem_ruby);
+  const html = (marked && rubyHTML(marked)) || esc(q.stem);
   return html.replace(/[_＿]{2,}/g, '<span class="quiz-blank">＿＿＿</span>');
+}
+
+function qzMarkStemKeys(tokens) {
+  if (!Array.isArray(tokens) || !tokens.length) return null;
+  const out = tokens.map(t => [t[0] || '', t[1] || null]);
+  const isSep = w => w === '・' || w === '、' || w === '·';
+  for (let i = 0; i + 2 < out.length; i++) {
+    if (out[i][0] !== '現在' && out[i][0] !== '现在') continue;
+    if (!isSep(out[i + 1][0]) || out[i + 2][0] !== '将来') continue;
+    out[i][2] = out[i + 1][2] = out[i + 2][2] = 1;
+  }
+  return out;
 }
 
 // qzSayPlan 题干发音：仅纯日语题干（带逐字注音）可合成；
