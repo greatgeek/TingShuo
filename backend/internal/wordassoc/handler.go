@@ -370,6 +370,77 @@ func (h *Handler) AddWord(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RemoveWord DELETE /notebooks/dir/{dir_id}/words/{word_id}：取消加入。
+// 先解除与当前目录的关联；若该词已不在任何目录，且没有背词卡/例句/课文词等
+// 依赖（外键无级联），则连词一起删掉——联想误加的彻底撤销。
+// 有学习记录或仍在别的目录时只解除本目录关联，保留词与记录。
+func (h *Handler) RemoveWord(w http.ResponseWriter, r *http.Request) {
+	userID := auth.FromContext(r.Context())
+	dirID := chi.URLParam(r, "dir_id")
+	wordID := chi.URLParam(r, "word_id")
+
+	var ok bool
+	err := h.pool.QueryRow(r.Context(), `
+		SELECT EXISTS (
+			SELECT 1 FROM notebook_dir d
+			JOIN notebook nb ON nb.id = d.notebook_id
+			WHERE d.id = $1 AND nb.user_id = $2)`, dirID, userID).Scan(&ok)
+	if err != nil || !ok {
+		httpx.Err(w, httpx.NotFound("目录不存在或不属于当前用户"))
+		return
+	}
+
+	tx, err := h.pool.Begin(r.Context())
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer tx.Rollback(r.Context())
+
+	tag, err := tx.Exec(r.Context(),
+		`DELETE FROM notebook_word WHERE dir_id = $1 AND word_id = $2`, dirID, wordID)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	removed := tag.RowsAffected() > 0
+
+	purged := false
+	if removed {
+		// 保存点兜底：词仍被背词卡/例句等引用时外键会拒绝删除，
+		// 回滚到保存点保留词，目录关联照常提交。
+		if _, err := tx.Exec(r.Context(), `SAVEPOINT purge_word`); err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+		tag, err = tx.Exec(r.Context(), `
+			DELETE FROM word
+			WHERE id = $1 AND user_id = $2
+			  AND NOT EXISTS (SELECT 1 FROM notebook_word WHERE word_id = $1)`,
+			wordID, userID)
+		if err != nil {
+			if _, e := tx.Exec(r.Context(), `ROLLBACK TO SAVEPOINT purge_word`); e != nil {
+				httpx.Err(w, httpx.Internal(e.Error()))
+				return
+			}
+		} else {
+			purged = tag.RowsAffected() > 0
+			if _, err := tx.Exec(r.Context(), `RELEASE SAVEPOINT purge_word`); err != nil {
+				httpx.Err(w, httpx.Internal(err.Error()))
+				return
+			}
+		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"removed": removed, "purged": purged, "word_id": wordID,
+	})
+}
+
 func deref(p *string) string {
 	if p == nil {
 		return ""

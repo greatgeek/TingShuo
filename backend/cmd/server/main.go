@@ -170,6 +170,7 @@ func run() error {
 			sec.Get("/notebooks/{id}/tree", nbH.Tree)
 			sec.Get("/notebooks/dir/{dir_id}/words", nbH.DirWords)
 			sec.Post("/notebooks/dir/{dir_id}/words", assocH.AddWord)
+			sec.Delete("/notebooks/dir/{dir_id}/words/{word_id}", assocH.RemoveWord)
 			sec.Get("/notebooks/dir/{dir_id}/copy", nbH.CopyWords)
 
 			recH := recitation.NewHandler(pool, store)

@@ -930,6 +930,14 @@ body.no-rt rt { display: none; }
 .assoc-group + .assoc-group { margin-top: 10px; }
 .assoc-glabel { font-size: 11px; color: var(--ink3); letter-spacing: .06em; margin-bottom: 6px; }
 .assoc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.assoc-cell { display: inline-flex; align-items: stretch; gap: 3px; }
+.assoc-say {
+  flex: none; width: 28px;
+  border: 1px solid var(--line); border-radius: 10px;
+  background: var(--surface-2); color: var(--ink3);
+  font-size: 12px; cursor: pointer;
+}
+.assoc-say:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
 .assoc-chip {
   display: inline-flex; align-items: baseline; gap: 6px;
   padding: 5px 8px 6px; border: 1px solid var(--line); border-radius: 10px;
@@ -944,6 +952,8 @@ body.no-rt rt { display: none; }
 .assoc-chip .am { font-size: 11px; color: var(--ink2); }
 .assoc-chip .ap { font-size: 12px; color: var(--ink3); }
 .assoc-chip.added .ap { color: var(--accent); }
+.assoc-chip.added:hover { border-color: rgba(178, 58, 50, .38); background: var(--danger-soft); }
+.assoc-chip.added:hover .ap { color: var(--danger); }
 
 .nb-clips { flex: 0 0 100%; min-width: 0; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
 .nb-clips-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }

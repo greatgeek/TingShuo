@@ -3105,6 +3105,11 @@ async function assocLoad(w, pop) {
 }
 
 const ASSOC_GROUPS = [['synonyms', '近义词'], ['antonyms', '反义词'], ['related', '联想词']];
+// assocInDir 当前目录是否已有这个词（打开卡片就标出已加入，点 ✓ 可直接取消）
+function assocInDir(it) {
+  const items = NB_WORDS[NB_CURDIR] || [];
+  return items.find(x => x.surface === it.surface && (x.reading || '') === (it.reading || '')) || null;
+}
 function assocRender(pop, w, groups) {
   const body = pop.querySelector('.assoc-body');
   let html = '';
@@ -3113,20 +3118,37 @@ function assocRender(pop, w, groups) {
     if (!list.length) continue;
     html += `<div class="assoc-group"><div class="assoc-glabel">${label}</div><div class="assoc-chips">`;
     list.forEach((it, i) => {
-      html += `<button class="assoc-chip" data-g="${key}" data-i="${i}" title="加入生词本">
-        <span class="aw">${rubyWordHTML(it.surface, it.reading)}</span>
-        <span class="am">${esc(it.meaning || '')}</span>
-        <span class="ap">＋</span>
-      </button>`;
+      const mem = NB_CURDIR ? assocInDir(it) : null;
+      html += `<div class="assoc-cell">
+        <button class="assoc-chip${mem ? ' added' : ''}" data-g="${key}" data-i="${i}"${mem ? ` data-wid="${esc(mem.word_id)}"` : ''} title="${mem ? '已在生词本，点击取消加入' : '加入生词本'}">
+          <span class="aw">${rubyWordHTML(it.surface, it.reading)}</span>
+          <span class="am">${esc(it.meaning || '')}</span>
+          <span class="ap">${mem ? '✓' : '＋'}</span>
+        </button>
+        <button class="assoc-say" data-g="${key}" data-i="${i}" title="听发音" aria-label="听发音">🔊</button>
+      </div>`;
     });
     html += '</div></div>';
   }
   body.innerHTML = html || '<p class="assoc-hint">没有找到相关词</p>';
   body.querySelectorAll('.assoc-chip').forEach(btn => {
     const it = groups[btn.dataset.g][Number(btn.dataset.i)];
-    btn.onclick = (e) => { e.stopPropagation(); assocAdd(w, it, btn); };
+    btn.onclick = (e) => { e.stopPropagation(); assocToggle(w, it, btn); };
+  });
+  // 每词单独发音：只想听读音时不必先加入生词本
+  body.querySelectorAll('.assoc-say').forEach(btn => {
+    const it = groups[btn.dataset.g][Number(btn.dataset.i)];
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      sayAudio(it.surface, btn, false, it.reading ? [[it.surface, it.reading]] : null);
+    };
   });
   assocPlace(pop._btn);
+}
+
+function assocToggle(w, it, btn) {
+  if (btn.classList.contains('added')) assocRemove(it, btn);
+  else assocAdd(w, it, btn);
 }
 
 async function assocAdd(w, it, btn) {
@@ -3143,7 +3165,10 @@ async function assocAdd(w, it, btn) {
     });
     if (ap) ap.textContent = '✓';
     btn.classList.add('added');
-    btn.title = r.added ? '已加入生词本' : '已在生词本';
+    btn.classList.remove('on');
+    btn.disabled = false;
+    if (r.word_id) btn.dataset.wid = r.word_id;
+    btn.title = '已在生词本，点击取消加入';
     if (r.added) {
       ASSOC_ADDED.push({
         link_id: r.link_id, word_id: r.word_id, surface: r.surface,
@@ -3156,6 +3181,37 @@ async function assocAdd(w, it, btn) {
     btn.classList.remove('on');
     if (ap) ap.textContent = '＋';
     toast('加入失败：' + e.message);
+  }
+}
+
+// assocRemove 取消加入：移除当前目录关联；词若无人使用且没有学习记录，后端会连词一起删掉
+async function assocRemove(it, btn) {
+  if (btn.disabled) return;
+  if (!NB_CURDIR) { toast('先选择目录'); return; }
+  let wordId = btn.dataset.wid;
+  if (!wordId) { const mem = assocInDir(it); if (mem) wordId = mem.word_id; }
+  if (!wordId) { toast('这个词不在当前生词本里'); return; }
+  btn.disabled = true;
+  const ap = btn.querySelector('.ap');
+  if (ap) ap.textContent = '…';
+  try {
+    const r = await api('/notebooks/dir/' + NB_CURDIR + '/words/' + wordId, { method: 'DELETE' });
+    const ai = ASSOC_ADDED.findIndex(x => x.word_id === wordId);
+    if (ai >= 0) ASSOC_ADDED.splice(ai, 1);
+    const items = NB_WORDS[NB_CURDIR] || [];
+    const wi = items.findIndex(x => x.word_id === wordId);
+    if (wi >= 0) { items.splice(wi, 1); NB_WORDS[NB_CURDIR] = items; renderNbWords(); }
+    btn.disabled = false;
+    btn.classList.remove('added');
+    delete btn.dataset.wid;
+    btn.title = '加入生词本';
+    if (ap) ap.textContent = '＋';
+    toast(r.removed ? `已从生词本移除：${it.surface}` : `这个词已不在生词本：${it.surface}`);
+  } catch (e) {
+    btn.disabled = false;
+    btn.title = '已在生词本，点击取消加入';
+    if (ap) ap.textContent = '✓';
+    toast('取消失败：' + e.message);
   }
 }
 
@@ -4449,6 +4505,33 @@ function qzSayPlan(q) {
   return { text, ruby: merged };
 }
 
+// qzSayFullPlan 作答后题干发音：把正确选项填进空格，读完整句子（答案已揭晓，不再避讳）
+function qzSayFullPlan(q) {
+  const toks = Array.isArray(q.stem_ruby) ? q.stem_ruby : [];
+  const opt = q.options && q.options[q.answer];
+  if (!toks.length || !opt || !opt.text || toks.map(t => t[0] || '').join('') !== q.stem) return null;
+  const isBlank = w => /^[_＿]+$/.test(w);
+  const optToks = Array.isArray(opt.ruby) && opt.ruby.length
+    && opt.ruby.map(t => t[0] || '').join('') === opt.text ? opt.ruby : [[opt.text, null]];
+  const out = [];
+  let filled = false;
+  for (const t of toks) {
+    const w = t[0] || '';
+    if (isBlank(w)) {
+      if (!filled) {
+        for (const o of optToks) out.push([o[0] || '', o[1] || null]);
+        filled = true;
+      }
+      continue;
+    }
+    out.push([w, t[1] || null]);
+  }
+  if (!filled) return null;
+  const text = out.map(t => t[0]).join('');
+  if (!/[\u3041-\u30F6]/.test(text)) return null;
+  return { text, ruby: out };
+}
+
 function qzRender() {
   const q = QZ.questions[QZ.i];
   const n = QZ.questions.length;
@@ -4516,6 +4599,14 @@ function qzPick(i) {
   $('quiz-feedback').querySelector('.quiz-next').onclick = qzNext;
   const sayBtn = $('quiz-feedback').querySelector('.quiz-src-say');
   if (sayBtn) sayBtn.onclick = () => sayAudio(q.source.text, sayBtn, false, q.source.ruby_tokens);
+  // 作答后题干发音补全：空格换成正确选项，读完整句子
+  const stemSayBtn = $('quiz-body').querySelector('.quiz-stem-say');
+  const fullSay = stemSayBtn ? qzSayFullPlan(q) : null;
+  if (fullSay) {
+    stemSayBtn.title = '朗读完整句子';
+    stemSayBtn.setAttribute('aria-label', '朗读完整句子');
+    stemSayBtn.onclick = () => sayAudio(fullSay.text, stemSayBtn, false, fullSay.ruby);
+  }
   $('quiz-feedback').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
