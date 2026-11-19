@@ -828,7 +828,21 @@ body.no-rt rt { display: none; }
   flex: 1 1 auto; display: flex; flex-direction: column;
   align-items: stretch; gap: 3px; min-width: 0;
 }
+.nb-strip-row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .nb-strip-row1 b { font-size: 17px; letter-spacing: .02em; }
+.nb-strip-select {
+  flex: 0 1 auto; min-width: 0; max-width: 100%;
+  margin: 0; padding: 4px 26px 4px 9px;
+  font: inherit; font-size: 16px; font-weight: 600; letter-spacing: .02em;
+  color: var(--ink); background-color: var(--surface-2);
+  border: 1px solid var(--line); border-radius: 10px;
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6'%3E%3Cpath d='M1 1l3.5 3.5L8 1' fill='none' stroke='%239C9384' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center;
+  box-shadow: var(--shadow-sm); cursor: pointer;
+}
+.nb-strip-select:hover { border-color: var(--line-strong); }
+.nb-strip-select:focus { outline: none; border-color: var(--accent); }
 .nb-strip-row2 { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap; }
 .nb-strip-path {
   font-size: 12px; color: var(--ink2); min-width: 0;
@@ -890,11 +904,8 @@ body.no-rt rt { display: none; }
 .nb-kbd-note { margin-top: 2px; font-size: 10px; color: rgba(255, 253, 248, .6); }
 
 .nb-pickpanel { padding: 12px 14px; margin-top: 8px; }
-.nb-pickrow { display: flex; align-items: stretch; gap: 6px; margin-bottom: 8px; }
-.nb-pickrow select {
-  flex: 1; min-width: 0; padding: 9px 10px; font-size: 13px;
-  background: var(--surface-2); border-color: var(--line); border-radius: 10px;
-}
+.nb-pickrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+.nb-pickstat { font-size: 12px; color: var(--ink3); letter-spacing: .01em; }
 .nb-mini-add {
   flex: none; padding: 7px 10px;
   border: 1px dashed var(--line-strong); border-radius: 9px;
@@ -1256,6 +1267,10 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 .nb-cfg .cfg-loop input { width: 58px; margin: 0 0 0 auto; background: var(--surface-2); }
 .nb-cfg .cfg-loop .cfg-unit { font-size: 12px; color: var(--ink2); }
 .nb-cfg .row2 { margin-top: 18px; }
+
+/* 新建生词本/目录浮窗：表单本体复用 .nb-newform，只去掉内联时期的缩进 */
+.nb-newmodal .nb-newform { padding: 14px 0 0; }
+.nb-newmodal .nb-newform input { min-width: 0; }
 
 /* ===== 问 AI ===== */
 .ai-ask {

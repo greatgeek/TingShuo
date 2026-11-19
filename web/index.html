@@ -279,7 +279,14 @@
       <button class="nb-tab nb-tab-add" id="nb-tab-add" type="button" title="新建生词本">＋</button>
     </div>
     <div class="card nb-strip" id="nb-strip">
-      <div class="nb-strip-main" id="nb-strip-text">生词本</div>
+      <div class="nb-strip-main">
+        <div class="nb-strip-row1">
+          <select id="nbp-nb" class="nb-strip-select" aria-label="切换生词本"></select>
+          <b id="nb-strip-name" hidden>生词本</b>
+          <span id="nb-strip-badge"></span>
+        </div>
+        <div class="nb-strip-row2" id="nb-strip-text"></div>
+      </div>
       <div class="nb-strip-btns">
         <button class="btn ghost" id="nb-share-back" type="button" hidden>← 资源</button>
         <button class="btn ghost" id="nb-strip-btn">更换</button>
@@ -316,9 +323,8 @@
     <!-- 目录选择面板紧跟横条：播客面板可能很高（生成中日志+几百行列表），
          放在它下面时点"更换"弹出来的面板在屏幕外，看着像没反应（2026-11-04 报障） -->
     <div class="card nb-pickpanel" id="nbp-panel" hidden>
-      <div class="nb-pickrow">
-        <select id="nbp-nb"></select>
-        <button class="nb-mini-add" id="nbp-new-nb" type="button" title="新建生词本">＋生词本</button>
+      <div class="nb-pickrow" id="nbp-statrow">
+        <span class="nb-pickstat" id="nbp-stat"></span>
         <button class="nb-mini-add" id="nbp-new-dir" type="button" title="新建目录">＋目录</button>
       </div>
       <div class="nb-picklist" id="nbp-list"></div>
@@ -507,6 +513,13 @@
       <button class="btn accent" id="cfg-save">保存</button>
       <button class="btn ghost" id="cfg-cancel">取消</button>
     </div>
+  </div>
+</div>
+<div class="picker-mask nb-cfg-mask" id="nb-new-mask" style="display:none">
+  <div class="picker card nb-cfg nb-newmodal" role="dialog" aria-modal="true" aria-labelledby="nb-new-title">
+    <h2 id="nb-new-title">新建生词本</h2>
+    <p class="nb-cfg-sub" id="nb-new-sub"></p>
+    <div id="nb-new-body"></div>
   </div>
 </div>
 <script src="js/ruby-splits.js"></script>

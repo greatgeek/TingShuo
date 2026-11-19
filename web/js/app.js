@@ -94,7 +94,7 @@ function goBack() {
 // popstate：弹层先收；其余按历史条目恢复屏（旧页面会话的条目不恢复——
 // 课程/列表数据已随上次加载丢失，浏览器继续后退即离开本站）
 addEventListener('popstate', e => {
-  const masks = ['picker-mask', 'nb-cfg-mask'];
+  const masks = ['picker-mask', 'nb-cfg-mask', 'nb-new-mask'];
   if (masks.some(id => $(id) && getComputedStyle($(id)).display !== 'none')) {
     masks.forEach(id => { $(id).style.display = 'none'; });
     if (HIST_BASE) history.pushState(histState(CUR_SCREEN), '', location.href); // 把退掉的这步压回，保持当前屏
@@ -2807,11 +2807,26 @@ function renderNbStrip() {
   const badge = shared
     ? `<span class="nb-share-badge">只读 · ${esc(NB_SHARE.owner)} 共享</span>`
     : (nb && nb.shared ? '<span class="nb-share-badge">已共享</span>' : '');
+  // 本名直接做成下拉框（选择即切换生词本）；只读共享 / 一本都没有时退回纯文字
+  const sel = $('nbp-nb');
+  const showSel = !shared && NB_LIST.length > 0;
+  sel.hidden = !showSel;
+  if (showSel) {
+    sel.innerHTML = '';
+    NB_LIST.forEach(n => {
+      const o = document.createElement('option');
+      o.value = n.id; o.textContent = `${n.name}（${n.word_count} 词）`;
+      sel.appendChild(o);
+    });
+    sel.value = NB_CUR || '';
+  }
+  $('nb-strip-name').hidden = showSel;
+  $('nb-strip-name').textContent = name;
+  $('nb-strip-badge').innerHTML = badge;
   $('nb-strip-text').innerHTML =
-    `<div class="nb-strip-row1"><b>${esc(name)}</b>${badge}</div>` +
-    (dir
-      ? `<div class="nb-strip-row2"><span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span></div>`
-      : `<div class="nb-strip-row2"><span class="nb-strip-path">${shared ? '点我选择目录' : '未选目录 · 点我选择'}</span></div>`);
+    dir
+      ? `<span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span>`
+      : `<span class="nb-strip-path">${shared ? '点我选择目录' : '未选目录 · 点我选择'}</span>`;
   // 共享只读浏览：没有编辑工具，只留目录选择与返回
   $('nb-share-back').hidden = !shared;
   $('nb-strip-btn').hidden = shared;
@@ -2843,19 +2858,19 @@ async function openNbPicker(mode) {
   $('nb-sharepanel').hidden = true;
   const shared = !!NB_SHARE;
   const favMode = !shared && NB_PICK_MODE === 'fav';
-  const sel = $('nbp-nb'); sel.innerHTML = '';
-  NB_LIST.forEach(n => {
-    const o = document.createElement('option');
-    o.value = n.id; o.textContent = `${n.name}（${n.word_count} 词）`;
-    sel.appendChild(o);
-  });
-  sel.value = NB_CUR || '';
   if (favMode) await loadNbFavs();
-  sel.hidden = shared || favMode || !NB_LIST.length;
-  $('nbp-new-nb').hidden = shared || favMode;
   $('nbp-new-dir').hidden = shared || favMode;
-  sel.onchange = async () => { await nbSwitchTo(sel.value); renderNbPickerList(); };
   $('nbp-new-dir').disabled = !NB_CUR;
+  $('nbp-statrow').hidden = favMode;
+  if (!favMode) {
+    const nb = NB_LIST.find(x => x.id === NB_CUR);
+    const words = shared
+      ? NB_DIRS.reduce((s, d) => s + (d.word_count || 0), 0)
+      : (nb ? nb.word_count || 0 : 0);
+    $('nbp-stat').textContent = NB_DIRS.length
+      ? `目录 · 共 ${NB_DIRS.length} 个 · ${words} 词`
+      : '目录 · 暂无';
+  }
   NBP_OPEN = new Set(nbChildren('').map(d => d.id));
   if (NB_CURDIR) nbpEnsureOpen(NB_CURDIR);
   renderNbPickerList();
@@ -2872,35 +2887,40 @@ async function loadNbFavs() {
 document.addEventListener('click', e => {
   const p = $('nbp-panel');
   if (!p || p.hidden) return;
+  if ($('nb-new-mask').contains(e.target)) return; // 浮窗开着时别把面板收掉（会清掉 NBP_NEW）
   if (p.contains(e.target) || $('nb-strip').contains(e.target)) return;
   closeNbPicker();
 });
 
-// 面板内联新建：按钮 → 表单 → Enter/确定提交、Esc/取消收起
+// 新建生词本/目录走居中浮窗（面板里内联弹输入框观感突兀，2026-11-19 报障）
 function nbNewStart(kind, parentId) {
   if (kind === 'dir' && !NB_CUR) { toast('请先创建生词本'); return; }
-  NBP_NEW = { kind, parentId: parentId || null, value: '' };
-  if (parentId) nbpEnsureOpen(parentId);
-  renderNbPickerList();
-  const box = $('nbp-list');
-  box.scrollTop = kind === 'nb' ? 0 : box.scrollHeight;
-  const inp = box.querySelector('.nb-newform input');
+  NBP_NEW = { kind, parentId: parentId || null };
+  const parent = parentId ? NB_DIRS.find(d => d.id === parentId) : null;
+  const nb = NB_LIST.find(x => x.id === NB_CUR);
+  $('nb-new-title').textContent = kind === 'nb' ? '新建生词本' : (parentId ? '新建子目录' : '新建目录');
+  $('nb-new-sub').textContent = kind === 'nb'
+    ? '创建后会切换到这个本'
+    : `建在「${parent ? parent.name : (nb ? nb.name : '')}」${parentId ? '下' : '里'}`;
+  const body = $('nb-new-body');
+  body.innerHTML = '';
+  body.appendChild(nbNewFormEl(kind));
+  $('nb-new-mask').style.display = 'flex';
+  const inp = body.querySelector('input');
   if (inp) inp.focus();
 }
 function nbNewCancel() {
   NBP_NEW = null;
-  renderNbPickerList();
+  $('nb-new-mask').style.display = 'none';
 }
-function nbNewFormEl(kind, depth) {
+function nbNewFormEl(kind) {
   const form = document.createElement('div');
   form.className = 'nb-newform';
-  if (depth != null) form.style.marginLeft = (12 + depth * 18) + 'px';
   form.innerHTML = `<input maxlength="40" placeholder="${kind === 'nb' ? '生词本名称' : '目录名称'}" />` +
     `<button class="nb-new-ok" type="button">确定</button>` +
     `<button class="nb-new-cancel" type="button">取消</button>` +
     `<div class="nb-new-err"></div>`;
   const inp = form.querySelector('input');
-  inp.value = (NBP_NEW && NBP_NEW.value) || '';
   inp.onkeydown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); nbNewSubmit(); }
     else if (e.key === 'Escape') { e.stopPropagation(); nbNewCancel(); }
@@ -2910,7 +2930,7 @@ function nbNewFormEl(kind, depth) {
   return form;
 }
 async function nbNewSubmit() {
-  const form = $('nbp-list').querySelector('.nb-newform');
+  const form = $('nb-new-body').querySelector('.nb-newform');
   if (!form || !NBP_NEW) return;
   const inp = form.querySelector('input');
   const errEl = form.querySelector('.nb-new-err');
@@ -2922,7 +2942,7 @@ async function nbNewSubmit() {
     if (NBP_NEW.kind === 'nb') {
       const r = await api('/notebooks', { method: 'POST', body: JSON.stringify({ name }) });
       NB_LIST = (await api('/notebooks')).items || [];
-      NBP_NEW = null;
+      nbNewCancel();
       await nbSwitchTo(r.id);
       openNbPicker();
       toast(`已创建生词本：${r.name}`);
@@ -2930,7 +2950,7 @@ async function nbNewSubmit() {
       const r = await api('/notebooks/' + NB_CUR + '/dirs', {
         method: 'POST', body: JSON.stringify({ name, parent_id: NBP_NEW.parentId || '' }),
       });
-      NBP_NEW = null;
+      nbNewCancel();
       await nbLoadTree();
       if (r.parent_id) nbpEnsureOpen(r.parent_id);
       closeNbPicker();
@@ -2945,15 +2965,9 @@ async function nbNewSubmit() {
 }
 function renderNbPickerList() {
   const box = $('nbp-list');
-  // 重渲染（如展开/收起目录）前保住正在输入的名称
-  if (NBP_NEW) {
-    const cur = box.querySelector('.nb-newform input');
-    if (cur) NBP_NEW.value = cur.value;
-  }
   box.innerHTML = '';
   if (!NB_SHARE && NB_PICK_MODE === 'fav') { renderNbFavs(box); return; }
   const shared = !!NB_SHARE;
-  if (!shared && NBP_NEW && NBP_NEW.kind === 'nb') box.appendChild(nbNewFormEl('nb', null));
   const walk = (pid, depth) => {
     nbChildren(pid).forEach(d => {
       const kids = nbChildren(d.id);
@@ -2989,21 +3003,16 @@ function renderNbPickerList() {
         }
       };
       box.appendChild(row);
-      if (!shared && NBP_NEW && NBP_NEW.kind === 'dir' && NBP_NEW.parentId === d.id) {
-        box.appendChild(nbNewFormEl('dir', depth + 1));
-      }
       if (kids.length && NBP_OPEN.has(d.id)) walk(d.id, depth + 1);
     });
   };
   walk('', 0);
-  if (!shared && NBP_NEW && NBP_NEW.kind === 'dir' && !NBP_NEW.parentId) {
-    box.appendChild(nbNewFormEl('dir', null));
-  } else if (!NB_DIRS.length) {
+  if (!NB_DIRS.length) {
     const empty = document.createElement('div');
     empty.className = 'nb-pickempty';
     empty.textContent = shared
       ? '这个共享本还没有目录'
-      : (NB_CUR ? '还没有目录 · 点上方「＋目录」新建' : '还没有生词本 · 点上方「＋生词本」新建');
+      : (NB_CUR ? '还没有目录 · 点上方「＋目录」新建' : '还没有生词本 · 点上方「＋」新建');
     box.appendChild(empty);
   }
 }
@@ -6926,8 +6935,10 @@ $('picker-ok').onclick = pickerConfirm;
 $('picker-cancel-btn').onclick = closePicker;
 $('ai-send').onclick = aiSend;
 $('nb-strip').onclick = () => openNbPicker('mine');
-$('nbp-new-nb').onclick = (e) => { e.stopPropagation(); nbNewStart('nb'); };
 $('nbp-new-dir').onclick = (e) => { e.stopPropagation(); nbNewStart('dir', null); };
+// 本名下拉框常驻横条：切换即换本，别让它冒泡去开/收目录面板
+$('nbp-nb').onclick = (e) => e.stopPropagation();
+$('nbp-nb').onchange = async () => { await nbSwitchTo($('nbp-nb').value); renderNbPickerList(); };
 $('nb-tab-mine').onclick = (e) => { e.stopPropagation(); if (NB_SHARE) { NB_SHARE = null; goNotebook(); } else openNbPicker('mine'); };
 $('nb-tab-fav').onclick = (e) => { e.stopPropagation(); if (NB_SHARE) openNbPicker('share'); else openNbPicker('fav'); };
 $('nb-tab-add').onclick = (e) => { e.stopPropagation(); if (NB_SHARE) { nbLeaveShare(); return; } openNbPicker('mine'); nbNewStart('nb'); };
@@ -7110,6 +7121,12 @@ $('cfg-save').onclick = saveNbCfg;
 $('cfg-cancel').onclick = () => { $('nb-cfg-mask').style.display = 'none'; };
 $('nb-cfg-mask').addEventListener('click', e => {
   if (e.target === $('nb-cfg-mask')) $('nb-cfg-mask').style.display = 'none';
+});
+$('nb-new-mask').addEventListener('click', e => {
+  if (e.target === $('nb-new-mask')) nbNewCancel();
+});
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('nb-new-mask').style.display !== 'none') nbNewCancel();
 });
 $('ai-q').addEventListener('keydown', e => { if (e.key === 'Enter') aiSend(); });
 if (TOKEN) afterLogin(); else { $('userchip').textContent = '未登录'; go('login'); }
