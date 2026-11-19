@@ -2823,13 +2823,15 @@ function renderNbStrip() {
   $('nb-strip-name').hidden = showSel;
   $('nb-strip-name').textContent = name;
   $('nb-strip-badge').innerHTML = badge;
+  // 目录路径做成按钮形状，点它即开目录面板（原「更换」按钮已去重删除）
   $('nb-strip-text').innerHTML =
-    dir
-      ? `<span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span>`
-      : `<span class="nb-strip-path">${shared ? '点我选择目录' : '未选目录 · 点我选择'}</span>`;
+    `<span class="nb-dirpick">` +
+      (dir
+        ? `<span class="nb-strip-path">${esc(nbDirPath(dir.id))}</span><span class="nb-strip-ct">${dir.word_count || 0} 词</span>`
+        : `<span class="nb-strip-path">${shared ? '点我选择目录' : '未选目录 · 点我选择'}</span>`) +
+    `</span>`;
   // 共享只读浏览：没有编辑工具，只留目录选择与返回
   $('nb-share-back').hidden = !shared;
-  $('nb-strip-btn').hidden = shared;
   $('nb-share-btn').hidden = shared || !nb;
   $('nb-share-btn').textContent = nb && nb.shared ? '已共享' : '共享';
   $('nb-share-btn').classList.toggle('on', !!(nb && nb.shared));
@@ -6934,7 +6936,10 @@ $('picker-search').oninput = e => pickerSearch(e.target.value);
 $('picker-ok').onclick = pickerConfirm;
 $('picker-cancel-btn').onclick = closePicker;
 $('ai-send').onclick = aiSend;
-$('nb-strip').onclick = () => openNbPicker('mine');
+$('nb-strip').onclick = () => {
+  if (!$('nbp-panel').hidden) { closeNbPicker(); return; }
+  openNbPicker('mine');
+};
 $('nbp-new-dir').onclick = (e) => { e.stopPropagation(); nbNewStart('dir', null); };
 // 本名下拉框常驻横条：切换即换本，别让它冒泡去开/收目录面板
 $('nbp-nb').onclick = (e) => e.stopPropagation();

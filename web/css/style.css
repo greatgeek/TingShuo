@@ -844,6 +844,15 @@ body.no-rt rt { display: none; }
 .nb-strip-select:hover { border-color: var(--line-strong); }
 .nb-strip-select:focus { outline: none; border-color: var(--accent); }
 .nb-strip-row2 { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap; }
+/* 目录路径行做成按钮形状：点它打开目录面板 */
+.nb-dirpick {
+  display: inline-flex; align-items: center; gap: 8px;
+  max-width: 100%; min-width: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.nb-dirpick:hover { border-color: var(--accent); background: var(--accent-soft); }
 .nb-strip-path {
   font-size: 12px; color: var(--ink2); min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -865,10 +874,6 @@ body.no-rt rt { display: none; }
 }
 .nb-strip .nb-icon svg { width: 16px; height: 16px; }
 .nb-strip .nb-test { font-size: 12px; font-weight: 700; color: var(--ink2); }
-.nb-strip #nb-strip-btn {
-  padding: 7px 12px; font-size: 12px; border-radius: 10px;
-  border-color: var(--line); background: var(--surface-2);
-}
 /* 播放设置与全播同属一组：设置贴着全播左侧，整组靠右 */
 .nb-play-group {
   display: flex; align-items: center; gap: 6px;
