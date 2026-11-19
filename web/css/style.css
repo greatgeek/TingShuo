@@ -762,6 +762,63 @@ body.no-rt rt { display: none; }
 .nb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .nb-head #nb-title { font-size: 15px; font-weight: 700; }
 
+/* 顶部卡片区：我的 / 收藏 / 新建 */
+.nb-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
+.nb-tab {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  font-family: inherit; color: var(--ink); cursor: pointer;
+}
+.nb-tab b { font-size: 13.5px; letter-spacing: .01em; }
+.nb-tab-sub { font-size: 11px; color: var(--ink3); }
+.nb-tab.on { border-color: var(--accent); background: var(--accent-soft); }
+.nb-tab.on .nb-tab-sub { color: var(--accent); }
+.nb-tab-add {
+  flex: 0 0 52px; align-items: center; justify-content: center;
+  font-size: 22px; line-height: 1; color: var(--ink3);
+}
+.nb-tab-add:hover { color: var(--accent); border-color: var(--accent); }
+.nb-share-btn {
+  padding: 7px 12px; font-size: 12px; border-radius: 10px;
+  border-color: var(--line); background: var(--surface-2);
+}
+.nb-share-btn.on { color: var(--accent); border-color: rgba(184, 64, 44, .3); background: var(--accent-soft); }
+.nb-share-badge {
+  display: inline-block; margin-left: 8px; vertical-align: 2px;
+  font-size: 10.5px; font-weight: 600; line-height: 1.7;
+  padding: 0 8px; border-radius: 999px;
+  color: var(--jade); background: var(--jade-soft); border: 1px solid rgba(46, 107, 87, .22);
+  white-space: nowrap;
+}
+.nb-sharepanel { padding: 12px 14px; margin-top: 8px; }
+.nb-share-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.nb-share-head .nb-share-badge { margin-left: 0; }
+.nb-share-intro { margin: 0 0 10px; white-space: pre-wrap; }
+.nb-share-actions { display: flex; gap: 8px; }
+.nb-share-actions .btn { width: auto; margin-top: 0; }
+.nb-share-off { color: var(--danger); }
+.nb-sharepanel textarea { min-height: 64px; }
+
+/* 生词本资源版块 */
+.nbres-head { margin-bottom: 10px; }
+.nbres-head h2 { margin-bottom: 4px; }
+.nbres-card { padding: 14px 16px; }
+.nbres-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nbres-name { font-size: 15px; }
+.nbres-badge {
+  font-size: 10.5px; font-weight: 600; line-height: 1.7;
+  padding: 0 8px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid var(--line-strong); color: var(--ink3);
+}
+.nbres-badge.mine { color: var(--ink2); background: var(--surface-2); }
+.nbres-badge.live { color: var(--jade); background: var(--jade-soft); border-color: rgba(46, 107, 87, .22); }
+.nbres-badge.copy { color: var(--accent); background: var(--accent-soft); border-color: rgba(184, 64, 44, .25); }
+.nbres-meta { margin-top: 3px; font-size: 11.5px; color: var(--ink3); }
+.nbres-intro { margin: 8px 0 10px; font-size: 13px; color: var(--ink2); white-space: pre-wrap; }
+.nbres-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.nbres-actions .btn { width: auto; margin-top: 0; padding: 7px 14px; font-size: 12.5px; border-radius: 10px; }
+
 .nb-strip {
   display: flex; flex-direction: column; align-items: stretch; gap: 12px;
   padding: 16px; cursor: pointer;
@@ -833,11 +890,46 @@ body.no-rt rt { display: none; }
 .nb-kbd-note { margin-top: 2px; font-size: 10px; color: rgba(255, 253, 248, .6); }
 
 .nb-pickpanel { padding: 12px 14px; margin-top: 8px; }
-.nb-pickpanel select {
-  width: 100%; padding: 9px 10px; font-size: 13px;
+.nb-pickrow { display: flex; align-items: stretch; gap: 6px; margin-bottom: 8px; }
+.nb-pickrow select {
+  flex: 1; min-width: 0; padding: 9px 10px; font-size: 13px;
   background: var(--surface-2); border-color: var(--line); border-radius: 10px;
-  margin-bottom: 8px;
 }
+.nb-mini-add {
+  flex: none; padding: 7px 10px;
+  border: 1px dashed var(--line-strong); border-radius: 9px;
+  background: transparent; color: var(--ink3);
+  font-size: 12px; white-space: nowrap; cursor: pointer;
+}
+.nb-mini-add:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.nb-mini-add:disabled { opacity: .45; cursor: default; color: var(--ink3); border-color: var(--line); background: transparent; }
+.nb-favrow .nb-fav-owner { flex: none; max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--ink3); }
+.nb-fav-mode {
+  flex: none; font-size: 10px; line-height: 1.6; padding: 0 6px; border-radius: 999px;
+  border: 1px solid var(--line-strong); color: var(--ink3);
+}
+.nb-fav-mode.copy { color: var(--accent); border-color: rgba(184, 64, 44, .3); background: var(--accent-soft); }
+.nb-fav-mode.live { color: var(--jade); border-color: rgba(46, 107, 87, .25); background: var(--jade-soft); }
+.nb-newform {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 6px 8px;
+}
+.nb-newform input {
+  flex: 1; min-width: 90px; padding: 7px 9px;
+  border: 1px solid var(--accent); border-radius: 8px;
+  background: var(--surface); color: var(--ink); font-size: 13px;
+}
+.nb-newform input:focus { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.nb-newform button {
+  flex: none; padding: 7px 10px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink2);
+  font-size: 12.5px; cursor: pointer;
+}
+.nb-newform .nb-new-ok { border-color: var(--accent); background: var(--accent); color: #fff; }
+.nb-newform .nb-new-ok:disabled { opacity: .6; cursor: default; }
+.nb-newform .nb-new-err { width: 100%; color: var(--danger); font-size: 11.5px; padding-left: 2px; }
+.nb-new-err:empty { display: none; }
+.nb-pickempty { padding: 12px 8px; color: var(--ink3); font-size: 12.5px; text-align: center; }
 .nb-picklist { max-height: 46vh; overflow: auto; border-top: 1px solid var(--line); padding-top: 4px; }
 .nb-dir {
   display: flex; align-items: center; gap: 8px;
@@ -857,6 +949,14 @@ body.no-rt rt { display: none; }
 }
 .nb-dir:hover .nb-dir-copy { border-color: var(--line); background: var(--surface); }
 .nb-dir-copy:hover { color: var(--accent) !important; border-color: var(--accent) !important; }
+.nb-dir-add {
+  flex: none; width: 26px; height: 24px;
+  border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--ink3);
+  font-size: 14px; line-height: 1; cursor: pointer;
+}
+.nb-dir:hover .nb-dir-add { border-color: var(--line); background: var(--surface); }
+.nb-dir-add:hover { color: var(--accent) !important; border-color: var(--accent) !important; }
 
 #nb-words { display: flex; flex-direction: column; gap: 8px; }
 #nb-words .sent {

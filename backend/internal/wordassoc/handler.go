@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
+	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/httpx"
 	"github.com/greatgeek/TingShuo/backend/pkg/llmclient"
 	"github.com/greatgeek/TingShuo/backend/pkg/ulid"
@@ -129,7 +130,36 @@ func (h *Handler) loadCache(ctx context.Context, wordID string) (assocGroups, bo
 	if g.Related == nil {
 		g.Related = []assocItem{}
 	}
+	// 旧缓存自愈：早期大模型读音偶有漏读（家電店→かいてん），按词典校正后回写，
+	// 免清缓存也能立刻纠正注音与发音。
+	if correctGroupReadings(&g) {
+		if b, err := json.Marshal(g); err == nil {
+			_, _ = h.pool.Exec(ctx,
+				`UPDATE word_association SET payload = $2 WHERE word_id = $1`, wordID, b)
+		}
+	}
 	return g, true
+}
+
+// correctReading 用词典修正大模型漏读的读音（家電店 かいてん→かでんてん）；
+// 词典无法确证时保留原读音。
+func correctReading(surface, reading string) string {
+	return generate.CorrectReading(surface, reading)
+}
+
+// correctGroupReadings 校正三组词条的读音，返回是否有改动。
+func correctGroupReadings(g *assocGroups) bool {
+	changed := false
+	for _, group := range []*[]assocItem{&g.Synonyms, &g.Antonyms, &g.Related} {
+		for i := range *group {
+			it := &(*group)[i]
+			if r := correctReading(it.Surface, it.Reading); r != it.Reading {
+				it.Reading = r
+				changed = true
+			}
+		}
+	}
+	return changed
 }
 
 func (h *Handler) fetch(ctx context.Context, surface, reading, pos, meaning string) (assocGroups, int, int, error) {
@@ -200,7 +230,7 @@ func (h *Handler) verify(ctx context.Context, source string, g *assocGroups) (in
 		return 0, 0
 	}
 	prompt := fmt.Sprintf(`判断下面每个候选词能否作为日语学习材料。目标词：%s
-逐项检查：①是否为真实存在的日语词（排除生造词、拼写错误）；②词形是否为日语表记（排除中文词）；③读音是否符合该词；④是否与目标词确实相关。
+逐项检查：①是否为真实存在的日语词（排除生造词、拼写错误）；②词形是否为日语表记（排除中文词）；③读音是否符合该词、且逐字覆盖词形不得漏读（如 家電店→かでんてん，不是かいてん）；④是否与目标词确实相关。
 只输出存在问题的序号 JSON 数组（如 [2,5]）；都没问题输出 []，不确定的不要标，不要解释。
 %s`, source, strings.Join(lines, "\n"))
 	raw, pt, ct, err := h.client.ChatJSONNoThinking(ctx, prompt)
@@ -264,6 +294,7 @@ func sanitizeItems(src []assocItem, sourceSurface string, seen map[string]bool, 
 		if !isKanaReading(r) {
 			continue
 		}
+		r = correctReading(s, r)
 		if seen[s] {
 			continue
 		}
@@ -302,6 +333,7 @@ func (h *Handler) AddWord(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.BadRequest("BAD_WORD", "联想词缺少读音"))
 		return
 	}
+	req.Reading = correctReading(req.Surface, req.Reading)
 	req.Meaning = truncRunes(req.Meaning, 200)
 	req.Pos = truncRunes(req.Pos, 20)
 

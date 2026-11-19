@@ -37,7 +37,7 @@
     <div class="login-wrap">
       <div class="login-hero">
         <div class="login-seal">听</div>
-        <h1>把今天的声音<br>听成自己的日语</h1>
+        <h1>工具再强大<br>也无法替代你的努力</h1>
         <p>逐句精听 · 振假名 · 生词本 · 间隔复习</p>
       </div>
       <div class="card login-card">
@@ -126,6 +126,14 @@
         <p class="hint" id="gra-desc">按课查看语法点与例句，联动课文本与生词本。</p>
       </div>
       <button class="btn ghost compact-btn" id="home-gra-btn">打开 →</button>
+    </div>
+
+    <div class="card compact">
+      <div class="compact-main">
+        <h2>生词本资源</h2>
+        <p class="hint" id="nbres-desc">大家共享的生词本，可只读收藏或复制收藏。</p>
+      </div>
+      <button class="btn ghost compact-btn" id="home-nbres-btn">逛逛 →</button>
     </div>
 
     <div class="card compact">
@@ -261,11 +269,22 @@
   </section>
 
   <section class="screen" id="sc-notebook">
+    <div class="nb-tabs" id="nb-tabs">
+      <button class="nb-tab on" id="nb-tab-mine" type="button">
+        <b>我的生词本</b><span class="nb-tab-sub" id="nb-tab-mine-sub"></span>
+      </button>
+      <button class="nb-tab" id="nb-tab-fav" type="button">
+        <b>收藏生词本</b><span class="nb-tab-sub" id="nb-tab-fav-sub"></span>
+      </button>
+      <button class="nb-tab nb-tab-add" id="nb-tab-add" type="button" title="新建生词本">＋</button>
+    </div>
     <div class="card nb-strip" id="nb-strip">
       <div class="nb-strip-main" id="nb-strip-text">生词本</div>
       <div class="nb-strip-btns">
+        <button class="btn ghost" id="nb-share-back" type="button" hidden>← 资源</button>
         <button class="btn ghost" id="nb-strip-btn">更换</button>
-        <span class="nb-tool-sep"></span>
+        <button class="btn ghost nb-share-btn" id="nb-share-btn" type="button" title="把这个生词本共享给所有人">共享</button>
+        <span class="nb-tool-sep" id="nb-tool-sep"></span>
         <button class="btn ghost nb-icon" id="nb-pod-btn" title="用本单元的词和句子生成播客" aria-label="生成播客">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>
         </button>
@@ -277,7 +296,7 @@
         </button>
         <button class="btn ghost nb-icon nb-test" id="nb-test-btn" title="测试本目录全部词（句子挖空为主）" aria-label="测试本目录">测</button>
         <button class="btn ghost nb-icon" id="nb-gra-btn" title="本课语法点与例句" aria-label="本课语法" hidden>法</button>
-        <div class="nb-play-group">
+        <div class="nb-play-group" id="nb-play-group">
           <button class="btn ghost nb-icon" id="nb-play-cfg" title="播放设置" aria-label="播放设置">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h4"/><path d="M12 17h8"/><circle cx="10" cy="17" r="2"/></svg>
           </button>
@@ -297,8 +316,15 @@
     <!-- 目录选择面板紧跟横条：播客面板可能很高（生成中日志+几百行列表），
          放在它下面时点"更换"弹出来的面板在屏幕外，看着像没反应（2026-11-04 报障） -->
     <div class="card nb-pickpanel" id="nbp-panel" hidden>
-      <select id="nbp-nb"></select>
+      <div class="nb-pickrow">
+        <select id="nbp-nb"></select>
+        <button class="nb-mini-add" id="nbp-new-nb" type="button" title="新建生词本">＋生词本</button>
+        <button class="nb-mini-add" id="nbp-new-dir" type="button" title="新建目录">＋目录</button>
+      </div>
       <div class="nb-picklist" id="nbp-list"></div>
+    </div>
+    <div class="card nb-sharepanel" id="nb-sharepanel" hidden>
+      <div id="nb-share-body"></div>
     </div>
     <div id="pod-slot-nb"></div>
     <div class="card nb-nowbar" id="nb-nowbar" hidden>
@@ -313,6 +339,16 @@
     </div>
     <div class="sents" id="nb-words"></div>
     <p class="hint" id="nb-hint" style="margin-top:12px"></p>
+  </section>
+
+  <!-- 生词本资源：大家共享出来的生词本 -->
+  <section class="screen" id="sc-nbres">
+    <div class="card nbres-head">
+      <h2>生词本资源</h2>
+      <p class="hint">大家共享出来的生词本。<b>只读收藏</b>跟着原作者更新；<b>复制收藏</b>得到一份独立的副本，可自由修改。</p>
+    </div>
+    <div id="nbres-list"></div>
+    <p class="hint" id="nbres-hint" style="margin-top:12px"></p>
   </section>
 
   <!-- 语法本 -->
