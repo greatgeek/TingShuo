@@ -5,6 +5,21 @@
 
 // ============ 基础 ============
 const $ = id => document.getElementById(id);
+// 统一细线图标：彩色 emoji 在不同平台观感不一，图标类入口一律用内联 SVG
+const SVG_SPEAK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M17.5 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
+const SVG_HEADPHONES = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13.5" width="4.5" height="7" rx="2"/><rect x="16.5" y="13.5" width="4.5" height="7" rx="2"/></svg>';
+const SVG_BULB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z"/></svg>';
+const SVG_BUSY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10M7 21h10"/><path d="M8 3v3.5c0 1.6 1.5 3.1 4 5.5-2.5 2.4-4 3.9-4 5.5V21"/><path d="M16 3v3.5c0 1.6-1.5 3.1-4 5.5 2.5 2.4 4 3.9 4 5.5V21"/></svg>';
+const SVG_CHEV = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+// 播放/合成按钮：忙碌时临时换成沙漏，结束后恢复按钮原本的图标（不写死 ▶ 或 🔊）
+function markBtnBusy(btn) {
+  if (!btn) return;
+  if (!btn.dataset.idleHtml) btn.dataset.idleHtml = btn.innerHTML;
+  btn.innerHTML = SVG_BUSY;
+}
+function restoreBtnIcon(btn) {
+  if (btn && btn.dataset.idleHtml) btn.innerHTML = btn.dataset.idleHtml;
+}
 const tokenKey = 'ts_token', refreshKey = 'ts_refresh', emailKey = 'ts_email';
 let TOKEN = localStorage.getItem(tokenKey) || '';
 let REFRESH = localStorage.getItem(refreshKey) || '';
@@ -562,7 +577,7 @@ function wclipRender(box, clips, w, opts, state) {
         ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
         <div class="wclip-meta">
           <span class="wclip-src">${esc(src)}</span>
-          <button class="wclip-mini" data-act="audio" title="只听音频">🎧</button>
+          <button class="wclip-mini" data-act="audio" title="只听音频">${SVG_HEADPHONES}</button>
         </div>
       </div>
       ${c.audio_url ? `<audio class="wclip-audio" src="${esc(c.audio_url)}" preload="none"></audio>` : ''}
@@ -1994,7 +2009,7 @@ function renderReviewItem() {
         <div class="bar"><i style="width:${RV_ITEMS.length ? ((RV_IDX) / RV_ITEMS.length * 100) : 0}%"></i></div>
         <span>${RV_IDX + 1} / ${RV_ITEMS.length}</span>
       </div>
-      <button class="rv-play" id="rv-play-btn" data-act="rv-play">${hasAudio ? '▶' : '…'}</button>
+      <button class="rv-play" id="rv-play-btn" data-act="rv-play"${hasAudio ? '' : ' data-noaudio="1"'}>${hasAudio ? '▶' : '…'}</button>
       <div id="rv-detail" style="display:none">
         <div class="rv-text">${rubyHTML(s.ruby_tokens) || esc(s.text)}</div>
         <div class="rv-zh">${esc(s.translation || '')}</div>
@@ -2152,13 +2167,13 @@ function renderLibrary() {
         <div class="txt">${rubyWordHTML(w.surface, w.reading)}</div>
         <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')} <span class="lib-meta">· ${w.lesson_count} 课${w.first_seen ? ' · 首见 ' + w.first_seen : ''}</span></div>
       </div>
-      <button class="word-speak" title="听单词发音">🔊</button>
-      <button class="play" title="展开用法">▾</button>`;
+      <button class="word-speak" title="听单词发音">${SVG_SPEAK}</button>
+      <button class="play" title="展开用法">${SVG_CHEV}</button>`;
     div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.id, e.currentTarget); };
     div.onclick = () => toggleWordUsage(w, div);
     box.appendChild(div);
   });
-  $('lib-hint').textContent = `生词库 · 共 ${LIB_WORDS.length} 词${LIB_Q ? ` · 匹配 ${words.length}` : ''} · 🔊 听词音 · 点词展开短语与句子`;
+  $('lib-hint').textContent = `生词库 · 共 ${LIB_WORDS.length} 词${LIB_Q ? ` · 匹配 ${words.length}` : ''} · 点喇叭听词音 · 点词展开短语与句子`;
 }
 
 // openWordPicker 创建页「从生词库选词」：底部弹出选词层，确认后追加到词单输入框
@@ -2321,13 +2336,13 @@ function wsStopAudio() {
 function wsSpeakWord(wordId, btn, retry) {
   return new Promise(async resolve => {
     try {
-      if (btn) { btn.textContent = '⏳'; }
+      markBtnBusy(btn);
       const url = await wordAudioBlobURL(wordId);
       wsStopAudio();
       WS_AUDIO = new Audio(url);
       const a = WS_AUDIO;
-      WS_AUDIO.onended = () => { if (btn) btn.textContent = '🔊'; resolve(); };
-      WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🔊'; toast('播放失败：音频解码错误'); resolve(); };
+      WS_AUDIO.onended = () => { restoreBtnIcon(btn); resolve(); };
+      WS_AUDIO.onerror = () => { restoreBtnIcon(btn); toast('播放失败：音频解码错误'); resolve(); };
       await playUnlock(a);
       // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
       setTimeout(() => {
@@ -2337,7 +2352,7 @@ function wsSpeakWord(wordId, btn, retry) {
       }, 800);
       setTimeout(() => wsAudioDbg(a, '词'), 900);
     } catch (e) {
-      if (btn) btn.textContent = '🔊';
+      restoreBtnIcon(btn);
       toast('词音失败：' + e.message);
       resolve();
     }
@@ -2347,7 +2362,7 @@ function wsSpeakWord(wordId, btn, retry) {
 // wsPlaySentence 例句点播：有音频直接播，没有先 synthesize 再播
 async function wsPlaySentence(it, btn) {
   try {
-    if (btn) { btn.textContent = '⏳'; }
+    markBtnBusy(btn);
     let audioId = it.audio_id;
     if (!audioId) {
       const r = await api('/audio/synthesize', {
@@ -2359,10 +2374,10 @@ async function wsPlaySentence(it, btn) {
     const url = await audioBlobURL(audioId);
     wsStopAudio();
     WS_AUDIO = new Audio(url);
-    WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; };
+    WS_AUDIO.onended = WS_AUDIO.onerror = () => { restoreBtnIcon(btn); };
     await WS_AUDIO.play();
   } catch (e) {
-    if (btn) btn.textContent = '▶';
+    restoreBtnIcon(btn);
   }
 }
 
@@ -2395,20 +2410,20 @@ async function wsPlayQuizSent(btn) {
   const q = w && w.quiz;
   if (!q || !q.audio) return;
   try {
-    if (btn) btn.textContent = '⏳';
+    markBtnBusy(btn);
     if (q.audio.kind === 'say') {
       await sayAudio(q.audio.text, btn, false, q.audio.ruby);
-      if (btn) btn.textContent = '🎧'; // sayAudio 结束会写回 ▶，句子按钮保持 🎧
+      restoreBtnIcon(btn);
       return;
     }
     wsStopAudio();
     const url = await audioBlobURL(q.audio.id);
     WS_AUDIO = new Audio(url);
-    WS_AUDIO.onended = WS_AUDIO.onerror = () => { if (btn) btn.textContent = '🎧'; };
+    WS_AUDIO.onended = WS_AUDIO.onerror = () => { restoreBtnIcon(btn); };
     await playUnlock(WS_AUDIO);
   } catch (e) {
-    //  formerly 静默吞错：用户点 🎧 没声音也没提示，无法报障定位（2026-11-06）
-    if (btn) btn.textContent = '🎧';
+    //  静默吞错会让用户点耳机没声音也没提示，无法报障定位（2026-11-06）
+    restoreBtnIcon(btn);
     toast('句子播放失败：' + e.message);
   }
 }
@@ -2432,17 +2447,17 @@ async function wsPrefetchSent() {
 
 function wsFrontQuiz(w) {
   const q = w.quiz;
-  const play = `<button class="ws-mini ws-playbtn" data-act="ws-sent" title="播放句子">🎧</button>`;
+  const play = `<button class="ws-mini ws-playbtn" data-act="ws-sent" title="播放句子">${SVG_HEADPHONES}</button>`;
   const hint = q.hint != null
     ? `<details class="ws-hint"><summary>显示中文语境提示</summary><p>${esc(q.hint)}</p></details>`
     : '';
   if (q.type === 'pick_mean') {
     return `<div class="ws-word-line"><span class="ws-word-txt">${esc(w.surface)}</span>` +
-      `<button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button></div>
+      `<button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button></div>
       <p class="hint">看词选义：它的中文意思是？</p>${wsOptsHTML(q)}`;
   }
   if (q.type === 'hear_mean') {
-    return `<div class="ws-word-line"><button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button></div>
+    return `<div class="ws-word-line"><button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button></div>
       <p class="hint">听词选义：听音选中文意思</p>${wsOptsHTML(q)}`;
   }
   if (q.type === 'cloze_pick') {
@@ -2459,7 +2474,7 @@ function wsFrontQuiz(w) {
 function wsFrontFlip(w) {
   return `<div class="ws-word-line">
       <span class="ws-word-txt">${esc(w.surface)}</span>
-      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button>
     </div>
     <p class="hint">回想它的读音和意思，然后翻面</p>
     <button class="btn ghost" data-act="ws-flip">翻面</button>`;
@@ -2468,7 +2483,7 @@ function wsFrontFlip(w) {
 function wsBackFlipHTML(w) {
   return `<div class="ws-word-line">
       ${rubyWordHTML(w.surface, w.reading)}
-      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button>
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
@@ -2496,8 +2511,8 @@ function wsBackQuizHTML(w, ok, chosen) {
   return `<div class="ws-mark ${ok ? 'ok' : 'no'}">${ok ? '答对了' : '答错了'}</div>
     <div class="ws-word-line">
       ${rubyWordHTML(w.surface, w.reading)}
-      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">🔊</button>
-      ${q.audio ? `<button class="ws-mini" data-act="ws-sent" title="听整句">🎧</button>` : ''}
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button>
+      ${q.audio ? `<button class="ws-mini" data-act="ws-sent" title="听整句">${SVG_HEADPHONES}</button>` : ''}
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${q.tokens ? `<div class="ws-cloze ws-cloze-full">${wsTokensFullHTML(q, w)}</div>` : ''}
@@ -3088,10 +3103,10 @@ function renderNbWords() {
       <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : rubyWordHTML(w.surface, w.reading)}</div>
       <div class="zh">${esc(w.meaning || '')} ${esc(w.pos || '')}</div></div>` +
       (shared ? '' :
-      `<button class="word-assoc-btn" title="联想近义词、反义词、关联词"><span class="ic">💡</span><span class="tx">联想</span></button>
-      <button class="word-clip-btn" title="影视原声例句"><span class="ic">🎬</span><span class="tx">影视原声</span></button>`) +
-      `<button class="word-speak" title="听单词发音">🔊</button>
-      <button class="play" title="展开例句">▾</button>`;
+      `<button class="word-assoc-btn" title="联想近义词、反义词、关联词"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z"/></svg></span><span class="tx">联想</span></button>
+      <button class="word-clip-btn" title="影视原声例句"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></svg></span><span class="tx">影视原声</span></button>`) +
+      `<button class="word-speak" title="听单词发音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M17.5 6.5a7.5 7.5 0 0 1 0 11"/></svg></button>
+      <button class="play" title="展开例句"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>`;
     if (!shared) {
       div.querySelector('.word-assoc-btn').onclick = (e) => { e.stopPropagation(); nbToggleAssoc(w, div, e.currentTarget); };
       div.querySelector('.word-clip-btn').onclick = (e) => { e.stopPropagation(); nbSelectWord(w, div); nbToggleClips(w, div); };
@@ -3106,8 +3121,8 @@ function renderNbWords() {
     box.appendChild(div);
   });
   $('nb-hint').textContent = shared
-    ? `共 ${items.length} 词 · 只读浏览 · 🔊 听词音 · 点词展开例句（▶ 点播）`
-    : `共 ${items.length} 词 · 🔊 听词音 · 💡 联想 · 🎬 影视原声 · 点词展开例句（▶ 点播）`;
+    ? `共 ${items.length} 词 · 只读浏览 · 听词音 · 点词展开例句（▶ 点播）`
+    : `共 ${items.length} 词 · 听词音 · 联想 · 影视原声 · 点词展开例句（▶ 点播）`;
 }
 
 // ---- 共享生词本：只读浏览 / 共享开关 ----
@@ -3496,7 +3511,7 @@ function nbToggleAssoc(w, div, btn) {
   pop._btn = btn;
   pop.innerHTML = `
     <div class="assoc-head">
-      <span class="assoc-title"><span class="ic">💡</span>联想</span>
+      <span class="assoc-title"><span class="ic">${SVG_BULB}</span>联想</span>
       <button class="assoc-x" title="关闭">✕</button>
     </div>
     <div class="assoc-sub">${esc(w.surface)}${w.reading ? '（' + esc(w.reading) + '）' : ''}${w.meaning ? ' · ' + esc(w.meaning) : ''}</div>
@@ -3551,7 +3566,7 @@ function assocRender(pop, w, groups) {
           <span class="am">${esc(it.meaning || '')}</span>
           <span class="ap">${mem ? '✓' : '＋'}</span>
         </button>
-        <button class="assoc-say" data-g="${key}" data-i="${i}" title="听发音" aria-label="听发音">🔊</button>
+        <button class="assoc-say" data-g="${key}" data-i="${i}" title="听发音" aria-label="听发音">${SVG_SPEAK}</button>
       </div>`;
     });
     html += '</div></div>';
@@ -3878,7 +3893,7 @@ function rubySpoken(text, ruby) {
 // ruby 传入时按注音合成，纠 Azure 多音字误读（如 町→ちょう）；缓存键带读音避免命中旧误读音频
 async function sayAudio(text, btn, retry, ruby) {
   try {
-    if (btn) btn.textContent = '⏳';
+    markBtnBusy(btn);
     const spoken = rubySpoken(text, ruby);
     const useRuby = !!spoken;
     const key = 'say:' + text + (useRuby ? '|rb:' + spoken : '');
@@ -3901,8 +3916,8 @@ async function sayAudio(text, btn, retry, ruby) {
     wsStopAudio();
     WS_AUDIO = new Audio(url);
     const a = WS_AUDIO;
-    WS_AUDIO.onended = () => { if (btn) btn.textContent = '▶'; };
-    WS_AUDIO.onerror = () => { if (btn) btn.textContent = '▶'; toast('播放失败：音频解码错误'); };
+    WS_AUDIO.onended = () => { restoreBtnIcon(btn); };
+    WS_AUDIO.onerror = () => { restoreBtnIcon(btn); toast('播放失败：音频解码错误'); };
     await playUnlock(a);
     // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
     setTimeout(() => {
@@ -3912,7 +3927,7 @@ async function sayAudio(text, btn, retry, ruby) {
     }, 800);
     setTimeout(() => wsAudioDbg(a, '句'), 900);
   } catch (e) {
-    if (btn) btn.textContent = '▶';
+    restoreBtnIcon(btn);
     toast('点播失败：' + e.message);
   }
 }
@@ -4686,7 +4701,7 @@ function graRenderBody(blocks, p) {
     if (b.type === 'table') {
       const cell = c => {
         if (c && typeof c === 'object') {
-          const say = c.say ? `<button class="gra-cell-say" data-say="${esc(c.say)}" title="朗读" aria-label="朗读 ${esc(c.t)}">🔊</button>` : '';
+          const say = c.say ? `<button class="gra-cell-say" data-say="${esc(c.say)}" title="朗读" aria-label="朗读 ${esc(c.t)}">${SVG_SPEAK}</button>` : '';
           return `<span class="gra-cell-t">${esc(c.t)}</span>${say}`;
         }
         return esc(c);
@@ -4718,7 +4733,7 @@ function graExampleHTML(p, e) {
     </div>
     <div class="gra-ex-actions">
       <button class="ai-ask gra-ex-ask" title="就这句例句问 AI">问AI</button>
-      <button class="gra-say" title="朗读例句">🔊</button>
+      <button class="gra-say" title="朗读例句">${SVG_SPEAK}</button>
     </div>
   </div>`;
 }
@@ -4749,7 +4764,7 @@ function renderGraDetail() {
       <h2>${esc(GRAM.title)}</h2>
       <button class="btn ghost rec-gra-btn" id="gra-test-lesson">测本课</button>
     </div>
-    <p class="hint">点知识点展开 · 🔊 朗读例句与词表 · 「原声」「生词本」可直接跳到对应位置</p>
+    <p class="hint">点知识点展开 · 点喇叭朗读例句与词表 · 「原声」「生词本」可直接跳到对应位置</p>
   </div>`;
   for (const [key, label] of secs) {
     const list = points.filter(p => (p.section || 'grammar') === key);
@@ -4970,7 +4985,7 @@ function qzRender() {
     </button>`).join('');
   $('quiz-body').innerHTML = `<div class="card quiz-card">
     <div class="quiz-meta"><span class="quiz-kind k-${esc(q.kind)}">${QZ_KIND[q.kind] || esc(q.kind)}</span></div>
-    <div class="quiz-stem${stemSay ? ' has-say' : ''}">${qzStemHTML(q)}${stemSay ? '<button class="gra-say quiz-stem-say" title="朗读句子" aria-label="朗读句子">🔊</button>' : ''}</div>
+    <div class="quiz-stem${stemSay ? ' has-say' : ''}">${qzStemHTML(q)}${stemSay ? `<button class="gra-say quiz-stem-say" title="朗读句子" aria-label="朗读句子">${SVG_SPEAK}</button>` : ''}</div>
     <div class="quiz-opts">${opts}</div>
     <div id="quiz-feedback"></div>
   </div>`;
@@ -5010,7 +5025,7 @@ function qzPick(i) {
       <div class="quiz-src-label">原句</div>
       <div class="quiz-src-line">${rubyHTML(q.source.ruby_tokens) || esc(q.source.text)}</div>
       ${q.source.translation ? `<div class="quiz-src-zh">${esc(q.source.translation)}</div>` : ''}
-      <button class="gra-say quiz-src-say" title="朗读原句" aria-label="朗读原句">🔊</button>
+      <button class="gra-say quiz-src-say" title="朗读原句" aria-label="朗读原句">${SVG_SPEAK}</button>
     </div>` : '';
   const last = QZ.i + 1 >= QZ.questions.length;
   $('quiz-feedback').innerHTML = `<div class="quiz-verdict ${ok ? 'ok' : 'bad'}">${ok ? '✓ 答对了' : '✗ 答错了，正确答案是 ' + 'ABCD'[q.answer]}</div>
