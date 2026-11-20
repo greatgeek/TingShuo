@@ -100,6 +100,84 @@ func TestBlankTokensMissingSurface(t *testing.T) {
 	}
 }
 
+// 词面先出现在别的词里（味噌汁 的 味、花瓶 的 花）时，要挖独立词那一处，
+// 否则音频在空白处念的是复合词读音，和答案对不上（2026-11-20 报障）。
+func TestBlankTokensSkipsCompoundOccurrence(t *testing.T) {
+	raw := ruby(t, [][2]string{{"この", ""}, {"味噌汁", "みそしる"}, {"の", ""}, {"味", "あじ"}, {"が", ""}, {"濃い", "こい"}, {"です", ""}, {"ね", ""}, {"。", ""}})
+	got := blankTokens(raw, "この味噌汁の味が濃いですね。", "味", "あじ")
+	if got == nil {
+		t.Fatal("nil tokens")
+	}
+	blanks, texts := 0, ""
+	for _, tk := range got {
+		if tk.Blank {
+			blanks++
+			continue
+		}
+		texts += tk.Text
+	}
+	if blanks != 1 || texts != "この味噌汁のが濃いですね。" {
+		t.Fatalf("blank=%d texts=%q tokens=%+v", blanks, texts, got)
+	}
+
+	raw2 := ruby(t, [][2]string{{"花瓶", "かびん"}, {"に", ""}, {"花", "はな"}, {"を", ""}, {"飾り", "かざり"}, {"ます", ""}, {"。", ""}})
+	got2 := blankTokens(raw2, "花瓶に花を飾ります。", "花", "はな")
+	if got2 == nil {
+		t.Fatal("nil tokens (花)")
+	}
+	texts = ""
+	for _, tk := range got2 {
+		if !tk.Blank {
+			texts += tk.Text
+		}
+	}
+	if texts != "花瓶にを飾ります。" {
+		t.Fatalf("花 句拼接 = %q", texts)
+	}
+}
+
+// 全句只有读音对不上的复合词片段（体/からだ 出现在 体調/たいちょう）→ 不出挖空题。
+func TestBlankTokensRejectsReadingMismatch(t *testing.T) {
+	raw := ruby(t, [][2]string{{"今日", "きょう"}, {"は", ""}, {"体調", "たいちょう"}, {"が", ""}, {"悪い", "わるい"}, {"です", ""}, {"ね", ""}, {"。", ""}})
+	if got := blankTokens(raw, "今日は体調が悪いですね。", "体", "からだ"); got != nil {
+		t.Errorf("读音对不上应返回 nil, 得 %+v", got)
+	}
+}
+
+// 读音写法归一化：多读音（いき・ゆき）与音调符号（まね ⓪）不应误杀正常挖空。
+func TestBlankTokensReadingVariants(t *testing.T) {
+	raw := ruby(t, [][2]string{{"会社", "かいしゃ"}, {"へ", ""}, {"行きます", "いきます"}, {"。", ""}})
+	if got := blankTokens(raw, "会社へ行きます。", "行き", "いき・ゆき"); got == nil {
+		t.Error("いき・ゆき 应能匹配 いきます")
+	}
+	raw2 := ruby(t, [][2]string{{"弟", "おとうと"}, {"は", ""}, {"真似して", "まねして"}, {"います", ""}, {"。", ""}})
+	if got := blankTokens(raw2, "弟は真似しています。", "真似", "まね ⓪"); got == nil {
+		t.Error("まね ⓪ 应能匹配 まねして")
+	}
+}
+
+// 跨句挑选句子的依据：独立词元(3) > 读音可切出(2) > 读音缺失(1) > 对不上(0)。
+func TestBlankTokensScored(t *testing.T) {
+	// 复合词在前、独立词在后：仍挖独立词，保证词义和语音都是目标词
+	raw := ruby(t, [][2]string{{"本番", "ほんばん"}, {"と", ""}, {"この", ""}, {"本", "ほん"}})
+	tokens, score := blankTokensScored(raw, "本番とこの本", "本", "ほん")
+	if score != scoreExact || tokens == nil {
+		t.Fatalf("score = %d, 想 %d: %+v", score, scoreExact, tokens)
+	}
+	if tokens[0].Text != "本番" || tokens[0].Blank {
+		t.Errorf("本番 的 本 不应被挖: %+v", tokens[0])
+	}
+
+	// 只在复合词里出现且读音切得出：兼容分，只能兜底用
+	raw2 := ruby(t, [][2]string{{"日本", "にほん"}, {"です", ""}})
+	if _, sc := blankTokensScored(raw2, "日本です", "本", "ほん"); sc != scoreCompat {
+		t.Errorf("日本/にほん score = %d, 想 %d", sc, scoreCompat)
+	}
+	if _, sc := blankTokensScored(raw2, "日本です", "本", "にっぽん"); sc != scoreBad {
+		t.Errorf("读音对不上应 scoreBad, 得 %d", sc)
+	}
+}
+
 // 句式条目（〜さん/…）不进听力通道：念出来不明所以（2026-11-06 报障）
 func TestPatternWord(t *testing.T) {
 	for _, s := range []string{"〜さんのおかげです", "〜てください", "…でもいい"} {

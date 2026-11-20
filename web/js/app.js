@@ -2270,6 +2270,8 @@ function wsSetMode(m) {
 // WS_SRC 会话来源：new/due 走记忆卡池，dir 走生词本目录整版
 let WS_SRC = { kind: 'new' };
 let WS_DONE = new Set(); // 本会话已计分的词 id：切模式不重复答
+let WS_WRONG = new Map(); // 本轮答错的词 id→词条：结束页「再测错词」用
+let WS_PRACTICE = false;  // 当前这一轮是错题重测：只练不落库
 
 async function wsLoadItems() {
   const path = WS_SRC.kind === 'dir'
@@ -2283,7 +2285,11 @@ async function wsRestart(keepProgress) {
   const from = keepProgress ? WS_IDX : 0;
   const pass = keepProgress ? WS_PASS : 0;
   const fail = keepProgress ? WS_FAIL : 0;
-  if (!keepProgress) WS_DONE = new Set();
+  if (!keepProgress) {
+    WS_DONE = new Set();
+    WS_WRONG = new Map();
+    WS_PRACTICE = false;
+  }
   try {
     WS_ITEMS = await wsLoadItems();
   } catch (e) { alert(e.message); return; }
@@ -2297,6 +2303,8 @@ async function wsRestart(keepProgress) {
   WS_IDX = wsNextUndone(Math.min(from, WS_ITEMS.length - 1));
   go('wordstudy');
   renderWordStudyItem();
+  // 入场即播一次题面音频，行为与「下一词」一致（入口点击仍在手势窗口内）
+  wsAutoPlayFront();
 }
 
 // wsNextUndone 从 i 起找第一个本会话没答过的词；全答完返回 items.length
@@ -2549,7 +2557,8 @@ function renderWordStudyItem() {
   box.querySelectorAll('.ws-opt').forEach(b => { b.onclick = () => wsPick(+b.dataset.i); });
   const inp = $('ws-type-in');
   if (inp) inp.onkeydown = e => { if (e.key === 'Enter') wsTypeConfirm(); };
-  // 听力题面不自动播（无手势易被安卓静音卡死）：只预热缓存，等用户点 🎧
+  // 渲染时预热题面音频缓存；入场与「下一词」由 wsAutoPlayFront 播一次，
+  // 自动播失败（无手势被拦）时用户点 🎧 走已预热缓存
   if (q.type === 'hear_mean') wsPrefetchWord(w.id);
   if (q.type === 'cloze_pick' || q.type === 'cloze_type') wsPrefetchSent();
 }
@@ -2604,15 +2613,24 @@ async function wsFlip() {
   } catch { nb.innerHTML = ''; }
 }
 
-// wsGrade 只提交不翻页；hint_used 让服务端走弱通过
+// wsGrade 只提交不翻页；hint_used 让服务端走弱通过。
+// 错题重测轮只练不落库：不动复习排期，也不记错次。
 async function wsGrade(result) {
   const w = WS_ITEMS[WS_IDX];
-  await api('/word-study/' + w.id + '/result', {
-    method: 'POST',
-    body: JSON.stringify({ result, hint_used: WS_HINT_USED }),
-  });
+  if (!WS_PRACTICE) {
+    await api('/word-study/' + w.id + '/result', {
+      method: 'POST',
+      body: JSON.stringify({ result, hint_used: WS_HINT_USED }),
+    });
+  }
   WS_DONE.add(w.id);
-  if (result === 'pass') WS_PASS++; else WS_FAIL++;
+  if (result === 'pass') {
+    WS_PASS++;
+    WS_WRONG.delete(w.id);
+  } else {
+    WS_FAIL++;
+    WS_WRONG.set(w.id, w);
+  }
 }
 
 function wsShowReview(w, ok, chosen) {
@@ -2623,8 +2641,8 @@ function wsShowReview(w, ok, chosen) {
   loadWordClips(w, $('ws-clips'), { title: '原声助记' });
 }
 
-// wsAutoPlayFront 下一词落位后主动播一次题面音频：听力题播句子，其余播单词。
-// 只在「下一词」点击手势里调用；首次渲染不自动播（无手势时安卓易被静音卡住）。
+// wsAutoPlayFront 题面出现后主动播一次音频：听力题播句子，其余播单词。
+// 入场（新学/复习/目录测/切模式）与「下一词」都调用；无手势时 playUnlock 兜底。
 function wsAutoPlayFront() {
   if (WS_IDX >= WS_ITEMS.length) return;
   const it = WS_ITEMS[WS_IDX];
@@ -2700,7 +2718,11 @@ function wsQuit() {
 
 function renderWordStudyDone() {
   const total = WS_PASS + WS_FAIL;
-  const label = WS_MODE === 'new' ? '新学完成' : WS_MODE === 'dir' ? '目录测试完成' : '复习完成';
+  const label = WS_PRACTICE ? '错题重测完成'
+    : WS_MODE === 'new' ? '新学完成' : WS_MODE === 'dir' ? '目录测试完成' : '复习完成';
+  const note = WS_PRACTICE
+    ? '本轮是练习，成绩不计入复习排期。'
+    : '认识的词明天到期，间隔会逐次翻倍；不认识的明天就会再出现。';
   $('wordstudy-content').innerHTML = `
     <div class="card rv-done-card">
       <h2>${label}</h2>
@@ -2709,10 +2731,40 @@ function renderWordStudyDone() {
         <div class="rv-stat fail"><div class="n">${WS_FAIL}</div><div class="l">不认识</div></div>
         <div class="rv-stat"><div class="n">${total}</div><div class="l">总计</div></div>
       </div>
-      <p class="hint" style="text-align:center;margin-top:6px">认识的词明天到期，间隔会逐次翻倍；不认识的明天就会再出现。</p>
-      <button class="btn accent" data-act="ws-quit">返回首页</button>
+      <p class="hint" style="text-align:center;margin-top:6px">${note}</p>
+      ${WS_WRONG.size ? `<button class="btn accent" data-act="ws-retry-wrong">再测错词（${WS_WRONG.size}）</button>` : ''}
+      <button class="btn ${WS_WRONG.size ? 'ghost' : 'accent'}" data-act="ws-quit">返回首页</button>
     </div>`;
   loadWordStudyStatus();
+}
+
+// wsRetryWrong 结束页「再测错词」：只把本轮答错的词再测一轮，成绩不落库。
+// 选项位置重新洗牌，避免沿用上一轮记住的答案位置。
+function wsRetryWrong() {
+  const items = Array.from(WS_WRONG.values());
+  if (!items.length) return;
+  items.forEach(shuffleQuizOptions);
+  WS_ITEMS = items;
+  WS_IDX = 0;
+  WS_PASS = 0;
+  WS_FAIL = 0;
+  WS_DONE = new Set();
+  WS_WRONG = new Map();
+  WS_PRACTICE = true;
+  go('wordstudy');
+  renderWordStudyItem();
+  wsAutoPlayFront();
+}
+
+function shuffleQuizOptions(w) {
+  const q = w && w.quiz;
+  if (!q || !Array.isArray(q.options) || q.options.length < 2) return;
+  const right = q.options[q.answer];
+  for (let i = q.options.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [q.options[i], q.options[j]] = [q.options[j], q.options[i]];
+  }
+  q.answer = q.options.indexOf(right);
 }
 
 // ============ 生词本浏览 ============
@@ -7055,6 +7107,7 @@ document.addEventListener('click', (e) => {
     case 'ws-fail': wsResult('fail'); break;
     case 'ws-pass': wsResult('pass'); break;
     case 'ws-next': wsNext(); break;
+    case 'ws-retry-wrong': wsRetryWrong(); break;
     case 'ws-quit': wsQuit(); break;
   }
 });

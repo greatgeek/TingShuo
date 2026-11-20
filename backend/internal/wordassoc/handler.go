@@ -130,15 +130,44 @@ func (h *Handler) loadCache(ctx context.Context, wordID string) (assocGroups, bo
 	if g.Related == nil {
 		g.Related = []assocItem{}
 	}
-	// 旧缓存自愈：早期大模型读音偶有漏读（家電店→かいてん），按词典校正后回写，
-	// 免清缓存也能立刻纠正注音与发音。
-	if correctGroupReadings(&g) {
+	// 旧缓存自愈：早期大模型读音偶有漏读（家電店→かいてん），
+	// 也会混入中文词（尤其是/特别）；按词典校正剔除后回写，免清缓存即刻生效。
+	if healCache(&g) {
 		if b, err := json.Marshal(g); err == nil {
 			_, _ = h.pool.Exec(ctx,
 				`UPDATE word_association SET payload = $2 WHERE word_id = $1`, wordID, b)
 		}
 	}
+	// 全部条目被剔除时视为未命中，重新生成
+	if len(g.Synonyms)+len(g.Antonyms)+len(g.Related) == 0 {
+		return assocGroups{}, false
+	}
 	return g, true
+}
+
+// pruneInvalid 剔除词形不是真实日语词的缓存条目，返回是否有改动。
+func pruneInvalid(g *assocGroups) bool {
+	changed := false
+	for _, group := range []*[]assocItem{&g.Synonyms, &g.Antonyms, &g.Related} {
+		kept := (*group)[:0]
+		for _, it := range *group {
+			if !generate.IsJapaneseWord(it.Surface) {
+				changed = true
+				continue
+			}
+			kept = append(kept, it)
+		}
+		*group = kept
+	}
+	return changed
+}
+
+// healCache 剔除中文词并校正读音，返回是否有改动。
+// 两步必须都执行：早期 || 短路会让同一条缓存先删词、下一轮才改读音。
+func healCache(g *assocGroups) bool {
+	pruned := pruneInvalid(g)
+	corrected := correctGroupReadings(g)
+	return pruned || corrected
 }
 
 // correctReading 用词典修正大模型漏读的读音（家電店 かいてん→かでんてん）；
@@ -180,8 +209,8 @@ func (h *Handler) fetch(ctx context.Context, surface, reading, pos, meaning stri
 2. antonyms：反义词（意思相反的日语词），没有明确反义词时返回空数组；
 3. related：联想词（常见搭配、同一场景或主题、常一起出现的日语词）；
 4. 每组最多 5 个；词须为日语常用词（动词给辞书形），排除目标词本身及其活用形；
-5. 词形必须是日语标准表记（汉字或假名），不要输出繁体中文或中文词语（例如「考試」应写「試験」）；
-6. 每个词给出平假名读音 reading（片假名词可用片假名）与不超过 12 字的中文释义 meaning。
+5. 词形必须是日语词的标准表记（汉字或假名），绝不能输出中文词（简体/繁体都不行）：「尤其是」「特别是」「特别」是中文，对应的日语是「殊に」「取り分け」；「考試」应写「試験」；
+6. 每个词给出平假名读音 reading（片假名词可用片假名），必须是整词的标准读音，不能按单个汉字生拼（如 好物→こうぶつ，不是このもの）；meaning 不超过 12 字。
 只输出 JSON，不要解释：
 {"synonyms":[{"surface":"...","reading":"...","meaning":"..."}],"antonyms":[...],"related":[...]}`, info)
 
@@ -230,7 +259,7 @@ func (h *Handler) verify(ctx context.Context, source string, g *assocGroups) (in
 		return 0, 0
 	}
 	prompt := fmt.Sprintf(`判断下面每个候选词能否作为日语学习材料。目标词：%s
-逐项检查：①是否为真实存在的日语词（排除生造词、拼写错误）；②词形是否为日语表记（排除中文词）；③读音是否符合该词、且逐字覆盖词形不得漏读（如 家電店→かでんてん，不是かいてん）；④是否与目标词确实相关。
+逐项检查：①是否为真实存在的日语词（排除生造词、拼写错误）；②词形是否为日语词，中文词一律有问题（如「尤其是」「特别是」「特别」「考试」）；③读音是否为整词标准读音（好物→こうぶつ，不是このもの）、且逐字覆盖词形不得漏读（家電店→かでんてん，不是かいてん）；④是否与目标词确实相关。
 只输出存在问题的序号 JSON 数组（如 [2,5]）；都没问题输出 []，不确定的不要标，不要解释。
 %s`, source, strings.Join(lines, "\n"))
 	raw, pt, ct, err := h.client.ChatJSONNoThinking(ctx, prompt)
@@ -282,7 +311,8 @@ func sanitizeItems(src []assocItem, sourceSurface string, seen map[string]bool, 
 		s := strings.TrimSpace(it.Surface)
 		r := strings.TrimSpace(it.Reading)
 		m := strings.TrimSpace(it.Meaning)
-		if s == "" || s == sourceSurface || runeLen(s) > 20 || !hasJapanese(s) {
+		if s == "" || s == sourceSurface || runeLen(s) > 20 || !hasJapanese(s) ||
+			!generate.IsJapaneseWord(s) {
 			continue
 		}
 		if r == "" {
