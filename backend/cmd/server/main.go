@@ -26,6 +26,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/podcast"
 	"github.com/greatgeek/TingShuo/backend/internal/recitation"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
+	"github.com/greatgeek/TingShuo/backend/internal/study"
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
 	"github.com/greatgeek/TingShuo/backend/internal/word"
@@ -188,6 +189,14 @@ func run() error {
 			sec.Post("/recitation/reading", recH.Reading)
 			sec.Get("/recitation/lessons/{id}/audio", recH.Audio)
 			sec.Post("/recitation/lessons/{id}/progress", recH.Progress)
+
+			stH := study.NewHandler(pool)
+			sec.Post("/study/ping", stH.Ping)
+			sec.Get("/study/overview", stH.Overview)
+			sec.Get("/study/calendar", stH.Calendar)
+			sec.Get("/study/day/{date}", stH.Day)
+			sec.Get("/study/settings", stH.GetSettings)
+			sec.Put("/study/settings", stH.PutSettings)
 
 			gpH := grammar.NewHandler(pool)
 			sec.Get("/grammar/lessons", gpH.Lessons)

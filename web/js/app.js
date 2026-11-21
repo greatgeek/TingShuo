@@ -5,6 +5,11 @@
 
 // ============ 基础 ============
 const $ = id => document.getElementById(id);
+// 本地日期（toISOString 是 UTC，零点后到早上八点前会算成前一天）
+function localDay() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 // 统一细线图标：彩色 emoji 在不同平台观感不一，图标类入口一律用内联 SVG
 const SVG_SPEAK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M17.5 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
 const SVG_HEADPHONES = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13.5" width="4.5" height="7" rx="2"/><rect x="16.5" y="13.5" width="4.5" height="7" rx="2"/></svg>';
@@ -47,6 +52,7 @@ const NAV_PARENT = {
   library: 'home', wordstudy: 'home', notebook: 'home', nbres: 'home',
   recite: 'home', 'recite-play': 'recite',
   grammar: 'home', quiz: 'grammar',
+  study: 'home',
   aiask: 'notebook',
 };
 let CUR_SCREEN = 'login';
@@ -72,6 +78,7 @@ function applyScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   $('sc-' + name).classList.add('on');
   if (name === 'notebook') nbHeadReset();
+  stOnScreen(name);
   updateBackBtn();
 }
 
@@ -1027,7 +1034,7 @@ async function resumeActiveGen() {
 // loadHome 回到首页枢纽：今日状态 + 历史课程入口（学习屏的返回落点）
 async function loadHome() {
   if (!TOKEN) { go('login'); return; } // 未登录防御：绝不停留在需鉴权的屏
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
   const heroDate = (d) => d.slice(5).replace('-', '.');
   let lessons = [];
   try {
@@ -1193,7 +1200,7 @@ async function submitWords() {
   go('gen');
   try {
     // 1. 建课/复用（同日词单一致 → 直接复用；仅换了词单才确认删课重做）
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDay();
     const buildBody = () => JSON.stringify({
       lesson_date: today, words,
       params: { scenes: ['便利店', '车站', '家'], level: $('sel-level').value },
@@ -7065,6 +7072,446 @@ async function podWatch(jobId) {
   $('pod-gen').disabled = false;
 }
 
+// ============ 学习足迹 ============
+// 计时口径：只在前台学习屏（页面可见 + 窗口聚焦），且 2 分钟内有交互或有媒体在播。
+// 每 20 秒发一次心跳，服务端按距上次计分的间隔累加（多设备并集去重）。
+const ST_FEATURE_LABEL = {
+  learn: '课程学习', review: '句子复习', library: '生词库', wordstudy: '背词',
+  aiask: '问AI', notebook: '生词本', grammar: '语法本', quiz: '语法测验',
+  recite: '课文本', 'recite-play': '课文练习', nbres: '生词本资源',
+};
+const ST_SCREENS = new Set(Object.keys(ST_FEATURE_LABEL));
+const ST_GOALS = [10, 15, 20, 30, 45, 60, 90, 120];
+const ST_MILESTONES = [
+  { key: 'hours_10', label: '累计 10 小时', kind: 'hours', target: 10 * 3600 },
+  { key: 'hours_50', label: '累计 50 小时', kind: 'hours', target: 50 * 3600 },
+  { key: 'hours_100', label: '累计 100 小时', kind: 'hours', target: 100 * 3600 },
+  { key: 'hours_200', label: '累计 200 小时', kind: 'hours', target: 200 * 3600 },
+  { key: 'hours_500', label: '累计 500 小时', kind: 'hours', target: 500 * 3600 },
+  { key: 'hours_1000', label: '累计 1000 小时', kind: 'hours', target: 1000 * 3600 },
+  { key: 'streak_7', label: '连续 7 天', kind: 'days', target: 7 },
+  { key: 'streak_30', label: '连续 30 天', kind: 'days', target: 30 },
+  { key: 'streak_100', label: '连续 100 天', kind: 'days', target: 100 },
+  { key: 'streak_365', label: '连续 365 天', kind: 'days', target: 365 },
+];
+const ST = {
+  ov: null, year: 0, month: 0, view: 'month', days: {}, selected: '',
+  lastAct: 0, lastPing: 0, goalToasted: false,
+};
+
+function stPad(n) { return String(n).padStart(2, '0'); }
+function stFmt(sec) {
+  const m = Math.max(0, Math.round((sec || 0) / 60));
+  if (m < 60) return m + ' 分钟';
+  const h = Math.floor(m / 60), r = m % 60;
+  return r ? h + ' 小时 ' + r + ' 分' : h + ' 小时';
+}
+function stHours(sec) {
+  const h = (sec || 0) / 3600;
+  if (h <= 0) return '0';
+  return h >= 100 ? String(Math.round(h)) : String(Math.round(h * 10) / 10);
+}
+function stMileLabel(key) {
+  const it = ST_MILESTONES.find(x => x.key === key);
+  return it ? it.label : key;
+}
+function stPct(ratio) { return Math.round(Math.max(0, Math.min(1, ratio || 0)) * 100) + '%'; }
+function stRing(root, ratio) {
+  if (!root) return;
+  const c = root.querySelector('.st-ring-fg');
+  if (!c) return;
+  const circ = 2 * Math.PI * c.r.baseVal.value;
+  c.style.strokeDasharray = String(circ);
+  c.style.strokeDashoffset = String(circ * (1 - Math.max(0, Math.min(1, ratio || 0))));
+}
+function stLevel(sec) {
+  const m = (sec || 0) / 60;
+  if (m <= 0) return 0;
+  if (m < 15) return 1;
+  if (m < 30) return 2;
+  if (m < 60) return 3;
+  if (m < 120) return 4;
+  return 5;
+}
+function stDate(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日';
+}
+
+function stNoteActivity() { ST.lastAct = Date.now(); }
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev =>
+  addEventListener(ev, stNoteActivity, { passive: true, capture: true }));
+
+// 播放状态取自所有调用过 play() 的媒体：audio 多数是 new Audio() 的分离元素，
+// 不在 DOM 里，querySelectorAll 看不到。
+const ST_MEDIA = new Set();
+const stNativePlay = HTMLMediaElement.prototype.play;
+HTMLMediaElement.prototype.play = function () {
+  ST_MEDIA.add(this);
+  return stNativePlay.apply(this, arguments);
+};
+function stMediaPlaying() {
+  let live = false;
+  for (const el of ST_MEDIA) {
+    if (el.paused || el.ended) { ST_MEDIA.delete(el); continue; }
+    if (el.readyState > 2) live = true;
+  }
+  return live;
+}
+function stAllowed() {
+  if (!TOKEN || !ST_SCREENS.has(CUR_SCREEN)) return false;
+  if (document.visibilityState !== 'visible' || !document.hasFocus()) return false;
+  return Date.now() - ST.lastAct < 120000 || stMediaPlaying();
+}
+// 换屏后重新起算 20 秒：短暂停留的页面不记时长
+function stOnScreen() { ST.lastPing = Date.now(); }
+setInterval(() => {
+  if (!stAllowed()) { ST.lastPing = Date.now(); return; }
+  if (Date.now() - ST.lastPing < 20000) return;
+  stPing();
+}, 5000);
+
+async function stPing() {
+  const feature = CUR_SCREEN;
+  if (!ST_SCREENS.has(feature)) return;
+  const mode = Date.now() - ST.lastAct < 120000 ? 'active' : 'listen';
+  ST.lastPing = Date.now();
+  try {
+    const j = await api('/study/ping', {
+      method: 'POST',
+      body: JSON.stringify({ feature: feature, mode: mode }),
+    });
+    stPingResult(j);
+  } catch (e) { /* 计时失败不打扰学习 */ }
+}
+
+function stPingResult(j) {
+  if (!j) return;
+  if (ST.ov) {
+    ST.ov.today_active = j.active_seconds;
+    ST.ov.today_listen = j.listen_seconds;
+    ST.ov.today_total = j.total_seconds;
+    ST.ov.total_seconds = j.total_all_seconds;
+    ST.ov.goal_min = j.goal_min;
+    ST.ov.goal_seconds = j.goal_min * 60;
+    ST.ov.streak = j.streak;
+    ST.ov.today_reached = j.total_seconds >= j.goal_min * 60;
+  }
+  if (CUR_SCREEN === 'study') stRenderToday();
+  if (!ST.goalToasted && j.goal_min && j.total_seconds >= j.goal_min * 60) {
+    ST.goalToasted = true;
+    toast('今日目标达成');
+  }
+  if (j.new_milestones && j.new_milestones.length) {
+    j.new_milestones.forEach(k => toast('达成里程碑：' + stMileLabel(k)));
+    // 学习屏没打开时不用刷新隐藏页；下次进入会整页重载
+    if (CUR_SCREEN === 'study') {
+      stLoadOverview().then(o => { if (o) { stRenderOverview(o); stLoadCal(); } });
+    }
+  }
+}
+
+async function stLoadOverview() {
+  try {
+    const o = await api('/study/overview');
+    ST.ov = o;
+    ST.goalToasted = ST.goalToasted || !!o.today_reached;
+    return o;
+  } catch (e) {
+    return null;
+  }
+}
+
+function stRenderOverview(o) {
+  if (!o) return;
+  ST.ov = o;
+  stRenderToday();
+  stRenderWeek(o);
+  stRenderGoals(o);
+  stRenderTotal(o);
+  stRenderMiles(o);
+}
+
+function stRenderToday() {
+  const o = ST.ov;
+  if (!o) return;
+  const total = o.today_total || 0, goal = o.goal_seconds || (o.goal_min || 15) * 60;
+  $('st-today-line').textContent = total > 0
+    ? '今天学习 ' + stFmt(total) + '（主动 ' + stFmt(o.today_active) + ' · 听力 ' + stFmt(o.today_listen) + '）'
+    : '今天还没有开始学习';
+  $('st-streak').textContent = o.streak || 0;
+  $('st-best').textContent = o.best_streak || 0;
+  const chip = $('st-today-chip');
+  if (total >= goal) {
+    chip.textContent = '今日目标已达成';
+    chip.classList.add('ready');
+  } else {
+    chip.textContent = total > 0 ? '还差 ' + stFmt(goal - total) + '达标' : '今日目标 ' + o.goal_min + ' 分钟';
+    chip.classList.remove('ready');
+  }
+  const ratio = goal ? total / goal : 0;
+  stRing($('sc-study').querySelector('.st-ringwrap'), ratio);
+  $('st-ring-pct').textContent = stPct(ratio);
+  $('st-ring-label').textContent = total >= goal ? '已达标' : '目标 ' + o.goal_min + ' 分钟';
+}
+
+function stRenderWeek(o) {
+  const week = o.week || [];
+  const max = Math.max(o.goal_seconds || 900, ...week.map(d => d.total_seconds || 0), 60);
+  $('st-week').innerHTML = week.map(d => {
+    const t = d.total_seconds || 0;
+    const h = t > 0 ? Math.max(4, Math.round(t / max * 100)) : 2;
+    const p = d.day.split('-').map(Number);
+    const wd = '日一二三四五六'[new Date(p[0], p[1] - 1, p[2]).getDay()];
+    return '<div class="st-bar' + (t > 0 ? ' has' : '') + (d.day === o.today ? ' today' : '') +
+      '" title="' + d.day + ' · ' + stFmt(t) + '"><div class="st-bartrack"><i style="height:' + h + '%"></i></div>' +
+      '<span>' + wd + '</span></div>';
+  }).join('');
+  $('st-week-total').textContent = '共 ' + stFmt((o.week_active || 0) + (o.week_listen || 0));
+  const days = week.filter(d => (d.total_seconds || 0) >= 300).length;
+  $('st-week-note').textContent = days
+    ? '本周已学习 ' + days + ' 天（一天满 5 分钟计）' + (o.grace_used ? ' · 连续里含 1 天休息' : '') + '。'
+    : '一天满 5 分钟就算一个学习日，从今天开始吧。';
+}
+
+function stRenderGoals(o) {
+  const goal = o.goal_min || 15;
+  $('st-goals').innerHTML = ST_GOALS.map(m =>
+    '<button class="st-goal' + (m === goal ? ' on' : '') + '" type="button" data-min="' + m + '">' + m + ' 分钟</button>'
+  ).join('');
+}
+
+function stRenderTotal(o) {
+  const total = o.total_seconds || 0;
+  $('st-total-hours').textContent = stHours(total);
+  $('st-total-active').textContent = stFmt(o.total_active || 0);
+  $('st-total-listen').textContent = stFmt(o.total_listen || 0);
+  const next = o.next_hours;
+  if (next) {
+    const target = next.target_seconds || 1;
+    const ratio = 1 - next.remain_seconds / target;
+    $('st-milebar-fill').style.width = Math.round(Math.max(0, Math.min(1, ratio)) * 100) + '%';
+    $('st-next-mile').textContent = '距离「' + stMileLabel(next.key) + '」还差 ' + stFmt(next.remain_seconds);
+    $('st-total-hint').textContent = '累计 ' + stHours(total) + ' 小时';
+  } else {
+    $('st-milebar-fill').style.width = '100%';
+    $('st-next-mile').textContent = '已拿下全部累计时长里程碑。';
+    $('st-total-hint').textContent = '';
+  }
+}
+
+function stRenderMiles(o) {
+  const got = new Map((o.milestones || []).map(m => [m.key, m.achieved_at]));
+  $('st-miles').innerHTML = ST_MILESTONES.map(m => {
+    const at = got.get(m.key);
+    let sub;
+    if (at) sub = stDate(at) + ' 达成';
+    else if (m.kind === 'hours') sub = '还差 ' + stFmt(Math.max(0, m.target - (o.total_seconds || 0)));
+    else sub = '还差 ' + Math.max(1, m.target - (o.streak || 0)) + ' 天';
+    return '<div class="st-mile' + (at ? ' on' : '') + '"><b>' + m.label + '</b><span>' + sub + '</span></div>';
+  }).join('');
+}
+
+async function goStudy() {
+  if (!TOKEN) { go('login'); return; }
+  go('study');
+  const o = await stLoadOverview();
+  if (!o) { toast('学习数据暂时读取失败'); return; }
+  const p = o.today.split('-').map(Number);
+  ST.year = p[0]; ST.month = p[1];
+  ST.selected = '';
+  ST.goalToasted = !!o.today_reached;
+  $('st-day-card').hidden = true;
+  stRenderOverview(o);
+  await stLoadCal();
+}
+
+async function stLoadCal() {
+  if (!ST.ov) return;
+  const [ty, tm] = ST.ov.today.split('-').map(Number);
+  let from, to;
+  if (ST.view === 'month') {
+    const last = new Date(ST.year, ST.month, 0).getDate();
+    from = ST.year + '-' + stPad(ST.month) + '-01';
+    to = ST.year + '-' + stPad(ST.month) + '-' + stPad(last);
+  } else {
+    from = ST.year + '-01-01';
+    to = ST.year + '-12-31';
+  }
+  let j;
+  try {
+    j = await api('/study/calendar?from=' + from + '&to=' + to);
+  } catch (e) {
+    toast('日历读取失败：' + e.message);
+    return;
+  }
+  ST.days = {};
+  (j.days || []).forEach(d => { ST.days[d.day] = d; });
+  if (ST.view === 'month') {
+    $('st-cal-title').textContent = ST.year + ' 年 ' + ST.month + ' 月';
+    $('st-cal-total').textContent = '本月 ' + stFmt(j.total_seconds);
+    stRenderMonth();
+    $('st-next').disabled = ST.year > ty || (ST.year === ty && ST.month >= tm);
+  } else {
+    $('st-cal-title').textContent = ST.year + ' 年';
+    $('st-cal-total').textContent = '全年 ' + stFmt(j.total_seconds);
+    stRenderYear();
+    $('st-next').disabled = ST.year >= ty;
+  }
+  $('st-prev').disabled = false;
+}
+
+function stRenderMonth() {
+  const y = ST.year, m = ST.month;
+  const padN = (new Date(y, m - 1, 1).getDay() + 6) % 7;
+  const days = new Date(y, m, 0).getDate();
+  const today = ST.ov.today;
+  let html = '<div class="st-mhead">' + ['一', '二', '三', '四', '五', '六', '日'].map(x => '<span>' + x + '</span>').join('') + '</div><div class="st-mgrid">';
+  for (let i = 0; i < padN; i++) html += '<div></div>';
+  for (let d = 1; d <= days; d++) {
+    const key = y + '-' + stPad(m) + '-' + stPad(d);
+    const rec = ST.days[key];
+    const total = rec ? rec.total_seconds : 0;
+    const lv = stLevel(total);
+    const future = key > today;
+    const cls = ['st-day', lv ? 'lv' + lv : '', future ? 'future' : '',
+      key === today ? 'today' : '', key === ST.selected ? 'sel' : ''].filter(Boolean).join(' ');
+    html += '<button class="' + cls + '" type="button" data-day="' + key + '"' + (future ? ' disabled' : '') +
+      ' title="' + key + ' · ' + (total ? stFmt(total) : '未学习') + '">' +
+      '<span class="n">' + d + '</span>' +
+      (total ? '<span class="m">' + Math.max(1, Math.round(total / 60)) + '分</span>' : '') +
+      '</button>';
+  }
+  html += '</div>';
+  $('st-cal').innerHTML = html;
+}
+
+function stRenderYear() {
+  const y = ST.year;
+  const isLeap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  const days = isLeap ? 366 : 365;
+  const padN = (new Date(y, 0, 1).getDay() + 6) % 7;
+  const cols = Math.ceil((padN + days) / 7);
+  const today = ST.ov.today;
+  let cells = '';
+  for (let i = 0; i < padN; i++) cells += '<i class="st-heat-pad"></i>';
+  for (let i = 0; i < days; i++) {
+    const dt = new Date(y, 0, 1 + i);
+    const key = y + '-' + stPad(dt.getMonth() + 1) + '-' + stPad(dt.getDate());
+    const rec = ST.days[key];
+    const total = rec ? rec.total_seconds : 0;
+    const lv = stLevel(total);
+    const cls = ['st-heat-cell', lv ? 'lv' + lv : '', key === today ? 'today' : '',
+      key === ST.selected ? 'sel' : ''].filter(Boolean).join(' ');
+    cells += '<button class="' + cls + '" type="button" data-day="' + key + '" title="' +
+      key + ' · ' + (total ? stFmt(total) : '未学习') + '"></button>';
+  }
+  const labels = [];
+  let lastCol = -1;
+  for (let m = 0; m < 12; m++) {
+    const doy = Math.round((new Date(y, m, 1) - new Date(y, 0, 1)) / 86400000);
+    const col = Math.floor((padN + doy) / 7);
+    if (col === lastCol) continue;
+    lastCol = col;
+    labels.push('<span style="grid-column:' + (col + 1) + '">' + (m + 1) + '月</span>');
+  }
+  $('st-cal').innerHTML = '<div class="st-heat-scroll"><div class="st-heat-inner">' +
+    '<div class="st-heat-months" style="--cols:' + cols + '">' + labels.join('') + '</div>' +
+    '<div class="st-heat-body"><div class="st-heat-labels">' +
+    '<span style="grid-row:1">一</span><span style="grid-row:3">三</span><span style="grid-row:5">五</span>' +
+    '</div><div class="st-heat" style="--cols:' + cols + '">' + cells + '</div></div>' +
+    '</div></div>';
+  const sc = $('st-cal').querySelector('.st-heat-scroll');
+  if (sc) sc.scrollLeft = sc.scrollWidth;
+}
+
+async function stShowDay(day) {
+  let j;
+  try {
+    j = await api('/study/day/' + day);
+  } catch (e) {
+    toast('读取失败：' + e.message);
+    return;
+  }
+  ST.selected = day;
+  const p = day.split('-').map(Number);
+  const wd = '日一二三四五六'[new Date(p[0], p[1] - 1, p[2]).getDay()];
+  const total = j.total_seconds || 0;
+  const maxF = Math.max(1, ...(j.features || []).map(f => f.seconds || 0));
+  let html = '<div class="card-head"><h2>' + p[1] + ' 月 ' + p[2] + ' 日 · 周' + wd +
+    '</h2><button class="st-day-close" type="button">收起</button></div>';
+  if (!total) {
+    html += '<p class="st-day-none">这天没有学习记录。</p>';
+  } else {
+    html += '<div class="st-day-total">' + stFmt(total) + '<span>' + (j.goal_reached ? '当日目标已达成' : '') + '</span></div>';
+    html += '<div class="st-day-split"><span>主动 <b>' + stFmt(j.active_seconds) + '</b></span><span>听力 <b>' +
+      stFmt(j.listen_seconds) + '</b></span></div>';
+    (j.features || []).forEach(f => {
+      const w = Math.max(4, Math.round((f.seconds || 0) / maxF * 100));
+      html += '<div class="st-feat"><span>' + esc(ST_FEATURE_LABEL[f.feature] || f.feature) +
+        '</span><i><b style="width:' + w + '%"></b></i><em>' + stFmt(f.seconds) + '</em></div>';
+    });
+  }
+  const card = $('st-day-card');
+  card.innerHTML = html;
+  card.hidden = false;
+  if (ST.view === 'month') stRenderMonth(); else stRenderYear();
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function stSetGoal(min) {
+  if (!min) return;
+  try {
+    const j = await api('/study/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ daily_goal_min: min }),
+    });
+    if (ST.ov) {
+      ST.ov.goal_min = j.daily_goal_min;
+      ST.ov.goal_seconds = j.daily_goal_min * 60;
+      ST.ov.today_reached = (ST.ov.today_total || 0) >= ST.ov.goal_seconds;
+      ST.goalToasted = !!ST.ov.today_reached;
+      stRenderToday();
+      stRenderGoals(ST.ov);
+    }
+    toast('每日目标已设为 ' + j.daily_goal_min + ' 分钟');
+  } catch (e) {
+    toast('设置失败：' + e.message);
+  }
+}
+
+async function stSetView(v) {
+  if (ST.view === v) return;
+  ST.view = v;
+  ST.selected = '';
+  $('st-day-card').hidden = true;
+  $('st-view-month').classList.toggle('on', v === 'month');
+  $('st-view-year').classList.toggle('on', v === 'year');
+  await stLoadCal();
+}
+
+async function stNav(dir) {
+  if (!ST.ov) return;
+  const [ty, tm] = ST.ov.today.split('-').map(Number);
+  if (ST.view === 'month') {
+    let y = ST.year, m = ST.month + dir;
+    if (dir === 0) { y = ty; m = tm; }
+    if (m < 1) { m = 12; y--; }
+    if (m > 12) { m = 1; y++; }
+    if (y > ty || (y === ty && m > tm)) return;
+    ST.year = y; ST.month = m;
+  } else {
+    let y = ST.year + dir;
+    if (dir === 0) y = ty;
+    if (y > ty) return;
+    ST.year = y;
+  }
+  ST.selected = '';
+  $('st-day-card').hidden = true;
+  await stLoadCal();
+}
+
 // ============ 启动 ============
 // 原内联 onclick/oninput 全部改为绑定（CSP 禁内联脚本）
 $('nav-back').onclick = goBack;
@@ -7081,6 +7528,26 @@ $('home-nb-btn').onclick = goNotebook;
 $('home-rec-btn').onclick = goRecite;
 $('home-gra-btn').onclick = goGrammar;
 $('home-nbres-btn').onclick = goNbres;
+$('nav-study').onclick = goStudy;
+$('st-view-month').onclick = () => stSetView('month');
+$('st-view-year').onclick = () => stSetView('year');
+$('st-prev').onclick = () => stNav(-1);
+$('st-next').onclick = () => stNav(1);
+$('st-today').onclick = () => stNav(0);
+$('st-goals').addEventListener('click', e => {
+  const b = e.target.closest('.st-goal');
+  if (b) stSetGoal(parseInt(b.dataset.min, 10));
+});
+$('st-cal').addEventListener('click', e => {
+  const b = e.target.closest('[data-day]');
+  if (b && !b.disabled) stShowDay(b.dataset.day);
+});
+$('st-day-card').addEventListener('click', e => {
+  if (!e.target.closest('.st-day-close')) return;
+  $('st-day-card').hidden = true;
+  ST.selected = '';
+  if (ST.view === 'month') stRenderMonth(); else stRenderYear();
+});
 $('cache-clear-btn').onclick = clearAudioCache;
 $('mode-full').onclick = () => pickGenMode('full');
 $('mode-phrases').onclick = () => pickGenMode('phrases');

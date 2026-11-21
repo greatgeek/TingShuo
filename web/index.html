@@ -21,6 +21,9 @@
       <button class="nav-btn" id="nav-home" title="首页" aria-label="首页">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5"/></svg>
       </button>
+      <button class="nav-btn" id="nav-study" title="学习足迹" aria-label="学习足迹">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20v-6"/><path d="M12 20V9"/><path d="M19 20V4"/><path d="M3 20h18"/></svg>
+      </button>
     </div>
     <div class="brand">
       <span class="brand-seal">听</span>
@@ -155,6 +158,89 @@
       <summary>使用流程</summary>
       <p class="hint">① 粘贴今天的词单（哪怕 1 个词也行，推荐每天 20 个）→ ② AI 生成材料（约 2—5 分钟）→
       ③ 一键配音（Azure TTS，逐句生成）→ ④ 点句播放、看振り仮名跟读。</p>
+    </details>
+  </section>
+
+  <!-- 学习足迹 -->
+  <section class="screen" id="sc-study">
+    <div class="card st-hero">
+      <div class="st-hero-copy">
+        <span class="hero-overline">STUDY TRACE</span>
+        <h2>学习足迹</h2>
+        <p class="hint" id="st-today-line">今天还没有开始学习</p>
+        <div class="st-chips">
+          <span class="st-chip"><b id="st-streak">0</b><i>天连续</i></span>
+          <span class="st-chip"><b id="st-best">0</b><i>天最佳</i></span>
+        </div>
+        <span class="status-chip" id="st-today-chip">今日目标 15 分钟</span>
+      </div>
+      <div class="st-ringwrap lg">
+        <svg class="st-ring" viewBox="0 0 96 96" aria-hidden="true">
+          <circle class="st-ring-bg" cx="48" cy="48" r="40"></circle>
+          <circle class="st-ring-fg" cx="48" cy="48" r="40"></circle>
+        </svg>
+        <div class="st-ringtxt"><b id="st-ring-pct">0%</b><span id="st-ring-label">目标 15 分钟</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>每日目标</h2>
+      <p class="hint">选一个每天能坚持的时长，达标后圆环点亮。</p>
+      <div class="st-goal-chips" id="st-goals"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>本周</h2><span class="hint" id="st-week-total"></span></div>
+      <div class="st-week" id="st-week"></div>
+      <p class="hint" id="st-week-note" style="margin-top:8px"></p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>学习日历</h2><span class="hint" id="st-cal-total"></span></div>
+      <div class="st-seg" role="tablist">
+        <button class="on" id="st-view-month" type="button">月历</button>
+        <button id="st-view-year" type="button">年视图</button>
+      </div>
+      <div class="st-cal-nav">
+        <button class="st-navbtn" id="st-prev" type="button" aria-label="上一页">‹</button>
+        <b id="st-cal-title"></b>
+        <button class="st-navbtn" id="st-next" type="button" aria-label="下一页">›</button>
+        <button class="st-todaybtn" id="st-today" type="button">今天</button>
+      </div>
+      <div id="st-cal"></div>
+      <div class="st-legend">
+        <span>少</span><i class="lv1"></i><i class="lv2"></i><i class="lv3"></i><i class="lv4"></i><i class="lv5"></i><span>多</span>
+        <span class="st-legend-note">· 每格 = 一天，点格子看明细</span>
+      </div>
+    </div>
+
+    <div class="card" id="st-day-card" hidden></div>
+
+    <div class="card">
+      <div class="card-head"><h2>累计</h2><span class="hint" id="st-total-hint"></span></div>
+      <div class="st-total">
+        <div><b id="st-total-hours">0</b><i>小时</i></div>
+        <div class="st-total-split">
+          <span>主动学习 <b id="st-total-active">0</b></span>
+          <span>听力 <b id="st-total-listen">0</b></span>
+        </div>
+      </div>
+      <div class="st-milebar"><div id="st-milebar-fill"></div></div>
+      <p class="hint" id="st-next-mile" style="margin-top:8px"></p>
+    </div>
+
+    <div class="card">
+      <h2>里程碑</h2>
+      <div class="st-miles" id="st-miles"></div>
+    </div>
+
+    <details class="card flow">
+      <summary>学习时长怎么算？</summary>
+      <p class="hint">只统计打开着、且在用的学习页面：后台、锁屏、切到别的窗口都不计。<br>
+      连续 2 分钟没有操作、也没有播放音频，会自动暂停计时。<br>
+      听音频时记作「听力」，其余记作「主动」；单日听力最多 3 小时，全天最多 8 小时。<br>
+      一天累计满 5 分钟算一个学习日；每 7 天允许 1 天休息，不打断连续天数。<br>
+      电脑和手机同时使用不会重复计时。</p>
     </details>
   </section>
 
