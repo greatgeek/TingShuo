@@ -69,7 +69,7 @@ function sane(zh) {
     const todo = L.lines.map((l, i) => ({ i, text: l.text })).filter(x => !L.lines[x.i].translation);
     if (!todo.length) continue;
     const listing = todo.map(x => `${x.i + 1}. ${x.text}`).join('\n');
-    const prompt = `你是日语教材翻译。下面是《新版中日交流标准日本语》初级上「第${L.lesson}课 ${L.title.replace(/^第\d+课 /, '')}」的会话课文，共 ${L.lines.length} 句，按顺序排列。请为每一句给出自然、口语化的简体中文译文。\n\n要求：\n- 只输出 JSON 数组，元素为 {\"i\": 行号, \"zh\": \"译文\"}，行号与下面编号一致；\n- 译文只含中文与标点，可保留人名商品名等必要外来词（如 Wi-Fi、S、アリペイ→支付宝）；\n- 逐句翻译，不合并、不解释、不加引号；\n- 人名：李由加（りゆか）→ 李由加，中村絵里 → 中村绘里，ジョージ → 乔治，ゆかちゃん → 由加；\n- 数字与金额按中文习惯表达（390円 → 390日元）。\n\n全文：\n${L.lines.map((l, i) => `${i + 1}. ${l.text}`).join('\n')}\n\n只翻译以下待译行：\n${listing}`;
+    const prompt = `你是日语教材翻译。下面是日语教材「${L.title}」的会话/课文，共 ${L.lines.length} 句，按顺序排列。请为每一句给出自然、口语化的简体中文译文。\n\n要求：\n- 只输出 JSON 数组，元素为 {\"i\": 行号, \"zh\": \"译文\"}，行号与下面编号一致；\n- 译文只含中文与标点，可保留人名商品名等必要外来词（如 Wi-Fi、S、アリペイ→支付宝）；\n- 逐句翻译，不合并、不解释、不加引号；\n- 人名按常见音译，全文保持一致；\n- 数字与金额按中文习惯表达（390円 → 390日元）。\n\n全文：\n${L.lines.map((l, i) => `${i + 1}. ${l.text}`).join('\n')}\n\n只翻译以下待译行：\n${listing}`;
     const arr = await llm(prompt);
     let ok = 0;
     if (Array.isArray(arr)) {

@@ -121,36 +121,44 @@ function section(md, startRe, endRe) {
   return e < 0 ? rest : rest.slice(0, e + 1);
 }
 
-// 会话/课文正文：优先「## 会话原文」，否则裸标题「会 话」「课 文」（初级下 17/24/25）
+// 会话/课文正文：初级「## 会话原文」或「会 话/课 文」；中级/高级为裸标题「会話/本文」，振り仮名可能同行
 function conversationSection(md) {
   let s = md.search(/^##\s*会话原文\s*$/m);
-  if (s < 0) s = md.search(/^\s*(?:会\s*话|课\s*文)\s*$/m);
-  if (s < 0) return '';
+  let kind = '会话';
+  if (s < 0) s = md.search(/^[ \t]*(?:会\s*话|课\s*文|会\s*話|本\s*文)\s*(?:[（(][^）)\n]*[）)])?[ \t]*$/m);
+  if (s >= 0 && /本\s*文/.test(md.slice(s).split('\n')[0])) kind = '本文';
+  if (s < 0) {
+    s = md.search(/^[^\n]{0,16}?会\s*[話话][^\n]{0,8}$/m);
+    if (s < 0) { s = md.search(/^[^\n]{0,16}?本\s*文[^\n]{0,8}$/m); kind = '本文'; }
+  }
+  if (s < 0) return { block: '', kind };
   const rest = md.slice(s);
-  const e = rest.slice(1).search(/^\s*(?:###\s*会话用单词|###\s*语法解释用单词|课文(?:用)?单词)\s*$/m);
-  return e < 0 ? rest : rest.slice(0, e + 1);
+  const e = rest.slice(1).search(/^\s*(?:###\s*会话用单词|###\s*语法解释用单词|课文(?:用)?单词|.*新出単語)\s*$/m);
+  return { block: e < 0 ? rest : rest.slice(0, e + 1), kind };
 }
 
-// 主词表：会话用单词；初级下 17/25 课为「课文单词 / 课文用单词」
-function mainWordSection(md) {
+// 主词表：初级「会话用单词 / 课文用单词」；中级/高级「新出単語」
+function mainWordSection(md, convKind) {
   let m = md.match(/^###\s*会话用单词\s*$/m);
   let name = '会话用单词';
   if (!m) { m = md.match(/^课文(?:用)?单词\s*$/m); name = '课文用单词'; }
+  if (!m) { m = md.match(/^.*新出単語\s*$/m); name = convKind === '本文' ? '课文用单词' : '会话用单词'; }
   if (!m) return { name, block: '' };
   const rest = md.slice(m.index);
-  const e = rest.slice(1).search(/^###\s*语法解释用单词\s*$/m);
+  const e = rest.slice(1).search(/^(?:###\s*语法解释用单词|.*解説用単語)\s*$/m);
   return { name, block: e < 0 ? rest : rest.slice(0, e + 1) };
 }
 
 function parseLesson(file) {
   const md = fs.readFileSync(file, 'utf8');
   const lesson = (path.basename(file).match(/第(\d+)课/) || [])[1];
-  const conv = conversationSection(md);
-  const wMain = mainWordSection(md);
+  const convSec = conversationSection(md);
+  const conv = convSec.block;
+  const wMain = mainWordSection(md, convSec.kind);
   const wConv = wMain.block;
-  const wGram = section(md, /###\s*语法解释用单词/, /##\s*语法解释(?!用)/);
-  const gram = section(md, /##\s*语法解释(?!用)/, /习题用单词/);
-  const wExer = section(md, /习题用单词/, /听力训练/);
+  const wGram = section(md, /(?:###\s*语法解释用单词|^.*解説用単語\s*$)/m, /(?:##\s*语法解释(?!用)|^.*文法解説\s*$)/m);
+  const gram = section(md, /(?:##\s*语法解释(?!用)|^.*文法解説\s*$)/m, /(?:习题用单词|^.*練習用単語\s*$)/m);
+  const wExer = section(md, /(?:习题用单词|^.*練習用単語\s*$)/m, /(?:听力训练|^.*練習問題\s*$)/m);
   const listen = section(md, /听力训练/, /$/);
 
   // 句子池
@@ -210,7 +218,10 @@ function parseLesson(file) {
 
 const dir = process.argv[2];
 const out = process.argv[3];
-const level1 = (dir.match(/初级[上下]/) || ['初级上'])[0];
+const vol = path.basename(path.dirname(path.resolve(dir)));
+const level1 = /^(?:初级[上下]|中级[上下]|高级)$/.test(vol)
+  ? vol
+  : (dir.match(/(?:初级|中级)[上下]|高级/) || ['初级上'])[0];
 const files = fs.readdirSync(dir).filter(f => /^第\d+课\.md$/.test(f))
   .sort((a, b) => Number(a.match(/\d+/)[0]) - Number(b.match(/\d+/)[0]));
 const lessons = files.map(f => parseLesson(path.join(dir, f)));

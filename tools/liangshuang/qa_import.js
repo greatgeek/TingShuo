@@ -9,7 +9,11 @@ const [jp, mode, psqlArg] = process.argv.slice(2);
 const PSQL = psqlArg || 'G:/TingShuo/pgsql/bin/psql';
 const d = Q.loadCorpus(jp);
 const LEVEL = d.level1 || '初级上';
-const ROOT = LEVEL === '初级下' ? 'nbd-cjs-xia' : 'nbd-cjs';
+const ROOT_DEF = {
+  '初级上': 'nbd-cjs', '初级下': 'nbd-cjs-xia',
+  '中级上': 'nbd-cjs-zs', '中级下': 'nbd-cjs-zx', '高级': 'nbd-cjs-gj',
+};
+const ROOT = ROOT_DEF[LEVEL] || 'nbd-cjs';
 
 const qword = new Set(Q.loadQ().filter(x => ["reading", "hallucinate"].includes(x.reason) && x.surface).map(x => x.surface));
 const qset = new Set(Q.loadQ().filter(x => ['bind', 'dup', 'trans', 'trans-empty', 'grammar', 'truncated', 'mixed', 'typo', 'ruby-struct', 'audio-block'].includes(x.reason)).map(x => x.text));

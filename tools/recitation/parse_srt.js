@@ -33,16 +33,18 @@ const out = process.argv[3];
 const files = fs.readdirSync(dir).filter(f => /练口语.*\.srt$/i.test(f));
 const result = [];
 for (const f of files) {
-  const m = f.match(/【0?(\d+)练口语】/);
+  const m = f.match(/【0?(\d+)练口语(?:\s*(\d+))?】/);
   if (!m) continue;
   const lesson = Number(m[1]);
+  const part = m[2] ? Number(m[2]) : null;
   const cues = parseSrt(fs.readFileSync(path.join(dir, f), 'utf8'));
-  result.push({ lesson, file: f, cues });
+  result.push({ lesson, part, file: f, cues });
 }
-result.sort((a, b) => a.lesson - b.lesson);
+result.sort((a, b) => a.lesson - b.lesson || (a.part || 0) - (b.part || 0));
 fs.mkdirSync(path.dirname(out), { recursive: true });
 fs.writeFileSync(out, JSON.stringify(result, null, 1));
 for (const L of result) {
-  console.log(`第${L.lesson}课 ${L.cues.length} cue, ${L.cues[L.cues.length - 1].end}s`);
+  const tag = L.part ? `${L.lesson}-${L.part}` : `${L.lesson}`;
+  console.log(`第${tag}课 ${L.cues.length} cue, ${L.cues[L.cues.length - 1].end}s`);
   L.cues.forEach((c, i) => console.log(`  ${i + 1}\t${c.start}-${c.end}\t${c.text}`));
 }

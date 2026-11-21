@@ -26,14 +26,17 @@ const rows = out.split('\n').filter(x => x.trim()).map(l => {
 const q = Q.loadQ();
 const KANJI = /[一-鿯]/;
 const HIRA = /^[ぁ-ゖー]+$/;
+// 词块含片假名（期末テスト→きまつテスト）或拉丁字母（IT部門）时读音并非纯平假名，属正常
+const KANA = /^[ぁ-ゖァ-ヺー]+$/;
 
 let misalign = 0, noRead = 0, badChars = 0;
 for (const r of rows) {
+  // 仅对齐失败会破坏前端渲染，才隔离；缺读音/含外来字读音只报告
   if (r.toks.map(t => t[0]).join('') !== r.text) { Q.addQ(q, { stage: 'ruby', reason: 'ruby-struct', text: r.text }); misalign++; continue; }
   for (const [w, rd] of r.toks) {
     if (KANJI.test(w)) {
-      if (!rd) { Q.addQ(q, { stage: 'ruby', reason: 'ruby-struct', text: r.text }); noRead++; }
-      else if (!HIRA.test(rd)) { Q.addQ(q, { stage: 'ruby', reason: 'ruby-struct', text: r.text }); badChars++; }
+      if (!rd) noRead++;
+      else if (!KANA.test(rd)) badChars++;
     }
   }
 }

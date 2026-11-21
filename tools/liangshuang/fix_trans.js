@@ -38,6 +38,7 @@ async function llm(prompt) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.LLM_API_KEY },
         body: JSON.stringify({ model: env.LLM_MODEL, messages: [{ role: 'user', content: prompt }] }),
+        signal: AbortSignal.timeout(240000),
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();

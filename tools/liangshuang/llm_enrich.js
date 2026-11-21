@@ -39,7 +39,8 @@ async function llm(prompt, tries = 2) {
       const r = await fetch(BASE + '/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + KEY },
-        body: JSON.stringify({ model: MODEL, messages: [{ role: 'user', content: prompt }] }),
+        body: JSON.stringify({ model: MODEL, thinking: { type: 'disabled' }, messages: [{ role: 'user', content: prompt }] }),
+        signal: AbortSignal.timeout(180000),
       });
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const j = await r.json();
@@ -90,6 +91,7 @@ ${lines}
 严格输出 JSON 数组（不要围栏）：[{"surface":"...","text":"...","translation":"..."}]`;
     const r = await llm(prompt);
     if (!r) return [];
+    if (!Array.isArray(r)) { console.log(`  词批 ${bi + 1}: 非法响应`); return []; }
     console.log(`  词批 ${bi + 1}: ${r.length}/${batch.length}`);
     return r.filter(x => x && x.surface && x.text);
   });
@@ -111,7 +113,7 @@ ${lines}
 ${lines}
 严格输出 JSON 数组（不要围栏）：[{"i":0,"text":"...","translation":"..."}]`;
     const r = await llm(prompt);
-    for (const g of (r || [])) {
+    for (const g of (Array.isArray(r) ? r : [])) {
       if (g && typeof g.i === 'number' && batch[g.i] && g.text && g.translation) {
         batch[g.i].sentences = [{ text: g.text, ruby: [], translation: g.translation, src: 'llm' }];
       }
@@ -131,6 +133,7 @@ ${lines}
 ${lines}`;
     const r = await llm(prompt);
     if (!r) return [];
+    if (!Array.isArray(r)) { console.log('  译批: 非法响应'); return []; }
     console.log(`  译批: ${r.length}/${batch.length}`);
     return r.filter(x => x && typeof x.i === 'number' && batch[x.i]).map(x => ({ text: batch[x.i], t: x.t }));
   });

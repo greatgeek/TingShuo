@@ -56,6 +56,11 @@ var readingFix = map[[2]string]string{
 	{"その", "時"}: "とき",
 	{"あの", "時"}: "とき",
 	{"何", "分"}:  "ぷん",
+	{"いる", "方"}: "かた",
+	{"が", "経"}:  "きょう",
+	{"から", "露"}: "つゆ",
+	{"を", "被っ"}: "かぶっ",
+	{"する", "方"}: "かた",
 }
 
 // singleFix 孤立词元读音纠正（无上下文歧义或语料中义项单一）。
@@ -70,6 +75,7 @@ var nextFix = map[[2]string]string{
 	{"失", "くし"}: "な",
 	{"長", "い"}:  "なが",
 	{"何", "月"}:  "なん",
+	{"一", "ヶ月"}: "いっ",
 }
 
 // BuildRubyTokens 对句子分词并输出振り仮名结构：
@@ -134,6 +140,12 @@ func BuildRubyTokens(text string) [][]any {
 		}
 	}
 	toks = mergeRubyTokens(toks)
+	// 合并后的词块（如「全部紙」「高品質」）再查一次覆盖表，词法分析阶段无法命中
+	for i := range toks {
+		if r, ok := rubyOverride[toks[i].surface]; ok && toks[i].reading != "" {
+			toks[i].reading = r
+		}
+	}
 	out := make([][]any, 0, len(toks))
 	for _, tk := range toks {
 		if tk.reading != "" {

@@ -5,8 +5,14 @@ const data = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const UID = process.argv[3];
 const NB = 'nb-liangshuang';
 const LEVEL = data.level1 || '初级上';
-const ROOT = LEVEL === '初级下' ? 'nbd-cjs-xia' : 'nbd-cjs';
-const ROOT_SORT = LEVEL === '初级下' ? 1 : 0;
+const ROOT_DEF = {
+  '初级上': ['nbd-cjs', 0],
+  '初级下': ['nbd-cjs-xia', 1],
+  '中级上': ['nbd-cjs-zs', 2],
+  '中级下': ['nbd-cjs-zx', 3],
+  '高级': ['nbd-cjs-gj', 4],
+};
+const [ROOT, ROOT_SORT] = ROOT_DEF[LEVEL] || ROOT_DEF['初级上'];
 const esc = s => String(s ?? '').replace(/'/g, "''");
 
 // 隔离区（各 qa_* 关产出）：不合格句/词不落库

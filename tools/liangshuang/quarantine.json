@@ -190,5 +190,122 @@
   "text": "まあ、そうなんですけど、夜遅くまでの勉強は健康に悪いですよ。",
   "lesson": 14,
   "at": "2026-10-30"
+ },
+ {
+  "stage": "grammar",
+  "reason": "truncated|typo|mixed|grammar",
+  "text": "毎日体を鍛える習慣があります。",
+  "lesson": 26,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "動かす",
+  "text": "その音楽はFu，动人心弦。",
+  "lesson": 33,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "ぺらぺら",
+  "text": "彼女はCelebrity， foreigner  WITHOUT ANYTHING。",
+  "lesson": 33,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "出す",
+  "text": "，江苏快三従来はışt。",
+  "lesson": 34,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "褒める",
+  "text": "정을漂亮にするな。",
+  "lesson": 34,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "参る",
+  "text": "私が PNS ます。",
+  "lesson": 39,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "立てる",
+  "text": "新しい制度をOMEる",
+  "lesson": 37,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "おもしろがる",
+  "text": "彼はroller不住了。",
+  "lesson": 38,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "引き立てる",
+  "text": "|Consumerな形で使用します。",
+  "lesson": 38,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "案じる",
+  "text": "journeyjustice 걱정しています。",
+  "lesson": 38,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "伝統",
+  "text": "こけし造詣abby активность。",
+  "lesson": 38,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "なさる",
+  "text": "先生がなお suburbs afil ます。",
+  "lesson": 39,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "parse",
+  "reason": "bind",
+  "surface": "下さる",
+  "text": "先生がANDSuba ers ます。",
+  "lesson": 39,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "trans",
+  "reason": "trans",
+  "text": "この温泉の料金は80元です。",
+  "lesson": 39,
+  "at": "2026-11-20"
+ },
+ {
+  "stage": "grammar",
+  "reason": "truncated|typo|mixed|grammar",
+  "text": "新聞が主題を取り上げる。",
+  "lesson": 39,
+  "at": "2026-11-20"
  }
 ]
