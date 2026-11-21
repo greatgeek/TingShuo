@@ -4557,6 +4557,14 @@ function nbPlayApplyCfg() {
 let GRAM_BOOK = localStorage.getItem('gram-book') || '初级上';
 let GRAM_LESSONS = null, GRAM = null;
 
+function gramBookOfLesson(no) {
+  if (no >= 40) return '高级';
+  if (no >= 33) return '中级下';
+  if (no >= 26) return '中级上';
+  if (no >= 17) return '初级下';
+  return '初级上';
+}
+
 function renderGraBooks() {
   document.querySelectorAll('#gra-books .gra-book').forEach(b => {
     b.classList.toggle('on', b.dataset.book === GRAM_BOOK);
@@ -4721,7 +4729,7 @@ async function openGrammarLesson(no) {
   $('gra-lesson').hidden = false;
   $('gra-detail').innerHTML = '<div class="card"><p class="hint">加载中…</p></div>';
   window.scrollTo(0, 0);
-  const book = no >= 17 ? '初级下' : '初级上';
+  const book = gramBookOfLesson(no);
   if (book !== GRAM_BOOK) {
     GRAM_BOOK = book;
     localStorage.setItem('gram-book', book);
@@ -5836,9 +5844,10 @@ async function openRec(id, opts = {}) {
 async function syncRecGrammarBtn() {
   const btn = $('rec-gra-btn');
   if (!REC || !REC.lesson || !REC.lesson.lesson_no) { btn.hidden = true; return; }
+  const book = gramBookOfLesson(REC.lesson.lesson_no);
   try {
-    const list = await loadGrammarLessons();
-    const it = list.find(x => x.lesson_no === REC.lesson.lesson_no);
+    const r = await api('/grammar/lessons?book=' + encodeURIComponent(book));
+    const it = (r.lessons || []).find(x => x.lesson_no === REC.lesson.lesson_no);
     btn.hidden = !it;
     btn.onclick = it ? () => openGrammarLesson(it.lesson_no) : null;
   } catch { btn.hidden = true; }

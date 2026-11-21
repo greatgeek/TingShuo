@@ -1995,16 +1995,23 @@ body.rec-playing #sc-recite-play { padding-bottom: 104px; }
   display: inline-flex; margin-top: 12px; padding: 4px;
   border-radius: 99px; background: var(--surface-2);
   border: 1px solid var(--line); gap: 2px;
+  max-width: 100%; overflow-x: auto; scrollbar-width: none;
 }
+.gra-books::-webkit-scrollbar { display: none; }
 .gra-book {
   padding: 7px 20px; border: 0; border-radius: 99px; background: none; color: var(--ink2);
   font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  flex: 0 0 auto;
   transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 .gra-book:hover { color: var(--ink); }
 .gra-book.on {
   background: var(--surface); color: var(--accent-deep);
   box-shadow: 0 1px 4px rgba(36, 31, 25, .1), inset 0 0 0 1px rgba(184, 64, 44, .12);
+}
+@media (max-width: 480px) {
+  .gra-books { display: flex; width: 100%; }
+  .gra-book { flex: 1 1 0; min-width: 0; padding: 7px 2px; font-size: 12px; }
 }
 .gra-sec { margin-top: 18px; }
 .gra-sec-head {
