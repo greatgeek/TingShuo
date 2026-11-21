@@ -45,16 +45,28 @@ func (c *Client) SynthesizeRuby(ctx context.Context, voice string, rate float64,
 }
 
 // rubyMarkup 生成 <sub> 注音标记；读音为空或与表记相同（假名）时原样输出。
+// alias 统一转片假名：平假名 alias 会被 Azure 拆词，词首「は」当助词读成 wa
+// （はくぶつかん → は＋くぶつかん，中间还多一拍停顿）。
 func rubyMarkup(tokens []RubyToken) string {
 	var b strings.Builder
 	for _, t := range tokens {
 		if t.Reading != "" && t.Reading != t.Surface {
-			b.WriteString(`<sub alias="` + escapeXML(t.Reading) + `">` + escapeXML(t.Surface) + `</sub>`)
+			b.WriteString(`<sub alias="` + escapeXML(hiraganaToKatakana(t.Reading)) + `">` + escapeXML(t.Surface) + `</sub>`)
 			continue
 		}
 		b.WriteString(escapeXML(t.Surface))
 	}
 	return b.String()
+}
+
+func hiraganaToKatakana(s string) string {
+	rs := []rune(s)
+	for i, r := range rs {
+		if r >= 0x3041 && r <= 0x3096 {
+			rs[i] = r + 0x60
+		}
+	}
+	return string(rs)
 }
 
 func (c *Client) synthesize(ctx context.Context, voice string, rate float64, inner string) ([]byte, error) {

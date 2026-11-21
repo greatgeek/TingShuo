@@ -71,6 +71,7 @@ function applyScreen(name) {
   CUR_SCREEN = name;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
   $('sc-' + name).classList.add('on');
+  if (name === 'notebook') nbHeadReset();
   updateBackBtn();
 }
 
@@ -1476,8 +1477,70 @@ function rubySplitParts(coreS, coreR) {
   for (const [t, rt] of p) { s += t; if (rt) r += rt; }
   return s === coreS && r === coreR ? p : null;
 }
+// 核心内夹假名（引き出し/ひきだし → 引き出/ひきだ）：按假名锚点分段，
+// 引(ひ)き出(だ)し，避免浏览器把读音均摊后 き 上再叠一层 き。
+// 读音里找不到同形假名段时返回 null，回落整段注音（宁整勿错）。
+function rubyKanaAnchorParts(coreS, coreR) {
+  const isKanji = c => /[一-龯]/.test(c);
+  const isKana = c => /[\u3041-\u3096\u30A1-\u30FA\u30FC]/.test(c);
+  // 片假名与平假名同音视为同段（フランス料理/ふらんすりょうり），ヵ/ヶ按 か 读
+  const norm = s => s
+    .replace(/[\u30A1-\u30F6]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/[\u3095\u3096]/g, 'か');
+  const cs = Array.from(coreS), cr = Array.from(coreR);
+  // 々〆〇 与汉字同理，不能当符号跳过（年々/ねんねん、〇〇）
+  const kindOf = c => /[一-龯々〆〇]/.test(c) ? 2 : isKana(c) ? 1 : 0;
+  const runs = [];
+  for (let i = 0; i < cs.length;) {
+    const k = kindOf(cs[i]);
+    let j = i;
+    while (j < cs.length && kindOf(cs[j]) === k) j++;
+    runs.push({ k, s: cs.slice(i, j).join('') });
+    i = j;
+  }
+  const parts = [];
+  let pos = 0;
+  for (let idx = 0; idx < runs.length; idx++) {
+    const r = runs[idx];
+    if (r.k !== 2) {
+      const lit = cr.slice(pos, pos + r.s.length).join('');
+      if (lit === r.s || (lit.length === r.s.length && norm(lit) === norm(r.s))) {
+        parts.push([r.s, '']);
+        pos += r.s.length;
+      } else if (r.k === 0) {
+        // 拉丁词读法无法从词面验证，宁整勿错；符号/数字不占读音（〜、２）
+        if (/[A-Za-zＡ-Ｚａ-ｚ]/.test(r.s)) return null;
+        parts.push([r.s, '']);
+      } else {
+        return null;
+      }
+      continue;
+    }
+    let end = cr.length;
+    const nextKana = runs.slice(idx + 1).find(x => x.k === 1);
+    if (nextKana) {
+      const anchor = norm(nextKana.s);
+      end = -1;
+      for (let t = pos + 1; t + anchor.length <= cr.length; t++) {
+        if (norm(cr.slice(t, t + anchor.length).join('')) === anchor) { end = t; break; }
+      }
+      if (end <= pos) return null;
+      // 读音末尾的符号留给后面的符号段（私〜です/わたし〜です）
+      while (end - 1 > pos && kindOf(cr[end - 1]) === 0) end--;
+    }
+    if (end <= pos) return null;
+    parts.push([r.s, cr.slice(pos, end).join('')]);
+    pos = end;
+  }
+  return pos === cr.length ? parts : null;
+}
 function rubyCoreHTML(rc) {
-  const parts = rubySplitParts(rc.coreS, rc.coreR);
+  // 核心夹假名时锚点拆分更可靠（读音表由分词器读音生成，可能把送假名并进汉字读音）。
+  // 纯汉字核心仍以读音表为准（苦手/にがて → 苦(にが)+手(て)）。
+  const hasKana = /[\u3041-\u3096\u30A1-\u30FA\u30FC]/.test(rc.coreS);
+  const parts = (hasKana && rubyKanaAnchorParts(rc.coreS, rc.coreR))
+    || rubySplitParts(rc.coreS, rc.coreR)
+    || rubyKanaAnchorParts(rc.coreS, rc.coreR);
   if (!parts) return `<ruby>${esc(rc.coreS)}<rt>${esc(rc.coreR)}</rt></ruby>`;
   return parts.map(([t, rt]) => rt
     ? `<ruby>${esc(t)}<rt>${esc(rt)}</rt></ruby>`
@@ -2802,6 +2865,35 @@ function renderNbTabs() {
   $('nb-tab-fav').classList.toggle('on', !!NB_SHARE || NB_PICK_MODE === 'fav');
 }
 
+// 顶部操作区吸顶：下滑收起让出屏幕，向上滑动自动浮出（不用滚回顶部点全播等按钮）
+let nbHeadLastY = 0;
+function nbHeadMeasure() {
+  const hdr = document.querySelector('header');
+  if (hdr) document.documentElement.style.setProperty('--hdr-h', hdr.offsetHeight + 'px');
+}
+function nbHeadReset() {
+  nbHeadLastY = Math.max(0, window.scrollY);
+  const head = $('nb-headpin');
+  if (!head) return;
+  head.classList.remove('hide');
+  head.classList.toggle('floating', nbHeadLastY > 80);
+}
+function nbHeadOnScroll() {
+  if (CUR_SCREEN !== 'notebook') return;
+  const head = $('nb-headpin');
+  if (!head) return;
+  const y = Math.max(0, window.scrollY);
+  const dy = y - nbHeadLastY;
+  if (Math.abs(dy) < 2) return;
+  nbHeadLastY = y;
+  if (y > 80 && dy > 0) head.classList.add('hide');
+  else head.classList.remove('hide');
+  head.classList.toggle('floating', y > 80 && !head.classList.contains('hide'));
+}
+addEventListener('scroll', nbHeadOnScroll, { passive: true });
+addEventListener('resize', nbHeadMeasure, { passive: true });
+nbHeadMeasure();
+
 async function goNotebook() {
   stopPlay();
   NB_SHARE = null;
@@ -3948,7 +4040,7 @@ async function sayAudio(text, btn, retry, ruby) {
     markBtnBusy(btn);
     const spoken = rubySpoken(text, ruby);
     const useRuby = !!spoken;
-    const key = 'say:' + text + (useRuby ? '|rb:' + spoken : '');
+    const key = 'say:' + text + (useRuby ? '|rb2:' + spoken : '');
     let url;
     const hit = await idbGet(key);
     // 小于 1KB 的缓存块视为坏缓存（曾出现空/截断 blob 被照播成"没声音"）：丢弃重取
@@ -4232,7 +4324,7 @@ async function sayBlobURL(text, voice, ruby) {
   // 日语（无 voice）与 sayAudio 共用缓存键，带注音时按读音合成，避免全播把 良い 读成 いい
   const spoken = voice ? '' : rubySpoken(text, ruby);
   const key = voice ? 'say:' + voice + ':' + text
-    : 'say:' + text + (spoken ? '|rb:' + spoken : '');
+    : 'say:' + text + (spoken ? '|rb2:' + spoken : '');
   const hit = await idbGet(key);
   if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/audio/say', {

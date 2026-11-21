@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -62,6 +64,11 @@ func (c *Client) chat(ctx context.Context, prompt string, extra map[string]any) 
 		"messages": []map[string]string{
 			{"role": "user", "content": prompt},
 		},
+	}
+	if v := os.Getenv("LLM_MAX_TOKENS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			payload["max_tokens"] = n
+		}
 	}
 	for k, v := range extra {
 		payload[k] = v

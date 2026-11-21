@@ -22,7 +22,8 @@ const SKIP_TEXT = new Set(qlist.filter(x => x.text && ['bind', 'dup', 'trans', '
 const SKIP_WORD = new Set(qlist.filter(x => x.surface && ['reading', 'hallucinate'].includes(x.reason)).map(x => x.surface));
 let skippedWords = 0, skippedSents = 0;
 
-// 词去重（surface|reading），保留首个非空 pos/meaning
+// 词去重（surface|reading），保留首个非空 pos/meaning；同形不同音调按教材分列，合并标注
+const stripPos = s => s.replace(/^\[[^\]]*\]\s*·\s*/, '');
 const words = new Map();
 const links = [];   // {dirId, surface, reading, sort}
 const sents = [];   // {linkKey, text, translation, src}
@@ -35,11 +36,16 @@ for (const L of data.lessons) {
       if (SKIP_WORD.has(w.surface)) { skippedWords++; return; }
       const reading = w.reading || '';
       const key = w.surface + '|' + reading;
-      if (!words.has(key)) words.set(key, { surface: w.surface, reading, pos: w.pos || '', meaning: w.meaning || '' });
+      if (!words.has(key)) words.set(key, { surface: w.surface, reading, pos: w.pos || '', meaning: w.meaning || '', pitch: w.pitch || '' });
       else {
         const e = words.get(key);
         if (!e.pos && w.pos) e.pos = w.pos;
         if (!e.meaning && w.meaning) e.meaning = w.meaning;
+        if (e.pitch && w.pitch && e.pitch !== w.pitch && e.meaning && w.meaning
+            && !e.meaning.includes(w.pitch + ' ')) {
+          const posPrefix = (e.meaning.match(/^(\[[^\]]*\]\s*·\s*)/) || w.meaning.match(/^(\[[^\]]*\]\s*·\s*)/) || [])[1] || '';
+          e.meaning = `${posPrefix}${e.pitch} ${stripPos(e.meaning)}；${w.pitch} ${stripPos(w.meaning)}`;
+        }
       }
       const linkKey = `${cdir}::${key}`;
       links.push({ dirId: cdir, surface: w.surface, reading, sort: wi, linkKey });

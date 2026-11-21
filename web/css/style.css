@@ -926,6 +926,21 @@ body.no-rt rt { display: none; }
 .nb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .nb-head #nb-title { font-size: 15px; font-weight: 700; }
 
+/* 顶部操作区整体吸顶：下滑收起让出屏幕，向上滑动自动浮出 */
+.nb-headpin {
+  position: sticky;
+  top: var(--hdr-h, 53px);
+  z-index: 20;
+  margin: 0 -18px;
+  padding: 0 18px 12px;
+  background: var(--paper);
+  transition: transform .22s var(--ease), box-shadow .22s var(--ease);
+}
+.nb-headpin .nb-strip { margin-bottom: 0; }
+.nb-headpin.floating { box-shadow: 0 16px 22px -22px rgba(36, 31, 25, .6); }
+/* 收起时整块滑到顶栏上方，完全离开视口 */
+.nb-headpin.hide { transform: translateY(calc(-100% - var(--hdr-h, 53px))); }
+
 /* 顶部卡片区：我的 / 收藏 / 新建 */
 .nb-tabs { display: flex; gap: 8px; margin-bottom: 10px; }
 .nb-tab {
@@ -1618,6 +1633,7 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 @media (max-width: 420px) {
   .screen { padding: 14px 14px 34px; }
   .card { padding: 16px; }
+  .nb-headpin { margin: 0 -14px; padding: 0 14px 10px; }
   header { padding: 9px 10px; }
   .brand-seal { width: 28px; height: 28px; font-size: 17px; border-radius: 8px; }
   .brand-name { font-size: 14px; }

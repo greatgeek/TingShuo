@@ -9,7 +9,15 @@ func TestRubyMarkup(t *testing.T) {
 		{Surface: "、"},
 		{Surface: "人", Reading: "人"},
 	})
-	want := `きれいな<sub alias="まち">町</sub>、人`
+	want := `きれいな<sub alias="マチ">町</sub>、人`
+	if got != want {
+		t.Fatalf("rubyMarkup = %q, want %q", got, want)
+	}
+}
+
+func TestRubyMarkupParticleInitialWord(t *testing.T) {
+	got := rubyMarkup([]RubyToken{{Surface: "博物館", Reading: "はくぶつかん"}})
+	want := `<sub alias="ハクブツカン">博物館</sub>`
 	if got != want {
 		t.Fatalf("rubyMarkup = %q, want %q", got, want)
 	}

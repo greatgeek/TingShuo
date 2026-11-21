@@ -69,7 +69,8 @@ func (h *Handler) Say(w http.ResponseWriter, r *http.Request) {
 	useRuby := rubyOK && spoken != req.Text
 	ckText := req.Text
 	if useRuby {
-		ckText += "\x1frb:" + spoken
+		// rb2：alias 改片假名后旧缓存音频仍是「は＋くぶつかん」的坏读法，必须换键重合成
+		ckText += "\x1frb2:" + spoken
 	}
 
 	ck := CacheKey(ckText, Params{Voice: req.Voice, Rate: req.Rate, Style: "", EngineVer: "say-v1"})

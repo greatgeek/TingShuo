@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,10 +36,19 @@ var blankRe = regexp.MustCompile(`[_＿]{2,}`)
 var kanaRe = regexp.MustCompile(`[ぁ-ゖァ-ヺー]`)
 
 // simplifiedOnlyRe 命中只存在于简体中文、不是日文新字体的字（用于识别题干夹带的中文说明）。
-var simplifiedOnlyRe = regexp.MustCompile(`[选译这说时书问题应该为变关词语陈顺并后连请让读吗呢两们对个几给见现发]`)
+var simplifiedOnlyRe = regexp.MustCompile(`[选译这说时书问题应该为变关词语陈顺并后连请让读吗呢两们对个几给见现发课吧啊呀嘛您遗满转户]`)
+
+// zhInstructionRe 命中中文指令式表述或中文特有词（语法题题干应为纯日语）。
+var zhInstructionRe = regexp.MustCompile(`(句子|改成|填空|翻译|中文|日语|请把|请将|请选择|正确的是|括号内|下列|哪一项|哪个|什么|怎么|为什么|有没有|可以|但是|如果|就是|朋友|知道|课文|茶水)`)
 
 // junkOptionRe 拦截语料里出现过的生造/畸形选项（模型把错误选项写成不存在的日语）。
 var junkOptionRe = regexp.MustCompile(`ですです|ですます|ますです|でしたです|ましたです|ませんです|[をにでねよかは]です|じゃあありません|じゃんありません|でいありません|ではんありません|じゃありませんて|ありませんで$`)
+
+// namedFormRe form 题必须点名目标形式，否则「填入合适的形」会变成多解题。
+var namedFormRe = regexp.MustCompile(`(辞書形|ます形|否定形|過去|敬体|常体|普通形|可能形|受身形|使役形|ば形|て形|た形|ない形|意向形|命令形|条件形|疑問形|「[^」]{1,12}」の形)`)
+
+// hintMarkRe 题干空格后残留的括号提示（如「＿＿＿（で）」）。
+var hintMarkRe = regexp.MustCompile(`[_＿]{2,}\s*（[ぁ-ゖァ-ヺー]{1,2}）`)
 
 // latinJunkRe 命中成串拉丁字母（模型偶发把 Academy、Nardo 之类杂词塞进题干/解析）；
 // 单字母（A：、N）不拦。
@@ -133,6 +143,7 @@ func main() {
 		vthink  = flag.Bool("verify-think", false, "质检时开启思考（更严格，速度较慢）")
 		think   = flag.Bool("think", false, "生成时开启思考（更慢，质量更高）")
 		redo    = flag.Bool("redo", false, "忽略已有题目，强制重新生成")
+		dryRun  = flag.Bool("dry-run", false, "只载入并打印知识点数量，不出题")
 	)
 	flag.Parse()
 
@@ -161,6 +172,14 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "load:", err)
 		os.Exit(1)
+	}
+	exN := 0
+	for _, v := range examples {
+		exN += len(v)
+	}
+	fmt.Printf("载入 %s：%d 个知识点，%d 条例句\n", *book, len(points), exN)
+	if *dryRun {
+		return
 	}
 	if *exonly {
 		points, examples = nil, nil
@@ -391,16 +410,16 @@ func generatePoint(ctx context.Context, llm *llmclient.Client, pool *pgxpool.Poo
 			logs = append(logs, vlog...)
 			candidates = passed
 		}
-		// 同一次生成内去重：题干高度相似或同题型超额的不收
+		// 同一次生成内去重：题干高度相似（跨题型也算）或同题型超额的不收
 		seen := map[string]bool{}
 		for _, q := range candidates {
-			if seen[q.Kind+"|"+q.Stem] {
+			if seen[q.Stem] {
 				continue
 			}
 			if p.Section == "grammar" && countKind(accepted, q.Kind) >= 2 {
 				continue
 			}
-			if nearDuplicate(accepted, q) {
+			if nearDuplicate(accepted, q) || sameOptions(accepted, q) {
 				logs = append(logs, fmt.Sprintf("  -- 丢弃重复题（%s）：%s", p.Pattern, q.Stem))
 				continue
 			}
@@ -416,7 +435,7 @@ func generatePoint(ctx context.Context, llm *llmclient.Client, pool *pgxpool.Poo
 				logs = append(logs, fmt.Sprintf("  -- 丢弃跨知识点重复题干（%s）：%s", p.Pattern, q.Stem))
 				continue
 			}
-			seen[q.Kind+"|"+q.Stem] = true
+			seen[q.Stem] = true
 			accepted = append(accepted, q)
 		}
 	}
@@ -451,16 +470,13 @@ func normStem(s string) []rune {
 	return out
 }
 
-// nearDuplicate 同题型下，题干互相包含（长度相近）或二元组重合度很高即视为重复。
+// nearDuplicate 题干互相包含（长度相近）或二元组重合度很高即视为重复（跨题型也算）。
 func nearDuplicate(qs []*readyQuestion, q *readyQuestion) bool {
 	a := normStem(q.Stem)
 	if len(a) == 0 {
 		return false
 	}
 	for _, other := range qs {
-		if other.Kind != q.Kind {
-			continue
-		}
 		b := normStem(other.Stem)
 		if len(b) == 0 {
 			continue
@@ -479,8 +495,26 @@ func nearDuplicate(qs []*readyQuestion, q *readyQuestion) bool {
 	return false
 }
 
-func bigramJaccard(a, b []rune) float64 {
-	if len(a) < 2 || len(b) < 2 {
+// sameOptions 两组选项文字完全相同（顺序无关）即视为重复题。
+func sameOptions(qs []*readyQuestion, q *readyQuestion) bool {
+	key := func(x *readyQuestion) string {
+		texts := make([]string, 0, len(x.Options))
+		for _, o := range x.Options {
+			texts = append(texts, o.Text)
+		}
+		sort.Strings(texts)
+		return strings.Join(texts, "\x00")
+	}
+	k := key(q)
+	for _, other := range qs {
+		if key(other) == k {
+			return true
+		}
+	}
+	return false
+}
+
+func bigramJaccard(a, b []rune) float64 {	if len(a) < 2 || len(b) < 2 {
 		return 0
 	}
 	set := func(rs []rune) map[string]bool {
@@ -526,7 +560,7 @@ func siblingPatterns(ctx context.Context, pool *pgxpool.Pool, p dbPoint) ([]stri
 
 func buildGenPrompt(p dbPoint, exs []dbExample, siblings []string, ask int) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, `你是日语教材《新编日语》初级（面向中国学习者）的命题老师。请为下面这个知识点出 %d 道四选一题，用于语法本测验。
+	fmt.Fprintf(&b, `你是日语教材（面向中国学习者）的命题老师。请为下面这个知识点出 %d 道四选一题，用于语法本测验。
 
 教材：%s 第%d课
 知识点：%s
@@ -562,7 +596,7 @@ func buildGenPrompt(p dbPoint, exs []dbExample, siblings []string, ask int) stri
 	b.WriteString(`
 出题总原则（必须遵守）：
 A. 题干语境必须足以唯一确定答案：用时间词、否定回答、问答对话、前后分句补足线索。禁止信息不足的题干，例如「私は＿＿＿。」「山田さんは＿＿＿。」「＿＿＿です。」（任何名词都能填）；题干不要以空格开头。
-   题干核心必须是一句/一段自然的日语（可带简短中文说明），空格嵌在日语句子内部；禁止模板碎片、词表拼接（如「初めに＿＿＿＋ね。」）或中日文脱节的半截碎片（如「「学生」の＿＿＿は「部」です。」）。
+   语法题题干核心必须是一句/一段自然的日语，不得夹带中文说明；需要变换要求时用日语写（如「次の文を否定形にしてください：…」），空格嵌在日语句子内部；禁止模板碎片、词表拼接（如「初めに＿＿＿＋ね。」）或中日文脱节的半截碎片（如「「学生」の＿＿＿は「部」です。」）。表达扩展题可用中文场景说明。
    禁止引用教材名称或课号（如「新版初级上第六课中……」）；禁止在题干或示例里直接写出答案（如问「に」后接什么，示例却已写「には」）；禁止「在…句型中助词X后应接＿＿＿」这类元语言问法。
    题干、解析、选项里不得夹带英语单词、罗马字或拼音人名（Academy、Nardo、KER、Zhang 这类杂词一律禁止）。
 B. 四个选项都必须是真实、规范的日语：每个选项单独拿出来，都要能作为某个自然句子中的正确形式。干扰项只能靠「在本句语境下不成立」来区分：错助词（は・が・を・に・で）、错活用形（行きます・行きません・行きました・行きませんでした）、错时态、错肯定否定、近义表达不合场景。
@@ -576,7 +610,15 @@ D. cloze 的 answer 只能是目标语法点本身（助词、助动词、词尾
 E. 所有日语选项必须含假名，不要出现纯汉字选项或中文选项。
 F. 每道题必须直接考查本知识点：空格挖在本知识点的形式位置上（助词、句型、活用词尾），题干其余部分与选项都围绕它；不得出成别的语法点（例：知识点是「から」，却把动词活用挖空）。
    干扰项要选代入后语法不成立或语义明显不合的形式；不要放仅语气略有差别的同义连接词（けれど、のに、なので 等），否则一题多解。
+   cloze 的干扰项不要用同一个词的另一种同样通顺的活用/时态/近义句型（例如答案是「調べれば」时，不要用「調べると」「調べたら」；答案是「報告してあります」时，不要用「報告しています」「報告してありました」）。如果这条例句换成别的形式也完全通顺，就不要用它出 cloze，改出 form 题或换一条例句，保证只有一个选项成立。
    题干不得自我泄题（如给出「食べる」再问辞书形）；不得用词表、箭头拼接；同一册内不要复用其他知识点的句子模板（如「明日は日曜日ですから、学校へ＿＿＿。」这类固定句不得反复套用）。
+G. 每个选项代入空格后，拼出的词形必须是真实存在的日语。干扰项要靠语法功能、时态或语义不合来排除，不能靠错误接续或生造拼写（如「高い」＋「たら」、「やむ」＋「そうにもない」、「眠っていない」＋「ないし」拼成「ないないし」、「学生」＋「わ」）。
+   选项内部不要留空格（如「に 対す」）；题干不要残留「（で）」这类括号提示或生成标记；同一知识点的几道题不要共用同一题干或同一组选项。
+H. 「〜たり」只能接在た形后：动词是「飲んだり」「読んだり」「食べたり」，イ形容词是「暗かったり」「高かったり」；禁止「飲みたり」「暗たり」这类错误接续；不要重复同一动作（「読んだり読んだりする」是病句，两个动作必须不同）。form 题的变换要求必须与答案的实际形式一致，不得写「辞書形で変えてください」却给出た形或たり形答案。
+I. 同一形式的时态/肯否差异（としている・とした・としない・としません；なります・なりました・なりません 等）不能同时作为选项，除非题干用时间词、前后文或问答把时态和肯否唯一锁定；没有线索的「多くの人があの企業に入ろう＿＿＿。」「先生は私の話を信じよう＿＿＿。」这类句子禁止出题。
+J. 题干与选项必须主语一致、情节自洽：先叙述「私は部長を待ちます」，后面就不能接「部長はお待ちになります」；场景里的人物、时态、肯否都要与答案吻合。
+K. 不要出「これはどうだろう。」这类只有词形、没有语境的纯填空；推测句必须给出推测依据或上下文。form 题的干扰项必须是同一词或同类词的真实完整活用形（如 学生だった・学生ではない・学生みたいだ），不能是残缺拼接（まないかぎりは・まないかぎりだった）。
+L. 对话题干要完整标注说话人（A：… B：…），不要把转述混进对话（如「〜か聞きました。」）；对话必须一问一答自然衔接。
 
 题型要求：
 `)
@@ -584,7 +626,7 @@ F. 每道题必须直接考查本知识点：空格挖在本知识点的形式�
 		b.WriteString(`1. 有参考例句时，至少 1 道 cloze、1 道 form、1 道 discriminate；没有合适的易混形式时，discriminate 可换成另一道带线索的 cloze。
    没有参考例句时，用 form 与 discriminate 覆盖，题干自编。
    cloze 题：从参考例句挖空（source_seq 填该例句序号）或自编带线索的句子（source_seq=0），题干中目标处写成 ＿＿＿，answer 是被挖掉的目标语法点（只含假名），且必须与正确选项的 text 完全一致。
-   form 题：考接续或变形，题干含 ＿＿＿，例如「＿＿＿＋ながら」或给动词原形让选正确接续；四个选项必须是真实活用形或真实接续形式，不能生造。
+   form 题：考接续或变形，题干含 ＿＿＿，必须点名目标形式（辞書形、ます形、否定形、過去形、敬体、常体、可能形、受身形、使役形、ば形、て形、た形、ない形，或「「X」の形」），并确保只有一项符合该形式；只写「填入合适的形」而没有形式名的，改出 cloze 或 discriminate。四个选项必须是真实活用形或真实接续形式，不能生造。
    discriminate 题：与本课或之前学过的易混形式对比，题干含 ＿＿＿，四个选项都是已学形式，只有一项在语境中成立。
 `)
 	} else {
@@ -701,6 +743,19 @@ func validateQuestion(p dbPoint, exs []dbExample, g genQuestion) (*readyQuestion
 		if junkOptionRe.MatchString(o.Text) {
 			return nil, "选项疑似生造（畸形助词/活用组合）：" + o.Text
 		}
+		if latinJunkRe.MatchString(o.Text) {
+			return nil, "选项夹带杂词（成串拉丁字母）：" + o.Text
+		}
+		if simplifiedOnlyRe.MatchString(o.Text) {
+			return nil, "选项夹带简体中文专用字：" + o.Text
+		}
+		if g.Kind != "expression" && repeatedTariAction(o.Text) {
+			return nil, "「たり」重复同一动作（病句）：" + o.Text
+		}
+		// 选项内部留空格（如「に 対す」）是畸形写法，不是正常日语
+		if g.Kind != "expression" && p.Section != "expression" && strings.ContainsAny(o.Text, " 　\t") {
+			return nil, "选项含空格（畸形拼写）：" + o.Text
+		}
 		// 表达情景题的选项是整句回答，句末「。」属正常书写；其余题型靠句读凑干扰项一律拦下
 		if strings.HasSuffix(o.Text, "、") || strings.HasSuffix(o.Text, "，") ||
 			(strings.HasSuffix(o.Text, "。") && g.Kind != "expression" && p.Section != "expression") {
@@ -776,8 +831,10 @@ func validateQuestion(p dbPoint, exs []dbExample, g genQuestion) (*readyQuestion
 			q.Stem = strings.Replace(src.Text, answer, blankMark, 1)
 			q.SourceExampleID = src.ID
 			q.StemRuby = cutRuby(src.RubyPairs, src.Text, answer)
-		} else if strings.Count(q.Stem, blankMark) != 1 {
-			return nil, "题干挖空数不为 1"
+		} else {
+			if strings.Count(q.Stem, blankMark) != 1 {
+				return nil, "题干挖空数不为 1"
+			}
 		}
 	case "form", "discriminate":
 		if strings.Count(q.Stem, blankMark) != 1 {
@@ -786,16 +843,62 @@ func validateQuestion(p dbPoint, exs []dbExample, g genQuestion) (*readyQuestion
 	case "expression":
 		// 情景题干可以没有挖空
 	}
+	if g.Kind != "expression" {
+		if hintMarkRe.MatchString(q.Stem) {
+			return nil, "题干空格后残留括号提示（生成标记）：" + q.Stem
+		}
+		// 答案与空格两侧首尾重叠会拼出「書いててあります」「眠っていないないし」这类病句
+		if idx := strings.Index(q.Stem, blankMark); idx >= 0 {
+			before, after := []rune(q.Stem[:idx]), []rune(q.Stem[idx+len(blankMark):])
+			ar := []rune(answer)
+			if len(before) > 0 && len(ar) > 0 && before[len(before)-1] == ar[0] {
+				return nil, "答案与空格前字重复（拼出叠字）"
+			}
+			if len(after) > 0 && len(ar) > 0 && after[0] == ar[len(ar)-1] {
+				return nil, "答案与空格后字重复（拼出叠字）"
+			}
+			if suffixPrefixLen(before, ar) >= 2 || suffixPrefixLen(ar, after) >= 2 {
+				return nil, "答案与空格前后多字重叠（拼出叠字/病句）"
+			}
+			// 「する＋そうにもない」「勝っ＋そうもない」：様態「そう」只能接ます形词干；
+			// 促音/拨音后连传闻「そうだ」也不能直接接。
+			if len(before) > 0 {
+				last := before[len(before)-1]
+				for _, o := range opts {
+					if !strings.HasPrefix(o.Text, "そう") {
+						continue
+					}
+					if last == 'っ' || last == 'ん' {
+						return nil, "「そう」硬接促音/拨音（病句）：" + o.Text
+					}
+					if strings.ContainsRune("うくぐすつぬぶむる", last) &&
+						(strings.HasPrefix(o.Text, "そうに") || strings.HasPrefix(o.Text, "そうと思")) {
+						return nil, "「そう」硬接辞書形（病句）：" + o.Text
+					}
+				}
+			}
+			// 「雨がし」：把名词句当成完整从句再接「し」，拼出来不是日语
+			if answer == "し" && len(before) > 0 && strings.ContainsRune("がをにはもでとへやの", before[len(before)-1]) {
+				return nil, "「し」硬接助词（缺谓语，病句）"
+			}
+		}
+	}
 	if g.Kind != "expression" && p.Section != "expression" && !kanaRe.MatchString(q.Stem) {
 		return nil, "题干不含假名（疑似中文）：" + q.Stem
+	}
+	if msg := labelMismatch(q.Stem, answer); msg != "" {
+		return nil, msg + "：" + q.Stem
+	}
+	if g.Kind == "form" && p.Section == "grammar" && !namedFormRe.MatchString(q.Stem) {
+		return nil, "form题未点名目标形式（须写明辞書形/ます形/過去形等，或「「X」の形」）：" + q.Stem
 	}
 	if g.Kind != "expression" && p.Section != "expression" {
 		if strings.HasPrefix(strings.TrimSpace(q.Stem), blankMark) {
 			return nil, "题干以空格开头（语境不足）：" + q.Stem
 		}
-		// 语法题题干应是纯日语句子；出现简体中文专用字说明中文混进了句子（如「窓は现在…」）
-		if simplifiedOnlyRe.MatchString(q.Stem) {
-			return nil, "题干夹带简体中文（语法题须纯日语）：" + q.Stem
+		// 语法题题干应是纯日语句子；出现简体中文专用字或中文指令式表述都说明混进了中文
+		if simplifiedOnlyRe.MatchString(q.Stem) || zhInstructionRe.MatchString(q.Stem) {
+			return nil, "题干夹带中文（语法题须纯日语）：" + q.Stem
 		}
 		stemText := blankRe.ReplaceAllString(q.Stem, "")
 		core := strings.Trim(stemText, " 　，。？！、,.?!\r\n\t")
@@ -815,11 +918,84 @@ func validateQuestion(p dbPoint, exs []dbExample, g genQuestion) (*readyQuestion
 // hasSimplifiedChinese 判断题干是否夹带简体中文说明：这些字不是日文新字体，
 // 出现即说明题干混入中文。混排题干不生成逐字注音（分词器会给中文按日语音读硬注音）。
 func hasSimplifiedChinese(s string) bool {
-	return simplifiedOnlyRe.MatchString(s)
+	return simplifiedOnlyRe.MatchString(s) || zhInstructionRe.MatchString(s)
+}
+
+// labelMismatch 校验题干里的语法术语与正确答案是否一致（如说「辞書形」却给「食べ切ります」）。
+func labelMismatch(stem, answer string) string {
+	has := func(subs ...string) bool {
+		for _, s := range subs {
+			if strings.Contains(answer, s) {
+				return true
+			}
+		}
+		return false
+	}
+	switch {
+	case strings.Contains(stem, "辞書形") && strings.HasSuffix(answer, "ます"):
+		return "题干称辞書形但答案不是辞書形"
+	case strings.Contains(stem, "ます形") && !strings.HasSuffix(answer, "ます"):
+		return "题干称ます形但答案不是ます形"
+	case strings.Contains(stem, "否定形") && !has("ない", "ません", "ず", "なかっ", "なく"):
+		return "题干称否定形但答案不是否定形"
+	case strings.Contains(stem, "過去") && !has("た", "でした", "ました"):
+		return "题干称过去形但答案不是过去形"
+	case strings.Contains(stem, "敬体") && !has("です", "ます", "ました", "ません", "でした"):
+		return "题干称敬体但答案不是敬体"
+	case (strings.Contains(stem, "常体") || strings.Contains(stem, "普通形")) && has("です", "ます"):
+		return "题干称常体/普通形但答案是敬体"
+	case strings.Contains(stem, "可能形") && !has("え", "られ"):
+		return "题干称可能形但答案不是可能形"
+	case strings.Contains(stem, "受身形") && !strings.Contains(answer, "られ"):
+		return "题干称受身形但答案不是受身形"
+	case strings.Contains(stem, "使役形") && !has("させ", "しめ"):
+		return "题干称使役形但答案不是使役形"
+	case strings.Contains(stem, "ば形") && !strings.Contains(answer, "ば"):
+		return "题干称ば形但答案不含ば"
+	case strings.Contains(stem, "て形") && !has("て", "で"):
+		return "题干称て形但答案不含て/で"
+	case strings.Contains(stem, "た形") && !strings.Contains(answer, "た"):
+		return "题干称た形但答案不含た"
+	case strings.Contains(stem, "ない形") && !strings.Contains(answer, "ない"):
+		return "题干称ない形但答案不含ない"
+	}
+	return ""
 }
 
 func normalizeBlank(s string) string {
 	return blankRe.ReplaceAllString(s, blankMark)
+}
+
+// repeatedTariAction 识别「読んだり読んだりする」这种同一动作写两遍的「たり」病句。
+func repeatedTariAction(s string) bool {
+	parts := strings.Split(s, "たり")
+	for i := 0; i+1 < len(parts); i++ {
+		if strings.TrimSpace(parts[i]) != "" && parts[i] == parts[i+1] {
+			return true
+		}
+	}
+	return false
+}
+
+// suffixPrefixLen 返回 a 的后缀与 b 的前缀重合的最大长度。
+func suffixPrefixLen(a, b []rune) int {
+	max := len(a)
+	if len(b) < max {
+		max = len(b)
+	}
+	for n := max; n >= 1; n-- {
+		ok := true
+		for i := 0; i < n; i++ {
+			if a[len(a)-n+i] != b[i] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			return n
+		}
+	}
+	return 0
 }
 
 // rubyOf 用课程同款分词器生成振り仮名；无法严格覆盖原文时退回纯文本。
@@ -910,9 +1086,9 @@ func verifyQuestions(ctx context.Context, llm *llmclient.Client, p dbPoint, qs [
 	}
 	b.WriteString(`下面是一组日语四选一题。请逐题、逐项检验，不要揣测出题人意图，也不要为了让题目成立而脑补题干没有的信息。
 对每题：
-1) 先看题干是否合格：完形/接续/辨析题的核心必须是一句/一段自然的日语（可带简短中文说明），空格嵌在日语句子内部；模板碎片（如「初めに＿＿＿＋ね。」）、词表拼接（含用「→」连词表的）、中日文脱节、日语本身不通的，题干不合格。中文说明必须是独立完整的说明句，不能嵌进日语句子中间（如「窓は现在仍然破着。」这类中日混排整句不合格）。题干以空格开头、或除空格外几乎没有语境（如「＿＿＿です。」）、题干/解析夹带英语单词或拼音人名（Academy、Nardo、KER、Zhang 之类）、示例里已经写出答案（问「に」后接什么，示例却已写「には」）、引用教材名称课号的元语言题，均按题干不合格处理。expression 情景题例外：题干可以只有中文场景说明（如「分别时想向老师表达感谢，最得体的是哪一句？」），不要求含日语核心句，只要场景清楚、空格位置明确即可；但场景自相矛盾（如「客人留下点心，你递给对方礼物」）算不合格。
-2) 再看四个选项本身是否是真实、规范的日语形式：生造词、畸形助词组合、不存在的活用形、末尾带句读符号靠标点凑数的，都算不规范（表达情景题整句回答末尾的「。」属正常书写，不算），wellformed 为 4 个布尔值，必须全部为 true。
-3) 把每个选项分别代入题干空格（expression 题：判断作为该场景的回答是否得体），判断是否在语法与语境上成立，得到 valid（4 个布尔值）。语境不成立但本身规范真实的干扰项，valid=false。注意近义连接词（が／けれど／ですが／のに 等）在同一语境可能都成立，不要因为出题人标了某个答案就硬判唯一。
+1) 先看题干是否合格：完形/接续/辨析题的核心必须是一句/一段自然的日语（可带简短中文说明），空格嵌在日语句子内部；模板碎片（如「初めに＿＿＿＋ね。」）、词表拼接（含用「→」连词表的）、中日文脱节、日语本身不通的，题干不合格。中文说明必须是独立完整的说明句，不能嵌进日语句子中间（如「窓は现在仍然破着。」这类中日混排整句不合格）。题干以空格开头、或除空格外几乎没有语境（如「＿＿＿です。」）、题干/解析夹带英语单词或拼音人名（Academy、Nardo、KER、Zhang 之类）、示例里已经写出答案（问「に」后接什么，示例却已写「には」）、引用教材名称课号的元语言题，均按题干不合格处理。expression 情景题例外：题干可以只有中文场景说明（如「分别时想向老师表达感谢，最得体的是哪一句？」），不要求含日语核心句，只要场景清楚、空格位置明确即可；但场景自相矛盾（如「客人留下点心，你递给对方礼物」）算不合格。同一组里出现两道题干相同或选项组相同的题，都按不合格处理；题干空格后残留「（で）」这类括号提示的也算不合格。
+2) 再看四个选项本身是否是真实、规范的日语形式：生造词、畸形助词组合、不存在的活用形、末尾带句读符号靠标点凑数的，都算不规范（表达情景题整句回答末尾的「。」属正常书写，不算），wellformed 为 4 个布尔值，必须全部为 true。还要把每个选项代入空格，检查拼出的词形是否真实存在：「高いたら」「やむそうにもない」「眠っていないないし」这类错误接续、选项内含空格（如「に 対す」）、靠错误拼写凑出的干扰项，wellformed 应为 false。
+3) 把每个选项分别代入题干空格（expression 题：判断作为该场景的回答是否得体），判断是否在语法与语境上成立，得到 valid（4 个布尔值）。语境不成立但本身规范真实的干扰项，valid=false。form 题的 valid 还要满足题干点名的形式（辞書形/ます形/過去形等）；句子自然但不符合所要求形式的，valid=false。注意近义连接词（が／けれど／ですが／のに 等）在同一语境可能都成立，不要因为出题人标了某个答案就硬判唯一。
 4) 再看每题是否真的考查了上方知识点：空格应落在该知识点的形式位置（助词、句型、活用词尾），选项围绕该知识点；若空格考的是别的语法（知识点是「から」，空格却挖在动词上）、题干自泄答案（问辞书形却已写出辞书形）、解析与知识点无关，按题干不合格处理。
 5) 最后核对解析与选项说明：explain（解析）和每个选项的 why 必须与正确答案一致且本身正确。若解析把正确项说成错误、与答案矛盾、或选项说明声称某个错误项「正确」，按不合格处理，issue 指出是哪一条。expression 题的选项说明可以只讲得体性差异。
 6) 只有题干合格、wellformed 全为 true 且恰好 1 个选项在语境中成立时，answer 填该下标、ok=true；若有 0 个或 2 个以上成立、存在生造选项、题干不合格、解析自相矛盾，ok=false，并在 issue 用中文简短说明。
