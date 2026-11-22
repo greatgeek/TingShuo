@@ -1971,7 +1971,8 @@ body.rec-playing #sc-recite-play { padding-bottom: 104px; }
 .rec-head-top h2 { margin-bottom: 2px; min-width: 0; }
 .rec-head-tools { display: flex; align-items: center; gap: 8px; flex: none; }
 .rec-speed { width: auto; flex: none; padding: 6px 8px; font-size: 12px; border-radius: 9px; background: var(--surface-2); }
-.rec-gra-btn { flex: none; width: auto; margin: 0; padding: 7px 12px; font-size: 12px; }
+.rec-gra-btn { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; margin: 0; padding: 0; border-radius: 9px; color: var(--ink2); }
+.rec-gra-btn svg { width: 16px; height: 16px; }
 
 .gra-back { width: auto; margin: 0 0 10px; padding: 7px 12px; font-size: 12px; }
 #gra-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
