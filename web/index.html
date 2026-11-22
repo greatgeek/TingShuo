@@ -505,7 +505,16 @@
     <div class="card rec-head">
       <div class="rec-head-top">
         <h2 id="rec-title">—</h2>
-        <button class="btn ghost rec-gra-btn" id="rec-gra-btn" title="本课语法点与例句" hidden>语法</button>
+        <div class="rec-head-tools">
+          <select id="rec-rate" class="rec-speed" aria-label="播放速度">
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+          </select>
+          <button class="btn ghost rec-gra-btn" id="rec-gra-btn" title="本课语法点与例句" hidden>语法</button>
+        </div>
       </div>
       <div class="modebar rec-modes" id="rec-modes">
         <button data-mode="read" class="on">听读</button>
@@ -528,11 +537,6 @@
         <button class="rec-btn main" id="rec-play" aria-label="播放">▶</button>
         <button class="rec-btn" id="rec-repeat" aria-label="重播本句">↻</button>
         <button class="rec-btn" id="rec-next" aria-label="下一句">⏭</button>
-        <select id="rec-rate" aria-label="播放速度">
-          <option value="0.75">0.75×</option>
-          <option value="1" selected>1×</option>
-          <option value="1.25">1.25×</option>
-        </select>
       </div>
     </div>
   </section>
