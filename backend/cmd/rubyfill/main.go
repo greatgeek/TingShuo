@@ -45,6 +45,9 @@ func main() {
 		{"grammar_example",
 			`SELECT id, text FROM grammar_example WHERE ruby_tokens IS NULL`,
 			`UPDATE grammar_example SET ruby_tokens = $1 WHERE id = $2`},
+		{"listening_line",
+			`SELECT id, text FROM listening_line WHERE ruby_tokens IS NULL`,
+			`UPDATE listening_line SET ruby_tokens = $1 WHERE id = $2`},
 	}
 	type item struct {
 		id   string

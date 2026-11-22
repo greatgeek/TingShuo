@@ -1,0 +1,27 @@
+-- 听力训练导入（build_sql.js 生成）
+BEGIN;
+DELETE FROM listening_lesson WHERE id = 'listen-05';
+INSERT INTO listening_lesson (id, lesson_no, title, audio_key, duration_ms, sort_order) VALUES ('listen-05', 5, '第5課 听力训练', 'listening/listening-lesson-05.mp3', 126570, 0);
+INSERT INTO listening_section (id, lesson_id, section_no, kind, instruction, audio_start_ms, audio_end_ms, example_prompt, example_answer) VALUES ('lsn05-s1', 'listen-05', 1, 'tf', '听录音，根据录音中的内容判断对错。对的画 ○，错的画 ×。', 14800, 74600, '李さんは中国人です。', '○');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn05-s1-q1', 'lsn05-s1', 1, '中村さんは長谷川さんの先輩です。', '[]'::jsonb, '○');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn05-s1-q2', 'lsn05-s1', 2, '吉村さんは会社員ではありません。', '[]'::jsonb, '×');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn05-s1-q3', 'lsn05-s1', 3, 'ジョージさんは伊藤さんの友達です。', '[]'::jsonb, '○');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s1-l1', 'lsn05-s1', 1, '李', 15323, 21979, 'こんにちは。李由加です。中国から来ました。よろしくお願いします。', '小李：你好。我是李由加。来自中国。请多关照。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s1-l2', 'lsn05-s1', 2, '長谷川', 32882, 39982, '初めまして。長谷川です。経済学部の一年生です。中村さんは私の先輩です。', '长谷川：初次见面。我是长谷川。经济系一年级学生。中村是我的学长。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s1-l3', 'lsn05-s1', 3, '吉村', 49576, 56403, 'おはようございます。吉村花子です。東京の会社員です。よろしく。', '吉村：早上好。我是吉村花子。是东京的公司职员。请多关照。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s1-l4', 'lsn05-s1', 4, '伊藤', 65830, 73798, 'こんにちは。伊藤です。理工学部の二年生です。ジョージさんは僕の友達です。よろしく。', '伊藤：你好。我是伊藤。理工系二年级学生。乔治是我的朋友。请多关照。');
+INSERT INTO listening_section (id, lesson_id, section_no, kind, instruction, audio_start_ms, audio_end_ms, example_prompt, example_answer) VALUES ('lsn05-s2', 'listen-05', 2, 'choice', '听录音，根据录音中的内容，将正确答案填在括号中。', 89700, 122300, '', '');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn05-s2-q1', 'lsn05-s2', 1, '中村さんは何年生ですか。', '[{"key":"a","text":"一年生です"},{"key":"b","text":"二年生です"},{"key":"c","text":"三年生です"}]'::jsonb, 'b');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn05-s2-q2', 'lsn05-s2', 2, 'キムさんは中村さんの（　　）です。', '[{"key":"a","text":"先生"},{"key":"b","text":"先輩"},{"key":"c","text":"後輩"}]'::jsonb, 'c');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn05-s2-q3', 'lsn05-s2', 3, '田中さんは中村さんの友達ですか。', '[{"key":"a","text":"はい、そうです。"},{"key":"b","text":"いいえ、違います。"}]'::jsonb, 'a');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn05-s2-q4', 'lsn05-s2', 4, 'キムさんは（　　）です。', '[{"key":"a","text":"韓国人で、大学院生です"},{"key":"b","text":"日本人で、新入生です"},{"key":"c","text":"韓国人で、新入生です"}]'::jsonb, 'c');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l1', 'lsn05-s2', 1, '田中', 90187, 91959, '中村さん、おはよう。', '田中：中村，早上好。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l2', 'lsn05-s2', 2, '中村', 93366, 94365, 'あ、おはよう。', '中村：啊，早上好。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l3', 'lsn05-s2', 3, '田中', 94971, 99177, '紹介します。経済学部の新入生のキムさんです。', '田中：我来介绍一下。这是经济系新生金同学。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l4', 'lsn05-s2', 4, '中村', 99756, 101425, 'こんにちは。中村です。', '中村：你好。我是中村。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l5', 'lsn05-s2', 5, '田中', 102124, 105916, '中村さんは法学部の二年生で、私の友達です。', '田中：中村是法学系二年级学生，是我的朋友。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l6', 'lsn05-s2', 6, 'キム', 106999, 111678, '先輩ですね。初めまして。キムです。韓国から来ました。', '金：是学长啊。初次见面。我是金。来自韩国。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l7', 'lsn05-s2', 7, '中村', 112629, 114894, 'あ、韓国の方ですか。', '中村：啊，是韩国人吗？');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l8', 'lsn05-s2', 8, 'キム', 116135, 117425, 'はい、よろしくお願いします。', '金：是的，请多关照。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn05-s2-l9', 'lsn05-s2', 9, '中村', 118260, 120618, 'こちらこそ、よろしくお願いします。', '中村：也请你多关照。');
+COMMIT;

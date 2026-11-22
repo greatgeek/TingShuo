@@ -1,0 +1,260 @@
+{
+  "id": "listen-15",
+  "lesson_no": 15,
+  "title": "第15課 听力训练",
+  "audio_key": "listening/listening-lesson-15.mp3",
+  "duration_ms": 162772,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "tf",
+      "instruction": "听录音，根据录音中的内容判断对错。对的画（○），错的画（×）。",
+      "audio_start_ms": 12732,
+      "audio_end_ms": 85171,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "伊藤さんはアイスコーヒーを注文しました。",
+          "options": [],
+          "answer": "○"
+        },
+        {
+          "prompt": "男の人は、日曜日いつも家で家事をします。",
+          "options": [],
+          "answer": "×"
+        },
+        {
+          "prompt": "女の人は、これから資料を作ります。",
+          "options": [],
+          "answer": "×"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "男",
+          "start_ms": 13032,
+          "end_ms": 16400,
+          "text": "暑いですね。何か飲みましょうか。",
+          "translation": "男：真热啊。喝点什么吧？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 16938,
+          "end_ms": 21104,
+          "text": "いいですね。私、コーラ。伊藤さんは？",
+          "translation": "女：好啊。我要可乐。伊藤你呢？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 22589,
+          "end_ms": 25306,
+          "text": "僕、アイスコーヒーがいいですね。",
+          "translation": "男：我要冰咖啡。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 30258,
+          "end_ms": 37977,
+          "text": "日曜日はいつも何をしますか。",
+          "translation": "男：周日你通常做什么？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 39062,
+          "end_ms": 40702,
+          "text": "家で家事をしますよ。",
+          "translation": "女：在家做家务。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 41502,
+          "end_ms": 42242,
+          "text": "えらいですね。",
+          "translation": "男：真了不起。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 42595,
+          "end_ms": 43465,
+          "text": "田中さんは？",
+          "translation": "女：田中你呢？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 43954,
+          "end_ms": 50270,
+          "text": "僕は普段、仕事が忙しいので、日曜日はいつも家で寝ます。",
+          "translation": "男：我平时工作忙，所以周日总是在家睡觉。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 51008,
+          "end_ms": 52448,
+          "text": "へえ、ずっと？",
+          "translation": "女：哦，一直睡？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 53031,
+          "end_ms": 53961,
+          "text": "お昼頃まで。",
+          "translation": "男：睡到中午左右。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 54829,
+          "end_ms": 57247,
+          "text": "すごいですね。それからは？",
+          "translation": "女：真厉害。那之后呢？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 57862,
+          "end_ms": 61901,
+          "text": "それからはゆっくりご飯を食べます。",
+          "translation": "男：之后慢慢吃饭。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 66858,
+          "end_ms": 73536,
+          "text": "明日の資料、もう作りました？",
+          "translation": "男：明天的资料已经做好了吗？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 74319,
+          "end_ms": 75331,
+          "text": "はい。こちらです。",
+          "translation": "女：做好了。在这里。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 76122,
+          "end_ms": 76752,
+          "text": "ありがとう。",
+          "translation": "男：谢谢。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 77266,
+          "end_ms": 80485,
+          "text": "これで大丈夫なら、部長にも送りましょうか。",
+          "translation": "女：如果这样可以的话，也给部长发一份吧？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 81371,
+          "end_ms": 84471,
+          "text": "そうですね。お願いします。",
+          "translation": "男：好啊。麻烦你了。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容回答问题（用日语输入，标点可省略）。背景：男生和女生在对话。",
+      "audio_start_ms": 99792,
+      "audio_end_ms": 155819,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "女の人は昨日何を買いましたか。",
+          "options": [],
+          "answer": "何も買いませんでした|何も買わなかった|何も買いません"
+        },
+        {
+          "prompt": "男の人は手伝いましたか。",
+          "options": [],
+          "answer": "いいえ|いいえ手伝いませんでした|手伝いませんでした"
+        },
+        {
+          "prompt": "男の人は女の人といつ映画を見ますか。",
+          "options": [],
+          "answer": "明日です|明日"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "男",
+          "start_ms": 100092,
+          "end_ms": 104081,
+          "text": "昨日、何をしましたか。",
+          "translation": "男：昨天做了什么？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 104461,
+          "end_ms": 111091,
+          "text": "午前は、博物館に行きました。午後はショッピング。",
+          "translation": "女：上午去了博物馆，下午购物。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 111767,
+          "end_ms": 116252,
+          "text": "いっぱい買いましたか。",
+          "translation": "男：买了很多吗？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 117037,
+          "end_ms": 122672,
+          "text": "ううん、何も買いませんでした。",
+          "translation": "女：没有，什么都没买。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 126211,
+          "end_ms": 131114,
+          "text": "あ、持ちましょうか。",
+          "translation": "男：啊，我帮你拿吧？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 131460,
+          "end_ms": 138605,
+          "text": "ありがとうございます。でも、大丈夫です。どうも。",
+          "translation": "女：谢谢。不过不用了。谢谢。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 141115,
+          "end_ms": 143155,
+          "text": "一緒に映画を見ましょうか。",
+          "translation": "女：一起看电影吧？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 143156,
+          "end_ms": 146154,
+          "text": "いいですね。いつ行きますか。",
+          "translation": "男：好啊。什么时候去？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 146700,
+          "end_ms": 148460,
+          "text": "今日の午後はどうですか。",
+          "translation": "女：今天下午怎么样？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 149341,
+          "end_ms": 150840,
+          "text": "今日はちょっと。明日なら大丈夫ですが。",
+          "translation": "男：今天有点……明天的话可以。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 151573,
+          "end_ms": 155119,
+          "text": "じゃ、そうしましょう。",
+          "translation": "女：那就这么定了。"
+        }
+      ]
+    }
+  ]
+}

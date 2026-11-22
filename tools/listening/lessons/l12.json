@@ -1,0 +1,246 @@
+{
+  "id": "listen-12",
+  "lesson_no": 12,
+  "title": "第12課 听力训练",
+  "audio_key": "listening/listening-lesson-12.mp3",
+  "duration_ms": 129103,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "tf",
+      "instruction": "听录音，根据录音中的内容判断对错。对的画（○），错的画（×）。",
+      "audio_start_ms": 12338,
+      "audio_end_ms": 71842,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "鈴木さんは運転ができます。",
+          "options": [],
+          "answer": "×"
+        },
+        {
+          "prompt": "伊藤さんはバイオリンが下手です。",
+          "options": [],
+          "answer": "×"
+        },
+        {
+          "prompt": "本屋さんの隣のお店はとてもおいしいです。",
+          "options": [],
+          "answer": "○"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "男",
+          "start_ms": 12638,
+          "end_ms": 17560,
+          "text": "鈴木さんは運転ができますか。",
+          "translation": "男：铃木会开车吗？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 18409,
+          "end_ms": 19159,
+          "text": "できません。",
+          "translation": "女：不会。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 21325,
+          "end_ms": 22165,
+          "text": "え？どうしてですか。",
+          "translation": "男：诶？为什么？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 23231,
+          "end_ms": 26030,
+          "text": "怖いんです。",
+          "translation": "女：因为害怕。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 32248,
+          "end_ms": 38263,
+          "text": "伊藤さんはすごいですね。",
+          "translation": "男：伊藤真厉害啊。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 39297,
+          "end_ms": 40665,
+          "text": "えっ？どうしてですか。",
+          "translation": "女：诶？为什么？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 41552,
+          "end_ms": 44745,
+          "text": "ピアノもバイオリンもお上手なんですよ。",
+          "translation": "男：钢琴和小提琴都拉得很好。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 45524,
+          "end_ms": 48846,
+          "text": "へえ、そうですか。",
+          "translation": "女：哦，是吗。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 54915,
+          "end_ms": 61138,
+          "text": "あそこのお店、どう？",
+          "translation": "男：那家店怎么样？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 61867,
+          "end_ms": 62617,
+          "text": "どこの？",
+          "translation": "女：哪家？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 64234,
+          "end_ms": 65434,
+          "text": "ほら、本屋さんの隣の。",
+          "translation": "男：就是书店旁边那家。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 66277,
+          "end_ms": 66967,
+          "text": "あ、あの天ぷら屋さん？",
+          "translation": "女：啊，那家天妇罗店？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 66968,
+          "end_ms": 68018,
+          "text": "そう。",
+          "translation": "男：对。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 70042,
+          "end_ms": 71142,
+          "text": "ぜんぜんおいしいよ。",
+          "translation": "女：非常好吃哦。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容，将正确答案填在括号中。背景：今天是学校的文化节，很多学生摆出了自己的摊位。杨和小林是同学，杨来到小林的摊位前聊起天来。",
+      "audio_start_ms": 85318,
+      "audio_end_ms": 124082,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "昨日はどんな天気でしたか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "いい天気でした。"
+            },
+            {
+              "key": "b",
+              "text": "涼しかったです。"
+            },
+            {
+              "key": "c",
+              "text": "暑かったです。"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "今日はお客さんが多いですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "はい、多いです。"
+            },
+            {
+              "key": "b",
+              "text": "いいえ、多くありません。"
+            }
+          ],
+          "answer": "a"
+        },
+        {
+          "prompt": "桜味のアイスクリームが人気の理由は何ですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "ピンク色ですから。"
+            },
+            {
+              "key": "b",
+              "text": "味がいいですから。"
+            },
+            {
+              "key": "c",
+              "text": "ピンク色で、味もいいですから。"
+            }
+          ],
+          "answer": "c"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "ヤン",
+          "start_ms": 85618,
+          "end_ms": 90357,
+          "text": "今日はいい天気ですね。",
+          "translation": "杨：今天天气真好啊。"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 90660,
+          "end_ms": 96086,
+          "text": "そうですね。昨日よりちょっと暑いですが。",
+          "translation": "小林：是啊。比昨天稍微热一点。"
+        },
+        {
+          "speaker": "ヤン",
+          "start_ms": 96786,
+          "end_ms": 99875,
+          "text": "昨日は雨でしたが、涼しかったですね。",
+          "translation": "杨：昨天下雨，但很凉快。"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 100620,
+          "end_ms": 105244,
+          "text": "そうですね。でも、今日は晴れなので、お客さんも多いです。",
+          "translation": "小林：是啊。不过今天是晴天，客人也多。"
+        },
+        {
+          "speaker": "ヤン",
+          "start_ms": 106296,
+          "end_ms": 109237,
+          "text": "商品の中で、どれがいちばん人気ですか。",
+          "translation": "杨：商品里哪个最受欢迎？"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 110086,
+          "end_ms": 116669,
+          "text": "桜味のアイスクリームがいちばん人気です。ピンクの色で、味もよくて。",
+          "translation": "小林：樱花味冰淇淋最受欢迎。粉色的，味道也好。"
+        },
+        {
+          "speaker": "ヤン",
+          "start_ms": 116670,
+          "end_ms": 123382,
+          "text": "へえ、ピンク色のアイスクリーム、僕、初めてですよ。一つください。",
+          "translation": "杨：哦，粉色的冰淇淋我还是第一次见。给我来一个。"
+        }
+      ]
+    }
+  ]
+}

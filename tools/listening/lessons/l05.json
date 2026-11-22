@@ -1,0 +1,137 @@
+{
+  "id": "listen-05",
+  "lesson_no": 5,
+  "title": "第5課 听力训练",
+  "audio_key": "listening/listening-lesson-05.mp3",
+  "duration_ms": 126570,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "tf",
+      "instruction": "听录音，根据录音中的内容判断对错。对的画 ○，错的画 ×。",
+      "audio_start_ms": 14800,
+      "audio_end_ms": 74600,
+      "example": { "prompt": "李さんは中国人です。", "answer": "○" },
+      "questions": [
+        { "prompt": "中村さんは長谷川さんの先輩です。", "answer": "○" },
+        { "prompt": "吉村さんは会社員ではありません。", "answer": "×" },
+        { "prompt": "ジョージさんは伊藤さんの友達です。", "answer": "○" }
+      ],
+      "lines": [
+        {
+          "speaker": "李", "start_ms": 15323, "end_ms": 21979,
+          "text": "こんにちは。李由加です。中国から来ました。よろしくお願いします。",
+          "translation": "小李：你好。我是李由加。来自中国。请多关照。"
+        },
+        {
+          "speaker": "長谷川", "start_ms": 32882, "end_ms": 39982,
+          "text": "初めまして。長谷川です。経済学部の一年生です。中村さんは私の先輩です。",
+          "translation": "长谷川：初次见面。我是长谷川。经济系一年级学生。中村是我的学长。"
+        },
+        {
+          "speaker": "吉村", "start_ms": 49576, "end_ms": 56403,
+          "text": "おはようございます。吉村花子です。東京の会社員です。よろしく。",
+          "translation": "吉村：早上好。我是吉村花子。是东京的公司职员。请多关照。"
+        },
+        {
+          "speaker": "伊藤", "start_ms": 65830, "end_ms": 73798,
+          "text": "こんにちは。伊藤です。理工学部の二年生です。ジョージさんは僕の友達です。よろしく。",
+          "translation": "伊藤：你好。我是伊藤。理工系二年级学生。乔治是我的朋友。请多关照。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容，将正确答案填在括号中。",
+      "audio_start_ms": 89700,
+      "audio_end_ms": 122300,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "中村さんは何年生ですか。",
+          "options": [
+            { "key": "a", "text": "一年生です" },
+            { "key": "b", "text": "二年生です" },
+            { "key": "c", "text": "三年生です" }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "キムさんは中村さんの（　　）です。",
+          "options": [
+            { "key": "a", "text": "先生" },
+            { "key": "b", "text": "先輩" },
+            { "key": "c", "text": "後輩" }
+          ],
+          "answer": "c"
+        },
+        {
+          "prompt": "田中さんは中村さんの友達ですか。",
+          "options": [
+            { "key": "a", "text": "はい、そうです。" },
+            { "key": "b", "text": "いいえ、違います。" }
+          ],
+          "answer": "a"
+        },
+        {
+          "prompt": "キムさんは（　　）です。",
+          "options": [
+            { "key": "a", "text": "韓国人で、大学院生です" },
+            { "key": "b", "text": "日本人で、新入生です" },
+            { "key": "c", "text": "韓国人で、新入生です" }
+          ],
+          "answer": "c"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "田中", "start_ms": 90187, "end_ms": 91959,
+          "text": "中村さん、おはよう。",
+          "translation": "田中：中村，早上好。"
+        },
+        {
+          "speaker": "中村", "start_ms": 93366, "end_ms": 94365,
+          "text": "あ、おはよう。",
+          "translation": "中村：啊，早上好。"
+        },
+        {
+          "speaker": "田中", "start_ms": 94971, "end_ms": 99177,
+          "text": "紹介します。経済学部の新入生のキムさんです。",
+          "translation": "田中：我来介绍一下。这是经济系新生金同学。"
+        },
+        {
+          "speaker": "中村", "start_ms": 99756, "end_ms": 101425,
+          "text": "こんにちは。中村です。",
+          "translation": "中村：你好。我是中村。"
+        },
+        {
+          "speaker": "田中", "start_ms": 102124, "end_ms": 105916,
+          "text": "中村さんは法学部の二年生で、私の友達です。",
+          "translation": "田中：中村是法学系二年级学生，是我的朋友。"
+        },
+        {
+          "speaker": "キム", "start_ms": 106999, "end_ms": 111678,
+          "text": "先輩ですね。初めまして。キムです。韓国から来ました。",
+          "translation": "金：是学长啊。初次见面。我是金。来自韩国。"
+        },
+        {
+          "speaker": "中村", "start_ms": 112629, "end_ms": 114894,
+          "text": "あ、韓国の方ですか。",
+          "translation": "中村：啊，是韩国人吗？"
+        },
+        {
+          "speaker": "キム", "start_ms": 116135, "end_ms": 117425,
+          "text": "はい、よろしくお願いします。",
+          "translation": "金：是的，请多关照。"
+        },
+        {
+          "speaker": "中村", "start_ms": 118260, "end_ms": 120618,
+          "text": "こちらこそ、よろしくお願いします。",
+          "translation": "中村：也请你多关照。"
+        }
+      ]
+    }
+  ]
+}

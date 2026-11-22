@@ -495,7 +495,12 @@
     <div class="card">
       <h2>课文本</h2>
       <p class="hint">练口语课文原声。选一课：听读、背诵、听写、选角色对戏，或用消失术、中译日、通关赛挑战记忆。</p>
+      <div class="tabs rec-tabs" id="rec-tabs">
+        <button data-tab="text" class="on">课文</button>
+        <button data-tab="listen">听力训练</button>
+      </div>
       <div id="rec-list"></div>
+      <div id="lis-list" hidden></div>
       <p class="hint" id="rec-list-hint" style="margin-top:12px"></p>
     </div>
   </section>
@@ -541,6 +546,18 @@
         <button class="rec-btn" id="rec-next" aria-label="下一句">⏭</button>
       </div>
     </div>
+  </section>
+
+  <!-- 听力训练练习 -->
+  <section class="screen" id="sc-listen-play">
+    <div class="card rec-head">
+      <div class="rec-head-top">
+        <h2 id="lis-title">—</h2>
+        <span class="rec-item-meta" id="lis-meta"></span>
+      </div>
+      <p class="hint">按大题播放录音并作答，提交后判分、揭晓原文。点原文任意一句可重听该句。</p>
+    </div>
+    <div id="lis-sections"></div>
   </section>
 
   <footer class="site-footer">

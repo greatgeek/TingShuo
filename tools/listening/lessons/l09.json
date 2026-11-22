@@ -1,0 +1,261 @@
+{
+  "id": "listen-09",
+  "lesson_no": 9,
+  "title": "第9課 听力训练",
+  "audio_key": "listening/listening-lesson-09.mp3",
+  "duration_ms": 167462,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容仿照例子写下相应的数字。",
+      "audio_start_ms": 10190,
+      "audio_end_ms": 99799,
+      "example": {
+        "prompt": "今日は7月1日です。",
+        "answer": ""
+      },
+      "questions": [
+        {
+          "prompt": "中村さんのお誕生日は＿＿月＿＿日です。",
+          "options": [],
+          "answer": "11月3日"
+        },
+        {
+          "prompt": "日本語の試験は来週の＿＿曜日です。",
+          "options": [],
+          "answer": "火|火曜日|火曜"
+        },
+        {
+          "prompt": "マイケルさんのお誕生日は＿＿月＿＿日です。",
+          "options": [],
+          "answer": "5月20日"
+        },
+        {
+          "prompt": "日本語の授業は＿＿曜日と＿＿曜日です。",
+          "options": [],
+          "answer": "水・金|水と金|水、金|水金|水曜日と金曜日|水曜日、金曜日|水曜日金曜日"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "A",
+          "start_ms": 10490,
+          "end_ms": 16772,
+          "text": "今日は何月何日ですか。",
+          "translation": "A：今天几月几日？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 16773,
+          "end_ms": 18986,
+          "text": "7月1日です。",
+          "translation": "B：7月1日。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 26257,
+          "end_ms": 32072,
+          "text": "中村さんは何座ですか。",
+          "translation": "A：中村是什么星座？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 32073,
+          "end_ms": 33351,
+          "text": "蠍座です。",
+          "translation": "B：天蝎座。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 34292,
+          "end_ms": 38908,
+          "text": "え？蠍座ですか。じゃ、お誕生日は、11月？",
+          "translation": "A：诶？天蝎座？那你的生日是11月？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 40269,
+          "end_ms": 41559,
+          "text": "はい、11月3日です。",
+          "translation": "B：是的，11月3日。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 48190,
+          "end_ms": 53671,
+          "text": "日本語の試験は来週ですか。",
+          "translation": "A：日语考试是下周吗？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 54231,
+          "end_ms": 57195,
+          "text": "はい、そうですよ。来週の火曜日です。",
+          "translation": "B：是的。下周二。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 63890,
+          "end_ms": 70566,
+          "text": "マイケルさんのお誕生日パーティーはいつですか。",
+          "translation": "A：迈克尔的生日派对是什么时候？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 71208,
+          "end_ms": 74147,
+          "text": "ええと、今は５月ですか。",
+          "translation": "B：我想想，现在是5月吗？"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 74148,
+          "end_ms": 76265,
+          "text": "いいえ、4月です。",
+          "translation": "A：不，是4月。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 77291,
+          "end_ms": 79555,
+          "text": "じゃ、来月の20日ですね。",
+          "translation": "B：那就是下个月20号了。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 86290,
+          "end_ms": 92482,
+          "text": "今日は日本語の授業がありますか。",
+          "translation": "A：今天有日语课吗？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 92483,
+          "end_ms": 99099,
+          "text": "いいえ、ありません。日本語の授業は水曜日と金曜日だけですから。",
+          "translation": "B：没有。日语课只有周三和周五。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容，将正确答案填在括号中。背景：以下是小王的日记。",
+      "audio_start_ms": 114443,
+      "audio_end_ms": 161209,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "日本語の試験はいつでしたか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "昨日でした"
+            },
+            {
+              "key": "b",
+              "text": "先週でした"
+            },
+            {
+              "key": "c",
+              "text": "日曜日でした"
+            }
+          ],
+          "answer": "a"
+        },
+        {
+          "prompt": "王さんの日本語はどうですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "あまり上手ではありません。"
+            },
+            {
+              "key": "b",
+              "text": "上手です。"
+            }
+          ],
+          "answer": "a"
+        },
+        {
+          "prompt": "日本人の友達は何人いますか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "ひとり"
+            },
+            {
+              "key": "b",
+              "text": "ふたり"
+            },
+            {
+              "key": "c",
+              "text": "さんにん"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "王さんの留学生活はどうですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "あまり楽しくありません。"
+            },
+            {
+              "key": "b",
+              "text": "とても楽しいです。"
+            }
+          ],
+          "answer": "b"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "王",
+          "start_ms": 114743,
+          "end_ms": 120848,
+          "text": "昨日は日本語の試験でした。",
+          "translation": "小王：昨天是日语考试。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 121048,
+          "end_ms": 130108,
+          "text": "私は去年、中国から来ました。今、大学２年生です。",
+          "translation": "小王：我去年从中国来。现在是大学二年级。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 131573,
+          "end_ms": 137657,
+          "text": "日本語があまり上手ではありません。でも、日本語の勉強が好きです。",
+          "translation": "小王：日语还不太好。但我喜欢学日语。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 139279,
+          "end_ms": 145898,
+          "text": "私には友達が３人います。日本人の友達は２人で、それから、イギリス人の友達は１人います。",
+          "translation": "小王：我有三个朋友。日本朋友两个，还有一位英国朋友。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 145899,
+          "end_ms": 153057,
+          "text": "みんな大学のクラスメートで、とてもやさしいです。",
+          "translation": "小王：大家都是大学的同学，人很好。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 153347,
+          "end_ms": 161209,
+          "text": "みんなのおかげで、私の留学生活はとても楽しいです。",
+          "translation": "小王：多亏了大家，我的留学生活非常愉快。"
+        }
+      ]
+    }
+  ]
+}

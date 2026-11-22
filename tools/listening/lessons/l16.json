@@ -1,0 +1,239 @@
+{
+  "id": "listen-16",
+  "lesson_no": 16,
+  "title": "第16課 听力训练",
+  "audio_key": "listening/listening-lesson-16.mp3",
+  "duration_ms": 168229,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容仿照例子写下相应的数字。",
+      "audio_start_ms": 17032,
+      "audio_end_ms": 84973,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "全部でいくらぐらいかかりましたか。＿＿円です。",
+          "options": [],
+          "answer": "420"
+        },
+        {
+          "prompt": "一日で何時間ぐらい勉強しますか。＿＿時間です。",
+          "options": [],
+          "answer": "6"
+        },
+        {
+          "prompt": "今年は何ヶ月ぐらい上海にいましたか。＿＿ヶ月です。",
+          "options": [],
+          "answer": "2"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "A",
+          "start_ms": 17332,
+          "end_ms": 20768,
+          "text": "スーパーで何を買いましたか。",
+          "translation": "A：在超市买了什么？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 21563,
+          "end_ms": 27310,
+          "text": "150円のりんごを２つ買いました。それから120円のアイスクリームを１つ。",
+          "translation": "B：买了两个150日元的苹果，还有一个120日元的冰淇淋。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 28239,
+          "end_ms": 30545,
+          "text": "え？アイスを１つだけ？",
+          "translation": "A：诶？冰淇淋只买一个？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 31550,
+          "end_ms": 35201,
+          "text": "そうですよ。あなたは食べませんよね。",
+          "translation": "B：是啊。你不吃吧。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 40157,
+          "end_ms": 47334,
+          "text": "勉強は忙しいですか。",
+          "translation": "A：学习忙吗？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 49832,
+          "end_ms": 56939,
+          "text": "はい、朝3時間ぐらい勉強します。それから、夜7時から10時まで図書館で勉強します。",
+          "translation": "B：忙。早上学3个小时左右，然后晚上7点到10点在图书馆学习。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 57886,
+          "end_ms": 60511,
+          "text": "すごいですね。",
+          "translation": "A：真厉害。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 65457,
+          "end_ms": 73339,
+          "text": "よく上海に行きますか。",
+          "translation": "A：经常去上海吗？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 74469,
+          "end_ms": 77251,
+          "text": "上海に会社がありますので、よく行きます。",
+          "translation": "B：公司在上海，所以经常去。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 78688,
+          "end_ms": 84273,
+          "text": "じゃ、２月と３月は、ずっと上海でしたよね。",
+          "translation": "A：那2月和3月一直在上海吧。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容，将正确答案写在括号中。背景：男生和女生在对话。",
+      "audio_start_ms": 105350,
+      "audio_end_ms": 159007,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "女の人は、この後、何をしますか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "病院に行きます。"
+            },
+            {
+              "key": "b",
+              "text": "休みます。"
+            },
+            {
+              "key": "c",
+              "text": "薬を飲みます。"
+            }
+          ],
+          "answer": "c"
+        },
+        {
+          "prompt": "女の人は、今週の日曜日、何をしますか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "何もしません。"
+            },
+            {
+              "key": "b",
+              "text": "会社で残業します。"
+            },
+            {
+              "key": "c",
+              "text": "博物館へ行きます。"
+            }
+          ],
+          "answer": "b"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "男",
+          "start_ms": 105650,
+          "end_ms": 110536,
+          "text": "伊藤さん、大丈夫ですか。顔色が悪いですね。",
+          "translation": "男：伊藤，你没事吧？脸色不太好。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 111154,
+          "end_ms": 114449,
+          "text": "ええ、ちょっと頭が痛いんです。",
+          "translation": "女：嗯，有点头疼。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 115356,
+          "end_ms": 118096,
+          "text": "薬はありますか。",
+          "translation": "男：有药吗？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 118097,
+          "end_ms": 121533,
+          "text": "あ、あります。今、飲みます。",
+          "translation": "女：啊，有。我现在就吃。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 126490,
+          "end_ms": 131326,
+          "text": "この土曜日、何をしますか。",
+          "translation": "男：这个周六做什么？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 131717,
+          "end_ms": 138517,
+          "text": "ええと、今週の土曜日ですね。何もありません。",
+          "translation": "女：我想想，这周六啊。没什么安排。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 140326,
+          "end_ms": 142426,
+          "text": "じゃ、いっしょに博物館へ行きましょうか。",
+          "translation": "男：那一起去博物馆吧？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 143290,
+          "end_ms": 145920,
+          "text": "でも、土曜日は雨ですよね。",
+          "translation": "女：可是周六下雨吧。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 147937,
+          "end_ms": 149219,
+          "text": "えっ？そうですか。じゃ、日曜日は？",
+          "translation": "男：诶？是吗。那周日呢？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 149534,
+          "end_ms": 150454,
+          "text": "日曜日は会社で残業します。",
+          "translation": "女：周日要在公司加班。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 151360,
+          "end_ms": 153990,
+          "text": "そうですか。",
+          "translation": "男：这样啊。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 154984,
+          "end_ms": 158307,
+          "text": "やっぱり土曜日に行きましょうか。",
+          "translation": "女：还是周六去吧。"
+        }
+      ]
+    }
+  ]
+}

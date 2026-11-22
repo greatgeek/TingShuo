@@ -1,0 +1,25 @@
+-- 听力训练导入（build_sql.js 生成）
+BEGIN;
+DELETE FROM listening_lesson WHERE id = 'listen-11';
+INSERT INTO listening_lesson (id, lesson_no, title, audio_key, duration_ms, sort_order) VALUES ('listen-11', 11, '第11課 听力训练', 'listening/listening-lesson-11.mp3', 149467, 0);
+INSERT INTO listening_section (id, lesson_id, section_no, kind, instruction, audio_start_ms, audio_end_ms, example_prompt, example_answer) VALUES ('lsn11-s1', 'listen-11', 1, 'choice', '听录音，根据录音中的内容仿照例子，将正确答案填在括号中。', 12548, 98161, '白いパソコンとグレーのパソコンとどちらが重いですか。', 'b');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn11-s1-q1', 'lsn11-s1', 1, 'バスと地下鉄とどちらが便利ですか。', '[{"key":"a","text":"バス"},{"key":"b","text":"地下鉄"}]'::jsonb, 'b');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn11-s1-q2', 'lsn11-s1', 2, '木曜日と金曜日とどちらが忙しいですか。', '[{"key":"a","text":"木曜日"},{"key":"b","text":"金曜日"}]'::jsonb, 'b');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn11-s1-q3', 'lsn11-s1', 3, 'ジョージさんは日本料理と中華料理とどちらの方が好きですか。', '[{"key":"a","text":"日本料理"},{"key":"b","text":"中華料理"}]'::jsonb, 'b');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l1', 'lsn11-s1', 1, 'A', 12848, 20812, '白いパソコンとグレーのパソコンとどちらが重いですか。', 'A：白色电脑和灰色电脑哪个重？');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l2', 'lsn11-s1', 2, 'B', 21828, 27051, '白いパソコンはグレーのほど重くありません。', 'B：白色电脑没有灰色电脑重。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l3', 'lsn11-s1', 3, 'A', 33282, 40915, 'すみませんが、この近くにバスはありますか。', 'A：请问这附近有公交车吗？');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l4', 'lsn11-s1', 4, 'B', 41610, 48536, 'ありますが、地下鉄もありますよ。そのほうが速くて便利です。', 'B：有。不过也有地铁，地铁更快更方便。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l5', 'lsn11-s1', 5, 'A', 54815, 63861, '田中さんは木曜日と金曜日と、どちらが忙しいですか。', 'A：田中，周四和周五哪个更忙？');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l6', 'lsn11-s1', 6, 'B', 64910, 77330, 'そうですね。木曜日は授業が多いですが、金曜日のほうは授業と、それから、会議も遅くまでありますからね。', 'B：这个嘛。周四课多，但周五既有课，会议也开到很晚。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l7', 'lsn11-s1', 7, 'A', 83548, 91381, 'ジョージさん、日本料理は好きですか。', 'A：乔治，你喜欢日本菜吗？');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s1-l8', 'lsn11-s1', 8, 'B', 92698, 97461, '好きですよ。でも、中華料理ほどじゃありません。', 'B：喜欢。不过不如中国菜。');
+INSERT INTO listening_section (id, lesson_id, section_no, kind, instruction, audio_start_ms, audio_end_ms, example_prompt, example_answer) VALUES ('lsn11-s2', 'listen-11', 2, 'choice', '听录音，根据录音中的内容，将正确答案填在括号中。', 113883, 143731, '', '');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn11-s2-q1', 'lsn11-s2', 1, '週末の図書館はどうですか。', '[{"key":"a","text":"人があまり多くないです。"},{"key":"b","text":"学生は多いですが、社会人は多くありません。"},{"key":"c","text":"学生も社会人も多くて、あまり静かではありません。"}]'::jsonb, 'c');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn11-s2-q2', 'lsn11-s2', 2, 'この町の図書館は多いですか。', '[{"key":"a","text":"はい、とても多いです。"},{"key":"b","text":"いいえ、多くないです。"}]'::jsonb, 'b');
+INSERT INTO listening_question (id, section_id, question_no, prompt, options, answer) VALUES ('lsn11-s2-q3', 'lsn11-s2', 3, '図書館の中の喫茶店はどうですか。', '[{"key":"a","text":"安いです。"},{"key":"b","text":"安くありませんが、広くて環境もいいです。"},{"key":"c","text":"人が多いです。"}]'::jsonb, 'b');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s2-l1', 'lsn11-s2', 1, '', 114183, 117320, 'この町は図書館が少ないです。', '这个城镇图书馆很少。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s2-l2', 'lsn11-s2', 2, '', 118416, 129756, '月曜日から金曜日までは人があまり多くないですが、土日は学生も社会人も多くて、あまり静かではありません。', '周一到周五人不太多，但周六周日学生和上班族都很多，不太安静。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s2-l3', 'lsn11-s2', 3, '', 131242, 135837, '図書館の１階にはおしゃれな喫茶店があります。', '图书馆一楼有一家很时尚的咖啡店。');
+INSERT INTO listening_line (id, section_id, line_no, speaker, start_ms, end_ms, text, translation) VALUES ('lsn11-s2-l4', 'lsn11-s2', 4, '', 137133, 143031, '外の喫茶店ほど安くありませんが、広くて環境もいいです。', '虽然没有外面的咖啡店便宜，但宽敞、环境也好。');
+COMMIT;

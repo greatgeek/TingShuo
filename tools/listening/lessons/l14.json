@@ -1,0 +1,175 @@
+{
+  "id": "listen-14",
+  "lesson_no": 14,
+  "title": "第14課 听力训练",
+  "audio_key": "listening/listening-lesson-14.mp3",
+  "duration_ms": 144266,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容仿照例子写下相应的时间。",
+      "audio_start_ms": 18428,
+      "audio_end_ms": 89865,
+      "example": {
+        "prompt": "今、9時40分です。",
+        "answer": ""
+      },
+      "questions": [
+        {
+          "prompt": "明日のオンライン講座は＿＿＿＿です。",
+          "options": [],
+          "answer": "1時間半|1時間30分"
+        },
+        {
+          "prompt": "夏休みは＿＿＿＿です。",
+          "options": [],
+          "answer": "16日から29日まで|16日〜29日|16日29日|16日から29日"
+        },
+        {
+          "prompt": "この映画の長さは、＿＿＿＿です。",
+          "options": [],
+          "answer": "2時間半|2時間30分"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "A",
+          "start_ms": 18728,
+          "end_ms": 22602,
+          "text": "すみません、今何時ですか。",
+          "translation": "A：请问现在几点？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 23382,
+          "end_ms": 26517,
+          "text": "9時40分です。",
+          "translation": "B：9点40分。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 32515,
+          "end_ms": 41356,
+          "text": "明日のオンライン講座は何時間ありますか。",
+          "translation": "A：明天的线上讲座有多长时间？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 42186,
+          "end_ms": 44467,
+          "text": "1時間半です。",
+          "translation": "B：一个半小时。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 50448,
+          "end_ms": 60406,
+          "text": "もう15日ですか？明日から夏休みですね。",
+          "translation": "A：已经15号了吗？明天开始放暑假了。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 61463,
+          "end_ms": 69066,
+          "text": "あ、本当だ。二週間ありますから、29日までですね。",
+          "translation": "B：啊，真的。有两周时间，所以放到29号。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 75082,
+          "end_ms": 84858,
+          "text": "この映画、長いですね。もう疲れました。",
+          "translation": "A：这部电影真长啊。我都累了。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 85922,
+          "end_ms": 89165,
+          "text": "私も。2時間半ですからね。",
+          "translation": "B：我也是。毕竟两个半小时。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "text",
+      "instruction": "高桥先生从去年到今年4月发生了哪些变化？根据录音中的内容，用日语填写画线处的内容。",
+      "audio_start_ms": 105193,
+      "audio_end_ms": 136512,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "昇格の理由：＿＿＿＿",
+          "options": [],
+          "answer": "実績がいい|実績がよい|実績"
+        },
+        {
+          "prompt": "今年4月のSKL社での役職：＿＿＿＿",
+          "options": [],
+          "answer": "課長"
+        },
+        {
+          "prompt": "今年の仕事の量：＿＿＿＿",
+          "options": [],
+          "answer": "多い|多くなりました"
+        },
+        {
+          "prompt": "性格：＿＿＿＿",
+          "options": [],
+          "answer": "真面目・勤勉|真面目|勤勉"
+        },
+        {
+          "prompt": "今年の休み：＿＿＿＿",
+          "options": [],
+          "answer": "日曜日|日曜"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "",
+          "start_ms": 105493,
+          "end_ms": 111918,
+          "text": "高橋さんはSKL社の社員です。",
+          "translation": "高桥是SKL公司的员工。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 113161,
+          "end_ms": 115471,
+          "text": "とても真面目で、勤勉です。",
+          "translation": "非常认真、勤奋。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 116837,
+          "end_ms": 122284,
+          "text": "実績がよかったので、今年の4月から課長になりました。",
+          "translation": "因为业绩好，今年4月起当上了课长。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 122285,
+          "end_ms": 126398,
+          "text": "そして、仕事も多くなりました。",
+          "translation": "而且工作也变多了。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 126399,
+          "end_ms": 131602,
+          "text": "なかなか終わりませんから、土曜日も仕事です。",
+          "translation": "工作总也做不完，所以周六也要上班。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 132937,
+          "end_ms": 135812,
+          "text": "休みは日曜日だけになりました。",
+          "translation": "休息日只剩下周日了。"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "id": "listen-06",
+  "lesson_no": 6,
+  "title": "第6課 听力训练",
+  "audio_key": "listening/listening-lesson-06.mp3",
+  "duration_ms": 185133,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "text",
+      "instruction": "听录音，用数字记录电话号码。",
+      "audio_start_ms": 15064,
+      "audio_end_ms": 117685,
+      "example": {
+        "prompt": "090-8563-7074",
+        "answer": ""
+      },
+      "questions": [
+        {
+          "prompt": "",
+          "options": [],
+          "answer": "138-5799-0101"
+        },
+        {
+          "prompt": "",
+          "options": [],
+          "answer": "080-4325-6758"
+        },
+        {
+          "prompt": "",
+          "options": [],
+          "answer": "159-0231-9934"
+        },
+        {
+          "prompt": "",
+          "options": [],
+          "answer": "033-6721-6089"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "例",
+          "start_ms": 15364,
+          "end_ms": 26593,
+          "text": "090-8563-7074",
+          "translation": "（例）电话号码"
+        },
+        {
+          "speaker": "（1）",
+          "start_ms": 33590,
+          "end_ms": 49018,
+          "text": "138-5799-0101",
+          "translation": "电话号码"
+        },
+        {
+          "speaker": "（2）",
+          "start_ms": 56724,
+          "end_ms": 71435,
+          "text": "080-4325-6758",
+          "translation": "电话号码"
+        },
+        {
+          "speaker": "（3）",
+          "start_ms": 79090,
+          "end_ms": 95391,
+          "text": "159-0231-9934",
+          "translation": "电话号码"
+        },
+        {
+          "speaker": "（4）",
+          "start_ms": 102290,
+          "end_ms": 116985,
+          "text": "033-6721-6089",
+          "translation": "电话号码"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容，将正确答案填在括号中。背景：小林来到 HKK 株式会社的员工宿舍，管理员向他介绍宿舍的情况。",
+      "audio_start_ms": 132228,
+      "audio_end_ms": 180863,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "社員寮にはWi-Fiがありますか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "はい、あります。"
+            },
+            {
+              "key": "b",
+              "text": "いいえ、ありません。"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "食堂は社員寮の＿＿階です。",
+          "options": [
+            {
+              "key": "a",
+              "text": "1"
+            },
+            {
+              "key": "b",
+              "text": "2"
+            },
+            {
+              "key": "c",
+              "text": "3"
+            }
+          ],
+          "answer": "c"
+        },
+        {
+          "prompt": "小林さんの部屋には洗濯機がありますか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "はい、あります。"
+            },
+            {
+              "key": "b",
+              "text": "いいえ、ありません。"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "自動販売機は社員寮の＿＿階です。",
+          "options": [
+            {
+              "key": "a",
+              "text": "1"
+            },
+            {
+              "key": "b",
+              "text": "2"
+            },
+            {
+              "key": "c",
+              "text": "3"
+            }
+          ],
+          "answer": "b"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "管理員",
+          "start_ms": 132528,
+          "end_ms": 141833,
+          "text": "ここはHKK株式会社の社員寮です。",
+          "translation": "管理员：这里是 HKK 株式会社的员工宿舍。"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 142926,
+          "end_ms": 147811,
+          "text": "こんにちは。新入社員の小林です。",
+          "translation": "小林：您好。我是新员工小林。"
+        },
+        {
+          "speaker": "管理員",
+          "start_ms": 147812,
+          "end_ms": 153605,
+          "text": "小林さんですか。小林さんの部屋は５階です。こちらは部屋の鍵です。",
+          "translation": "管理员：是小林啊。你的房间在5楼，这是房间钥匙。"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 154554,
+          "end_ms": 155694,
+          "text": "ありがとうございます。",
+          "translation": "小林：谢谢。"
+        },
+        {
+          "speaker": "管理員",
+          "start_ms": 156489,
+          "end_ms": 159219,
+          "text": "３階には食堂と会議室があります。",
+          "translation": "管理员：3楼有食堂和会议室。"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 159220,
+          "end_ms": 164621,
+          "text": "わかりました。あのう、Wi-Fiはありますか。",
+          "translation": "小林：明白了。请问有 Wi-Fi 吗？"
+        },
+        {
+          "speaker": "管理員",
+          "start_ms": 164622,
+          "end_ms": 169237,
+          "text": "すみません。ここにはWi-Fiはありません。",
+          "translation": "管理员：不好意思，这里没有 Wi-Fi。"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 169357,
+          "end_ms": 173030,
+          "text": "そうですか。じゃ、洗濯機はありますか。",
+          "translation": "小林：这样啊。那有洗衣机吗？"
+        },
+        {
+          "speaker": "管理員",
+          "start_ms": 173481,
+          "end_ms": 176247,
+          "text": "あります。２階にあります。それから、自動販売機も２階です。",
+          "translation": "管理员：有，在2楼。另外自动售货机也在2楼。"
+        },
+        {
+          "speaker": "小林",
+          "start_ms": 176960,
+          "end_ms": 180163,
+          "text": "わかりました。どうぞ、よろしくお願いします。",
+          "translation": "小林：明白了。请多关照。"
+        }
+      ]
+    }
+  ]
+}

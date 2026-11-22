@@ -50,7 +50,7 @@ const NAV_PARENT = {
   home: null, login: null,
   create: 'home', learn: 'home', review: 'home',
   library: 'home', wordstudy: 'home', notebook: 'home', nbres: 'home',
-  recite: 'home', 'recite-play': 'recite',
+  recite: 'home', 'recite-play': 'recite', 'listen-play': 'recite',
   grammar: 'home', quiz: 'grammar',
   study: 'home',
   aiask: 'notebook',
@@ -73,6 +73,7 @@ function applyScreen(name) {
   if (CUR_SCREEN !== name) clipStopAll();
   if (CUR_SCREEN === 'quiz' && name !== 'quiz' && WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
   if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
+  if (CUR_SCREEN === 'listen-play' && name !== 'listen-play') lisLeave();
   assocClose(); // 联想悬浮卡片不属于任何屏，切屏时收起
   CUR_SCREEN = name;
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('on'));
@@ -5898,15 +5899,20 @@ async function loadRecCount() {
 async function goRecite() {
   stopPlay();
   go('recite');
-  const box = $('rec-list');
-  if (!REC_LIST.length) box.innerHTML = '<p class="hint">载入中…</p>';
+  if (!REC_LIST.length) $('rec-list').innerHTML = '<p class="hint">载入中…</p>';
+  if (!LIS_LIST.length) $('lis-list').innerHTML = '<p class="hint">载入中…</p>';
   try {
-    REC_LIST = (await api('/recitation/lessons')).items || [];
+    const [r1, r2] = await Promise.all([api('/recitation/lessons'), api('/listening/lessons')]);
+    REC_LIST = r1.items || [];
+    LIS_LIST = r2.items || [];
   } catch (e) {
-    if (!REC_LIST.length) box.innerHTML = `<p class="hint">载入失败：${esc(e.message)}</p>`;
+    if (!REC_LIST.length) $('rec-list').innerHTML = `<p class="hint">载入失败：${esc(e.message)}</p>`;
+    if (!LIS_LIST.length) $('lis-list').innerHTML = `<p class="hint">载入失败：${esc(e.message)}</p>`;
     return;
   }
   recRenderList();
+  lisRenderList();
+  setRecTab(REC_TAB);
 }
 async function openRec(id, opts = {}) {
   stopPlay();
@@ -5969,6 +5975,287 @@ function recLeave() {
     }
   }
 }
+
+// ---- 听力训练 ----
+let LIS_LIST = [];
+let LIS = null;
+let LIS_AUDIO = null;
+let LIS_SEC = null;      // 正在播放的大题 no
+let LIS_STOP_MS = 0;     // 播到此处自动停（大题结束/单句结束）
+let LIS_MODE = {};       // section_no → {answers, submitted, showZh}
+let REC_TAB = localStorage.getItem('ts_rec_tab') || 'text';
+
+function setRecTab(tab) {
+  REC_TAB = tab === 'listen' ? 'listen' : 'text';
+  localStorage.setItem('ts_rec_tab', REC_TAB);
+  document.querySelectorAll('#rec-tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === REC_TAB));
+  $('rec-list').hidden = REC_TAB !== 'text';
+  $('lis-list').hidden = REC_TAB !== 'listen';
+  $('rec-list-hint').textContent = REC_TAB === 'listen'
+    ? '听力素材按大题切段播放，作答记录按账号同步。'
+    : '进度按行记在账号里，换设备登录也会同步。';
+}
+function lisRenderList() {
+  const box = $('lis-list');
+  if (!LIS_LIST.length) {
+    box.innerHTML = '<p class="hint">还没有听力内容。</p>';
+    return;
+  }
+  box.innerHTML = LIS_LIST.map(it => {
+    const donePct = it.section_count ? Math.round(it.done_count / it.section_count * 100) : 0;
+    const scorePct = it.total ? Math.round(it.score / it.total * 100) : 0;
+    return `<button class="rec-item" data-id="${esc(it.id)}">
+      <div class="rec-item-top">
+        <span class="rec-item-title">${esc(it.title)}</span>
+        <span class="rec-item-meta">${recFmt(it.duration_ms)} · ${it.section_count} 大题</span>
+      </div>
+      <div class="rec-stat"><span>已答</span><div class="track"><i class="recited" style="width:${donePct}%"></i></div><span>${it.done_count}/${it.section_count}</span></div>
+      <div class="rec-stat"><span>得分</span><div class="track"><i class="dict" style="width:${scorePct}%"></i></div><span>${it.score}/${it.total}</span></div>
+    </button>`;
+  }).join('');
+}
+function lisSec(no) {
+  return LIS && LIS.sections.find(s => s.section_no === +no);
+}
+async function openListen(id) {
+  stopPlay();
+  let d;
+  try { d = await api('/listening/lessons/' + id); } catch (e) { toast(e.message); return; }
+  lisStop();
+  LIS = d;
+  LIS_MODE = {};
+  d.sections.forEach(s => {
+    LIS_MODE[s.section_no] = {
+      answers: s.progress ? Object.assign({}, s.progress.answers) : {},
+      submitted: !!s.progress,
+      results: null,
+      showZh: false,
+    };
+  });
+  $('lis-title').textContent = d.lesson.title;
+  $('lis-meta').textContent = `${d.sections.length} 大题 · ${recFmt(d.lesson.duration_ms)}`;
+  go('listen-play');
+  window.scrollTo(0, 0);
+  lisRender();
+}
+function lisLeave() {
+  lisStop();
+  LIS_SEC = null;
+}
+function lisStop() {
+  if (LIS_AUDIO) { try { LIS_AUDIO.pause(); } catch {} }
+  syncLisPlayBtns();
+}
+function lisAudio() {
+  if (!LIS_AUDIO) {
+    LIS_AUDIO = new Audio(LIS.audio_url);
+    LIS_AUDIO.preload = 'auto';
+    LIS_AUDIO.addEventListener('timeupdate', lisTick);
+    LIS_AUDIO.addEventListener('ended', () => { LIS_SEC = null; syncLisPlayBtns(); });
+  }
+  return LIS_AUDIO;
+}
+function lisTick() {
+  const a = LIS_AUDIO;
+  if (!a || LIS_SEC == null) return;
+  const ms = a.currentTime * 1000;
+  if (LIS_STOP_MS && ms >= LIS_STOP_MS) {
+    a.pause();
+    lisSyncBar(LIS_SEC, LIS_STOP_MS);
+    LIS_SEC = null;
+    syncLisPlayBtns();
+    return;
+  }
+  lisSyncBar(LIS_SEC, ms);
+}
+function lisSyncBar(no, ms) {
+  const s = lisSec(no);
+  const wrap = document.getElementById('lis-sec-' + no);
+  if (!s || !wrap) return;
+  const span = Math.max(1, s.audio_end_ms - s.audio_start_ms);
+  const pct = Math.max(0, Math.min(100, (ms - s.audio_start_ms) / span * 100));
+  const fill = wrap.querySelector('.lis-fill');
+  if (fill) fill.style.width = pct + '%';
+  const label = wrap.querySelector('.lis-time');
+  if (label) label.textContent = `${recFmt(Math.max(0, ms))} / ${recFmt(s.audio_end_ms)}`;
+}
+function syncLisPlayBtns() {
+  document.querySelectorAll('#lis-sections [data-lis-play]').forEach(b => {
+    const on = LIS_AUDIO && !LIS_AUDIO.paused && +b.dataset.lisPlay === LIS_SEC;
+    b.textContent = on ? '⏸' : '▶';
+  });
+}
+function lisToggleSection(no) {
+  const s = lisSec(no);
+  if (!s) return;
+  const a = lisAudio();
+  if (LIS_SEC === +no && !a.paused) { a.pause(); LIS_SEC = null; syncLisPlayBtns(); return; }
+  const start = s.audio_start_ms / 1000, end = s.audio_end_ms / 1000;
+  if (LIS_SEC !== +no || a.currentTime < start || a.currentTime >= end) a.currentTime = start;
+  LIS_SEC = +no;
+  LIS_STOP_MS = s.audio_end_ms;
+  lisSyncBar(no, s.audio_start_ms);
+  a.play().catch(e => toast('播放失败：' + e.message));
+  syncLisPlayBtns();
+}
+function lisPlayLine(no, startMs, endMs) {
+  const a = lisAudio();
+  LIS_SEC = +no;
+  LIS_STOP_MS = endMs;
+  a.currentTime = startMs / 1000;
+  lisSyncBar(no, startMs);
+  a.play().catch(e => toast('播放失败：' + e.message));
+  syncLisPlayBtns();
+}
+function lisSeek(no, ev) {
+  const s = lisSec(no);
+  if (!s) return;
+  const r = ev.currentTarget.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (ev.clientX - r.left) / Math.max(1, r.width)));
+  const ms = Math.round(s.audio_start_ms + pct * (s.audio_end_ms - s.audio_start_ms));
+  const a = lisAudio();
+  a.currentTime = ms / 1000;
+  lisSyncBar(no, ms);
+}
+function lisAnsText(a) {
+  return String(a || '').split('|')[0];
+}
+function lisOptions(s, q, st) {
+  const opts = s.kind === 'tf'
+    ? [{ key: '○', text: '○' }, { key: '×', text: '×' }]
+    : (q.options || []);
+  return opts.map(o => {
+    const your = st.answers[String(q.question_no)] || '';
+    let cls = 'lis-opt';
+    if (your === o.key) cls += ' on';
+    if (st.submitted && q.answer) {
+      if (o.key === q.answer) cls += ' correct';
+      else if (your === o.key) cls += ' wrong';
+    }
+    const label = o.key === o.text ? esc(o.text) : `<b>${esc(o.key)}</b><span>${esc(o.text)}</span>`;
+    return `<button class="${cls}" data-lis-ans data-sec="${s.section_no}" data-q="${q.question_no}" data-key="${esc(o.key)}"${st.submitted ? ' disabled' : ''}>${label}</button>`;
+  }).join('');
+}
+function lisRender() {
+  if (!LIS) return;
+  $('lis-sections').innerHTML = LIS.sections.map(s => {
+    const st = LIS_MODE[s.section_no];
+    const answered = s.questions.filter(q => st.answers[String(q.question_no)]).length;
+    const scoreText = st.submitted
+      ? `<span class="lis-score">${s.progress ? s.progress.score : 0} / ${s.questions.length} 正确</span>`
+      : `<span class="lis-score muted">已答 ${answered}/${s.questions.length}</span>`;
+    const questions = s.questions.map(q => {
+      const your = st.answers[String(q.question_no)] || '';
+      const res = st.results && st.results[q.question_no];
+      const body = s.kind === 'text'
+        ? `<div class="lis-text-row"><input class="lis-text" data-lis-text data-sec="${s.section_no}" data-q="${q.question_no}" value="${esc(your)}" placeholder="输入答案"${st.submitted ? ' disabled' : ''}>${st.submitted ? `<span class="lis-text-ans${res && !res.correct ? ' bad' : ''}">正确答案：${esc(lisAnsText(q.answer))}${res && !res.correct ? ` · 你的：${esc(res.your)}` : ''}</span>` : ''}</div>`
+        : `<div class="lis-options">${lisOptions(s, q, st)}</div>`;
+      return `<div class="lis-q">
+        <div class="lis-q-prompt"><span class="lis-q-no">${q.question_no}</span>${esc(q.prompt)}</div>
+        ${body}
+      </div>`;
+    }).join('');
+    const example = s.example
+      ? `<div class="lis-example">例：${s.example.answer ? `（${esc(s.example.answer)}）` : ''}${esc(s.example.prompt)}</div>`
+      : '';
+    const submit = st.submitted
+      ? '<div class="lis-submit"><span class="hint">已提交，答案已记入账号。</span></div>'
+      : `<div class="lis-submit"><button class="btn accent" data-lis-submit="${s.section_no}">提交答案</button><span class="hint">提交后判分并揭晓原文</span></div>`;
+    const transcript = st.submitted ? `<div class="lis-transcript">
+        <div class="lis-trans-head">
+          <span>原文 · 点句子重听</span>
+          <button class="btn ghost lis-zh-btn" data-lis-zh="${s.section_no}">${st.showZh ? '隐藏中文' : '显示中文'}</button>
+        </div>
+        ${s.lines.map(ln => `<div class="rec-line lis-t-line${st.showZh ? ' showzh' : ''}" data-sec="${s.section_no}" data-start="${ln.start_ms}" data-end="${ln.end_ms}">
+          <div class="n">${ln.line_no}</div>
+          <div class="jp"><span class="lis-spk">${esc(ln.speaker)}</span>${recJP(ln)}<div class="zh">${esc(ln.translation)}</div></div>
+        </div>`).join('')}
+      </div>` : '';
+    return `<div class="card lis-sec" id="lis-sec-${s.section_no}">
+      <div class="lis-sec-head">
+        <span class="lis-sec-badge">${['一', '二', '三', '四'][s.section_no - 1] || s.section_no}</span>
+        <div class="lis-sec-title">${esc(s.instruction)}</div>
+        ${scoreText}
+      </div>
+      <div class="lis-player">
+        <button class="lis-play" data-lis-play="${s.section_no}" data-lis-toggle="${s.section_no}" aria-label="播放本大题">▶</button>
+        <div class="lis-bar" data-lis-seek="${s.section_no}"><div class="lis-fill"></div></div>
+        <span class="lis-time">${recFmt(s.audio_start_ms)} / ${recFmt(s.audio_end_ms)}</span>
+      </div>
+      ${example}
+      ${questions}
+      ${submit}
+      ${transcript}
+    </div>`;
+  }).join('');
+  syncLisPlayBtns();
+}
+async function lisSubmit(no) {
+  const s = lisSec(no);
+  const st = s && LIS_MODE[s.section_no];
+  if (!s || !st || st.submitted) return;
+  const missing = s.questions.filter(q => !st.answers[String(q.question_no)]);
+  if (missing.length) { toast(`还有 ${missing.length} 题未作答`); return; }
+  let r;
+  try {
+    r = await api(`/listening/lessons/${LIS.lesson.id}/sections/${s.section_no}/submit`, {
+      method: 'POST',
+      body: JSON.stringify({ answers: st.answers }),
+    });
+  } catch (e) { toast(e.message); return; }
+  const byNo = {};
+  (r.results || []).forEach(x => { byNo[x.question_no] = x; });
+  s.questions.forEach(q => { if (byNo[q.question_no]) q.answer = byNo[q.question_no].answer; });
+  st.results = byNo;
+  st.submitted = true;
+  s.progress = { answers: Object.assign({}, st.answers), score: r.score, total: r.total };
+  const it = LIS_LIST.find(x => x.id === LIS.lesson.id);
+  if (it) {
+    it.done_count = LIS.sections.filter(x => LIS_MODE[x.section_no].submitted).length;
+    it.score = LIS.sections.reduce((n, x) => n + (LIS_MODE[x.section_no].submitted && x.progress ? x.progress.score : 0), 0);
+    it.total = LIS.sections.reduce((n, x) => n + (LIS_MODE[x.section_no].submitted && x.progress ? x.progress.total : 0), 0);
+  }
+  lisRender();
+  const el = document.getElementById('lis-sec-' + s.section_no);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+$('lis-sections') && $('lis-sections').addEventListener('input', e => {
+  const t = e.target.closest('[data-lis-text]');
+  if (!t || t.disabled) return;
+  const st = LIS_MODE[+t.dataset.sec];
+  if (!st || st.submitted) return;
+  const k = String(t.dataset.q);
+  if (t.value.trim()) st.answers[k] = t.value.trim(); else delete st.answers[k];
+  const s = lisSec(t.dataset.sec);
+  const label = s && document.querySelector(`#lis-sec-${s.section_no} .lis-score`);
+  if (s && label) label.textContent = `已答 ${s.questions.filter(q => st.answers[String(q.question_no)]).length}/${s.questions.length}`;
+});
+$('lis-sections') && $('lis-sections').addEventListener('click', e => {
+  const t = e.target;
+  const ans = t.closest('[data-lis-ans]');
+  if (ans) {
+    const st = LIS_MODE[+ans.dataset.sec];
+    if (st && !st.submitted) {
+      st.answers[String(ans.dataset.q)] = ans.dataset.key;
+      lisRender();
+    }
+    return;
+  }
+  const play = t.closest('[data-lis-toggle]');
+  if (play) { lisToggleSection(+play.dataset.lisToggle); return; }
+  const seek = t.closest('[data-lis-seek]');
+  if (seek) { lisSeek(+seek.dataset.lisSeek, e); return; }
+  const sub = t.closest('[data-lis-submit]');
+  if (sub) { lisSubmit(+sub.dataset.lisSubmit); return; }
+  const zh = t.closest('[data-lis-zh]');
+  if (zh) {
+    const st = LIS_MODE[+zh.dataset.lisZh];
+    if (st) { st.showZh = !st.showZh; lisRender(); }
+    return;
+  }
+  const line = t.closest('.lis-t-line');
+  if (line) lisPlayLine(+line.dataset.sec, +line.dataset.start, +line.dataset.end);
+});
 
 // ---- 听读 / 连听 ----
 function renderRecLines() {
@@ -7649,6 +7936,14 @@ $('rec-rate').onchange = e => {
 $('rec-list').addEventListener('click', e => {
   const el = e.target.closest('.rec-item');
   if (el) openRec(el.dataset.id);
+});
+$('rec-tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]');
+  if (b) setRecTab(b.dataset.tab);
+});
+$('lis-list').addEventListener('click', e => {
+  const el = e.target.closest('.rec-item');
+  if (el) openListen(el.dataset.id);
 });
 $('rec-lines').addEventListener('click', e => {
   const el = e.target.closest('.rec-line');

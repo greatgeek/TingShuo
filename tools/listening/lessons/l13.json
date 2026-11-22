@@ -1,0 +1,230 @@
+{
+  "id": "listen-13",
+  "lesson_no": 13,
+  "title": "第13課 听力训练",
+  "audio_key": "listening/listening-lesson-13.mp3",
+  "duration_ms": 133677,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "tf",
+      "instruction": "听录音，根据录音中的内容判断对错。对的画（○），错的画（×）。",
+      "audio_start_ms": 14045,
+      "audio_end_ms": 75023,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "鍵はテーブルの上にあります。",
+          "options": [],
+          "answer": "×"
+        },
+        {
+          "prompt": "この夏休みは海へ行きます。",
+          "options": [],
+          "answer": "○"
+        },
+        {
+          "prompt": "女の人は何も買いませんでした。",
+          "options": [],
+          "answer": "○"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "A",
+          "start_ms": 14345,
+          "end_ms": 16789,
+          "text": "お母さん、鍵は？",
+          "translation": "A：妈妈，钥匙呢？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 17024,
+          "end_ms": 20355,
+          "text": "え？テーブルの上だよ。",
+          "translation": "B：诶？在桌子上啊。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 21086,
+          "end_ms": 23834,
+          "text": "ん？テーブルの上には何もないよ。",
+          "translation": "A：嗯？桌子上什么都没有啊。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 24423,
+          "end_ms": 26054,
+          "text": "おかしいね。",
+          "translation": "B：奇怪了。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 32282,
+          "end_ms": 37554,
+          "text": "暑いですね。",
+          "translation": "A：真热啊。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 38225,
+          "end_ms": 42566,
+          "text": "本当ですね。この夏休み、どこかへ行きますか。",
+          "translation": "B：是啊。这个暑假要去哪里吗？"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 43746,
+          "end_ms": 45426,
+          "text": "涼しいところがいいですね。",
+          "translation": "A：想去凉快的地方。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 46275,
+          "end_ms": 49971,
+          "text": "じゃ、海がいいですね。",
+          "translation": "B：那海边不错。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 56182,
+          "end_ms": 61380,
+          "text": "ただいま。",
+          "translation": "女：我回来了。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 61381,
+          "end_ms": 64693,
+          "text": "お帰りなさい。どこへ行きましたか。",
+          "translation": "男：你回来了。去哪儿了？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 65077,
+          "end_ms": 65707,
+          "text": "デパート。",
+          "translation": "女：百货商店。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 66166,
+          "end_ms": 67276,
+          "text": "何か買いましたか？",
+          "translation": "男：买了什么吗？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 68040,
+          "end_ms": 74323,
+          "text": "ううん。安い商品はいくつかありましたが、ほしいものはありませんでした。",
+          "translation": "女：没有。便宜的东西倒是有几样，但没有我想要的。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容回答问题（用日语输入，标点可省略）。背景：男生和女生在对话。",
+      "audio_start_ms": 90096,
+      "audio_end_ms": 127189,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "男の人は、この後、何がありますか。",
+          "options": [],
+          "answer": "会議があります|会議|会議です"
+        },
+        {
+          "prompt": "男の人はどこかへ行きましたか。",
+          "options": [],
+          "answer": "はい、コンビニに行きました|コンビニに行きました|はいコンビニに行きました"
+        },
+        {
+          "prompt": "男の人は今、時間がありますか。",
+          "options": [],
+          "answer": "いいえ、ありません|いいえ|ありません"
+        },
+        {
+          "prompt": "男の人はいつから時間がありますか。",
+          "options": [],
+          "answer": "10時10分からです|10時10分から|10時10分"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "男",
+          "start_ms": 90396,
+          "end_ms": 91476,
+          "text": "おはようございます。",
+          "translation": "男：早上好。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 92363,
+          "end_ms": 93443,
+          "text": "おはようございます。どこかへ行きましたか。",
+          "translation": "女：早上好。你去哪儿了吗？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 93444,
+          "end_ms": 95256,
+          "text": "いいえ、どうして？",
+          "translation": "男：没有，怎么了？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 96714,
+          "end_ms": 99694,
+          "text": "さっき、探しましたが、いませんでしたよ。",
+          "translation": "女：刚才我找过你，你不在。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 99695,
+          "end_ms": 104328,
+          "text": "あ、ちょっとあそこのコンビニに行きました。何かありますか。",
+          "translation": "男：啊，我去了一下那边的便利店。有事吗？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 104769,
+          "end_ms": 109774,
+          "text": "あのう、ちょっと質問がありますけど、今、お時間、大丈夫ですか。",
+          "translation": "女：那个，我有个问题想问，你现在有时间吗？"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 110063,
+          "end_ms": 114491,
+          "text": "今はちょっと…もうすぐ会議ですから。",
+          "translation": "男：现在有点……马上要开会了。"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 114864,
+          "end_ms": 116361,
+          "text": "そうですか。",
+          "translation": "女：这样啊。"
+        },
+        {
+          "speaker": "男",
+          "start_ms": 116632,
+          "end_ms": 123267,
+          "text": "この後は？会議は10時までなので、10時10分とかはどうですか。",
+          "translation": "男：之后呢？会议开到10点，10点10分怎么样？"
+        },
+        {
+          "speaker": "女",
+          "start_ms": 123801,
+          "end_ms": 126489,
+          "text": "はい、大丈夫です。ありがとうございます。",
+          "translation": "女：好，可以。谢谢。"
+        }
+      ]
+    }
+  ]
+}

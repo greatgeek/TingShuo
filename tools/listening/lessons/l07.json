@@ -1,0 +1,296 @@
+{
+  "id": "listen-07",
+  "lesson_no": 7,
+  "title": "第7課 听力训练",
+  "audio_key": "listening/listening-lesson-07.mp3",
+  "duration_ms": 184947,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容仿照例子写下相应的数字。",
+      "audio_start_ms": 13487,
+      "audio_end_ms": 117420,
+      "example": {
+        "prompt": "弟さんは今、18歳です。",
+        "answer": ""
+      },
+      "questions": [
+        {
+          "prompt": "教室に、今何人いますか。＿＿人です。",
+          "options": [],
+          "answer": "2"
+        },
+        {
+          "prompt": "吉村さんのお部屋は何階にありますか。＿＿階です。",
+          "options": [],
+          "answer": "6"
+        },
+        {
+          "prompt": "長谷川さんには、お姉さんが何人いますか。＿＿人います。",
+          "options": [],
+          "answer": "1"
+        },
+        {
+          "prompt": "写真の中の弟さんは何歳ですか。＿＿歳です。",
+          "options": [],
+          "answer": "5"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "A",
+          "start_ms": 13787,
+          "end_ms": 17236,
+          "text": "弟さんは、おいくつですか。",
+          "translation": "A：你弟弟多大了？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 18335,
+          "end_ms": 22717,
+          "text": "今大学1年生で、18歳です。",
+          "translation": "B：现在是大学一年级，18岁。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 31648,
+          "end_ms": 38323,
+          "text": "教室に、今何人いますか。",
+          "translation": "A：教室里现在有几个人？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 39043,
+          "end_ms": 43100,
+          "text": "先生が1人と学生1人います。",
+          "translation": "B：有一位老师和一位学生。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 52182,
+          "end_ms": 58451,
+          "text": "こんにちは。吉村です。",
+          "translation": "A：你好，我是吉村。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 59567,
+          "end_ms": 65713,
+          "text": "あ、吉村さんですね。お部屋は６階にあります。",
+          "translation": "B：啊，是吉村啊。你的房间在6楼。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 74615,
+          "end_ms": 81740,
+          "text": "長谷川さんのご家族は何人いますか。",
+          "translation": "A：长谷川家有几口人？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 82197,
+          "end_ms": 87913,
+          "text": "５人です。両親と兄と姉がいます。",
+          "translation": "B：5口人。有父母、哥哥和姐姐。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 96815,
+          "end_ms": 105041,
+          "text": "これは小林さんのご家族の写真ですか。",
+          "translation": "A：这是小林家人的照片吗？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 106557,
+          "end_ms": 107187,
+          "text": "はい、弟です。",
+          "translation": "B：是的，是我弟弟。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 107959,
+          "end_ms": 111149,
+          "text": "へえ、弟さん、今、何歳ですか。",
+          "translation": "A：哦，你弟弟现在多大？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 111810,
+          "end_ms": 116720,
+          "text": "そうですね、今、６歳です。これは去年の写真です。",
+          "translation": "B：这个嘛，现在6岁。这是去年的照片。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容，将正确答案填在括号中。背景：长谷川和小王在谈论自己的家庭成员。",
+      "audio_start_ms": 137278,
+      "audio_end_ms": 182260,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "王さんには兄弟がいますか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "はい、います。"
+            },
+            {
+              "key": "b",
+              "text": "いいえ、いません。"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "長谷川さんには兄弟が＿＿います。",
+          "options": [
+            {
+              "key": "a",
+              "text": "ひとり"
+            },
+            {
+              "key": "b",
+              "text": "ふたり"
+            }
+          ],
+          "answer": "a"
+        },
+        {
+          "prompt": "長谷川さんのお姉さんは今＿＿にいますか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "東京"
+            },
+            {
+              "key": "b",
+              "text": "大阪"
+            },
+            {
+              "key": "c",
+              "text": "北京"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "長谷川さんのお姉さんは今＿＿歳です。",
+          "options": [
+            {
+              "key": "a",
+              "text": "14"
+            },
+            {
+              "key": "b",
+              "text": "20"
+            },
+            {
+              "key": "c",
+              "text": "24"
+            }
+          ],
+          "answer": "c"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "長谷川",
+          "start_ms": 137578,
+          "end_ms": 139858,
+          "text": "王さんは何人家族ですか。",
+          "translation": "长谷川：小王家有几口人？"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 140547,
+          "end_ms": 143795,
+          "text": "３人です。父と、母と私です。",
+          "translation": "王：3口人。爸爸、妈妈和我。"
+        },
+        {
+          "speaker": "長谷川",
+          "start_ms": 145144,
+          "end_ms": 149087,
+          "text": "へえ、兄弟はいませんか。",
+          "translation": "长谷川：哦，没有兄弟姐妹吗？"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 149088,
+          "end_ms": 154047,
+          "text": "はい、いません。私だけです。長谷川さんは？",
+          "translation": "王：是的，没有。就我一个。长谷川你呢？"
+        },
+        {
+          "speaker": "長谷川",
+          "start_ms": 154625,
+          "end_ms": 156612,
+          "text": "私は姉がいます。",
+          "translation": "长谷川：我有个姐姐。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 157679,
+          "end_ms": 160019,
+          "text": "へえ、写真はありますか。",
+          "translation": "王：哦，有照片吗？"
+        },
+        {
+          "speaker": "長谷川",
+          "start_ms": 160563,
+          "end_ms": 164188,
+          "text": "ありますよ。これは姉です。",
+          "translation": "长谷川：有啊。这就是我姐姐。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 164189,
+          "end_ms": 166185,
+          "text": "長谷川さんとそっくりですね。",
+          "translation": "王：和你长得真像。"
+        },
+        {
+          "speaker": "長谷川",
+          "start_ms": 166432,
+          "end_ms": 169452,
+          "text": "そうですか。姉はいま会社員で、大阪にいます。",
+          "translation": "长谷川：是吗。姐姐现在是公司职员，在大阪。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 169508,
+          "end_ms": 172262,
+          "text": "へえ、お姉さんは今、おいくつですか。",
+          "translation": "王：哦，你姐姐现在多大？"
+        },
+        {
+          "speaker": "長谷川",
+          "start_ms": 172818,
+          "end_ms": 174964,
+          "text": "２４歳です。",
+          "translation": "长谷川：24岁。"
+        },
+        {
+          "speaker": "王",
+          "start_ms": 175219,
+          "end_ms": 177644,
+          "text": "じゃ、去年はまだ大学生でしたか。",
+          "translation": "王：那去年她还是大学生吗？"
+        },
+        {
+          "speaker": "長谷川",
+          "start_ms": 178568,
+          "end_ms": 181560,
+          "text": "そうです。まだ新入社員です。",
+          "translation": "长谷川：是的。还是新员工。"
+        }
+      ]
+    }
+  ]
+}

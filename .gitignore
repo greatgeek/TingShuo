@@ -27,3 +27,6 @@ Thumbs.db
 
 # ===== 课文本导入产物（含教材音频，不入公开仓库）=====
 tools/recitation/out/
+
+# ===== 听力训练素材（教材音频，不入公开仓库）=====
+web/media/listening/

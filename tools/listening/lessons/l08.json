@@ -1,0 +1,271 @@
+{
+  "id": "listen-08",
+  "lesson_no": 8,
+  "title": "第8課 听力训练",
+  "audio_key": "listening/listening-lesson-08.mp3",
+  "duration_ms": 181371,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容仿照例子写下相应的数字。",
+      "audio_start_ms": 9959,
+      "audio_end_ms": 103985,
+      "example": {
+        "prompt": "辞書：3000円",
+        "answer": ""
+      },
+      "questions": [
+        {
+          "prompt": "自転車：＿＿円",
+          "options": [],
+          "answer": "12400"
+        },
+        {
+          "prompt": "手帳：＿＿円",
+          "options": [],
+          "answer": "930"
+        },
+        {
+          "prompt": "パソコン：＿＿円",
+          "options": [],
+          "answer": "170500"
+        },
+        {
+          "prompt": "ビール：＿＿本",
+          "options": [],
+          "answer": "4"
+        },
+        {
+          "prompt": "アップルパイ：＿＿個",
+          "options": [],
+          "answer": "3"
+        },
+        {
+          "prompt": "ハンバーガー：＿＿個",
+          "options": [],
+          "answer": "2"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "A",
+          "start_ms": 10259,
+          "end_ms": 16902,
+          "text": "この辞書はいくらですか。",
+          "translation": "A：这本词典多少钱？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 17624,
+          "end_ms": 19813,
+          "text": "3000円です。",
+          "translation": "B：3000日元。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 25648,
+          "end_ms": 31947,
+          "text": "この自転車はいくらですか。",
+          "translation": "A：这辆自行车多少钱？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 32699,
+          "end_ms": 36646,
+          "text": "12400円です。",
+          "translation": "B：12400日元。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 42482,
+          "end_ms": 48040,
+          "text": "この手帳はいくらですか。",
+          "translation": "A：这个笔记本多少钱？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 48769,
+          "end_ms": 51733,
+          "text": "930円です。",
+          "translation": "B：930日元。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 57748,
+          "end_ms": 63613,
+          "text": "このパソコンはいくらですか。",
+          "translation": "A：这台电脑多少钱？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 64707,
+          "end_ms": 67988,
+          "text": "170500円です。",
+          "translation": "B：170500日元。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 73982,
+          "end_ms": 80798,
+          "text": "すみません。ビールを４本ください。",
+          "translation": "A：不好意思，请给我4瓶啤酒。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 81322,
+          "end_ms": 83267,
+          "text": "かしこまりました。",
+          "translation": "B：好的。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 89248,
+          "end_ms": 96772,
+          "text": "アップルパイを３つと、ハンバーガーを２つください。",
+          "translation": "A：请给我3个苹果派和2个汉堡。"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 97387,
+          "end_ms": 103285,
+          "text": "かしこまりました。アップルパイを３つと、ハンバーグを２つですね。",
+          "translation": "B：好的。苹果派3个、汉堡2个，对吧。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "text",
+      "instruction": "听录音，根据录音中的内容用日语填空。背景：田中询问附近哪里有便利店，并在便利店里买了东西。",
+      "audio_start_ms": 119802,
+      "audio_end_ms": 175987,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "田中：すみません。あのう、この（1）＿＿がありますか。",
+          "options": [],
+          "answer": "コンビニ"
+        },
+        {
+          "prompt": "A：はい、地下（2）＿＿階にあります。",
+          "options": [],
+          "answer": "1"
+        },
+        {
+          "prompt": "店員：ハンドソープですか。（3）＿＿棚にあります。",
+          "options": [],
+          "answer": "奥|奥の"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "田中",
+          "start_ms": 120102,
+          "end_ms": 126026,
+          "text": "すみません。あのう、この近くにコンビニがありますか。",
+          "translation": "田中：不好意思，请问这附近有便利店吗？"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 126027,
+          "end_ms": 128695,
+          "text": "はい、地下1階にあります。",
+          "translation": "A：有，在地下一层。"
+        },
+        {
+          "speaker": "田中",
+          "start_ms": 129279,
+          "end_ms": 131418,
+          "text": "そうですか。ありがとうございます。",
+          "translation": "田中：是吗，谢谢。"
+        },
+        {
+          "speaker": "田中",
+          "start_ms": 134270,
+          "end_ms": 137548,
+          "text": "あのう、ハンドソープはどこにありますか。",
+          "translation": "田中：那个，洗手液在哪里？"
+        },
+        {
+          "speaker": "店員",
+          "start_ms": 138007,
+          "end_ms": 142786,
+          "text": "ハンドソープですか。この奥の棚にあります。",
+          "translation": "店员：洗手液吗？在里面那个架子上。"
+        },
+        {
+          "speaker": "田中",
+          "start_ms": 145803,
+          "end_ms": 149039,
+          "text": "そうですか。どうも。",
+          "translation": "田中：是吗，谢谢。"
+        },
+        {
+          "speaker": "店員",
+          "start_ms": 149284,
+          "end_ms": 152134,
+          "text": "いらっしゃいませ。",
+          "translation": "店员：欢迎光临。"
+        },
+        {
+          "speaker": "田中",
+          "start_ms": 152135,
+          "end_ms": 157567,
+          "text": "こちらのハンドソープと、このフライドチキンを２枚ください。それから、カプチーノを一つください。",
+          "translation": "田中：请给我这个洗手液和两块炸鸡，再来一杯卡布奇诺。"
+        },
+        {
+          "speaker": "店員",
+          "start_ms": 157737,
+          "end_ms": 160777,
+          "text": "カプチーノのサイズはどうなさいますか。",
+          "translation": "店员：卡布奇诺要什么尺寸？"
+        },
+        {
+          "speaker": "田中",
+          "start_ms": 161376,
+          "end_ms": 163398,
+          "text": "Lサイズでお願いします。",
+          "translation": "田中：要大杯。"
+        },
+        {
+          "speaker": "店員",
+          "start_ms": 163686,
+          "end_ms": 167890,
+          "text": "かしこまりました。お会計、510円です。ポイントカードはありますか。",
+          "translation": "店员：好的。一共510日元。有积分卡吗？"
+        },
+        {
+          "speaker": "田中",
+          "start_ms": 168352,
+          "end_ms": 169552,
+          "text": "はい。",
+          "translation": "田中：有。"
+        },
+        {
+          "speaker": "店員",
+          "start_ms": 169553,
+          "end_ms": 171464,
+          "text": "ありがとうございます。",
+          "translation": "店员：谢谢。"
+        },
+        {
+          "speaker": "田中",
+          "start_ms": 172052,
+          "end_ms": 174447,
+          "text": "アリペイでお願いします。",
+          "translation": "田中：用支付宝付款。"
+        },
+        {
+          "speaker": "店員",
+          "start_ms": 174617,
+          "end_ms": 175987,
+          "text": "ありがとうございます。こちら、レシートでございます。",
+          "translation": "店员：谢谢。这是您的收据。"
+        }
+      ]
+    }
+  ]
+}

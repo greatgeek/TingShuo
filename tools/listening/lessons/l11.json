@@ -1,0 +1,213 @@
+{
+  "id": "listen-11",
+  "lesson_no": 11,
+  "title": "第11課 听力训练",
+  "audio_key": "listening/listening-lesson-11.mp3",
+  "duration_ms": 149467,
+  "sort_order": 0,
+  "sections": [
+    {
+      "section_no": 1,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容仿照例子，将正确答案填在括号中。",
+      "audio_start_ms": 12548,
+      "audio_end_ms": 98161,
+      "example": {
+        "prompt": "白いパソコンとグレーのパソコンとどちらが重いですか。",
+        "answer": "b"
+      },
+      "questions": [
+        {
+          "prompt": "バスと地下鉄とどちらが便利ですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "バス"
+            },
+            {
+              "key": "b",
+              "text": "地下鉄"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "木曜日と金曜日とどちらが忙しいですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "木曜日"
+            },
+            {
+              "key": "b",
+              "text": "金曜日"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "ジョージさんは日本料理と中華料理とどちらの方が好きですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "日本料理"
+            },
+            {
+              "key": "b",
+              "text": "中華料理"
+            }
+          ],
+          "answer": "b"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "A",
+          "start_ms": 12848,
+          "end_ms": 20812,
+          "text": "白いパソコンとグレーのパソコンとどちらが重いですか。",
+          "translation": "A：白色电脑和灰色电脑哪个重？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 21828,
+          "end_ms": 27051,
+          "text": "白いパソコンはグレーのほど重くありません。",
+          "translation": "B：白色电脑没有灰色电脑重。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 33282,
+          "end_ms": 40915,
+          "text": "すみませんが、この近くにバスはありますか。",
+          "translation": "A：请问这附近有公交车吗？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 41610,
+          "end_ms": 48536,
+          "text": "ありますが、地下鉄もありますよ。そのほうが速くて便利です。",
+          "translation": "B：有。不过也有地铁，地铁更快更方便。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 54815,
+          "end_ms": 63861,
+          "text": "田中さんは木曜日と金曜日と、どちらが忙しいですか。",
+          "translation": "A：田中，周四和周五哪个更忙？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 64910,
+          "end_ms": 77330,
+          "text": "そうですね。木曜日は授業が多いですが、金曜日のほうは授業と、それから、会議も遅くまでありますからね。",
+          "translation": "B：这个嘛。周四课多，但周五既有课，会议也开到很晚。"
+        },
+        {
+          "speaker": "A",
+          "start_ms": 83548,
+          "end_ms": 91381,
+          "text": "ジョージさん、日本料理は好きですか。",
+          "translation": "A：乔治，你喜欢日本菜吗？"
+        },
+        {
+          "speaker": "B",
+          "start_ms": 92698,
+          "end_ms": 97461,
+          "text": "好きですよ。でも、中華料理ほどじゃありません。",
+          "translation": "B：喜欢。不过不如中国菜。"
+        }
+      ]
+    },
+    {
+      "section_no": 2,
+      "kind": "choice",
+      "instruction": "听录音，根据录音中的内容，将正确答案填在括号中。",
+      "audio_start_ms": 113883,
+      "audio_end_ms": 143731,
+      "example": null,
+      "questions": [
+        {
+          "prompt": "週末の図書館はどうですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "人があまり多くないです。"
+            },
+            {
+              "key": "b",
+              "text": "学生は多いですが、社会人は多くありません。"
+            },
+            {
+              "key": "c",
+              "text": "学生も社会人も多くて、あまり静かではありません。"
+            }
+          ],
+          "answer": "c"
+        },
+        {
+          "prompt": "この町の図書館は多いですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "はい、とても多いです。"
+            },
+            {
+              "key": "b",
+              "text": "いいえ、多くないです。"
+            }
+          ],
+          "answer": "b"
+        },
+        {
+          "prompt": "図書館の中の喫茶店はどうですか。",
+          "options": [
+            {
+              "key": "a",
+              "text": "安いです。"
+            },
+            {
+              "key": "b",
+              "text": "安くありませんが、広くて環境もいいです。"
+            },
+            {
+              "key": "c",
+              "text": "人が多いです。"
+            }
+          ],
+          "answer": "b"
+        }
+      ],
+      "lines": [
+        {
+          "speaker": "",
+          "start_ms": 114183,
+          "end_ms": 117320,
+          "text": "この町は図書館が少ないです。",
+          "translation": "这个城镇图书馆很少。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 118416,
+          "end_ms": 129756,
+          "text": "月曜日から金曜日までは人があまり多くないですが、土日は学生も社会人も多くて、あまり静かではありません。",
+          "translation": "周一到周五人不太多，但周六周日学生和上班族都很多，不太安静。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 131242,
+          "end_ms": 135837,
+          "text": "図書館の１階にはおしゃれな喫茶店があります。",
+          "translation": "图书馆一楼有一家很时尚的咖啡店。"
+        },
+        {
+          "speaker": "",
+          "start_ms": 137133,
+          "end_ms": 143031,
+          "text": "外の喫茶店ほど安くありませんが、広くて環境もいいです。",
+          "translation": "虽然没有外面的咖啡店便宜，但宽敞、环境也好。"
+        }
+      ]
+    }
+  ]
+}
