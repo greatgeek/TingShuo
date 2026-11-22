@@ -143,16 +143,37 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 		Item     checkItem
 		CacheKey string
 	}
+	ids := make([]string, 0, len(req.Items))
+	for _, it := range req.Items {
+		ids = append(ids, it.SentenceID)
+	}
+	owned := map[string]bool{}
+	orows, err := h.pool.Query(r.Context(), `
+		SELECT s.id FROM sentence s
+		JOIN daily_lesson l ON l.id = s.lesson_id
+		WHERE s.id = ANY($1) AND l.user_id = $2`, ids, userID)
+	if err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+	defer orows.Close()
+	for orows.Next() {
+		var id string
+		if err := orows.Scan(&id); err != nil {
+			httpx.Err(w, httpx.Internal(err.Error()))
+			return
+		}
+		owned[id] = true
+	}
+	if err := orows.Err(); err != nil {
+		httpx.Err(w, httpx.Internal(err.Error()))
+		return
+	}
+
 	entries := make([]entry, 0, len(req.Items))
 	keys := make([]string, 0, len(req.Items))
 	for _, it := range req.Items {
-		var exists bool
-		if err := h.pool.QueryRow(r.Context(), `
-			SELECT EXISTS (
-				SELECT 1 FROM sentence s
-				JOIN daily_lesson l ON l.id = s.lesson_id
-				WHERE s.id = $1 AND l.user_id = $2)`,
-			it.SentenceID, userID).Scan(&exists); err != nil || !exists {
+		if !owned[it.SentenceID] {
 			httpx.Err(w, httpx.NotFound("句子不存在或不属于当前用户: "+it.SentenceID))
 			return
 		}

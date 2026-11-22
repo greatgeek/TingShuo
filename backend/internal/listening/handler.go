@@ -136,6 +136,7 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.Internal(err.Error()))
 		return
 	}
+	defer rows.Close()
 	sections := []*sectionItem{}
 	for rows.Next() {
 		var s sectionItem
@@ -181,6 +182,7 @@ func (h *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.Internal(err.Error()))
 		return
 	}
+	defer qRows.Close()
 	sectionByID := map[string]*sectionItem{}
 	for _, s := range sections {
 		sectionByID[s.ID] = s

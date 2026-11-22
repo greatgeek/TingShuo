@@ -64,8 +64,15 @@ func (t *jobTask) snapshot() (text string, done bool, errMsg string, elapsed tim
 	return t.buf.String(), t.done, t.errMsg, time.Since(t.started)
 }
 
-// liveJobs 进行中的任务缓冲（终态后仍保留短暂供轮询读取，进程重启则由 DB 兜底）。
+// liveJobs 进行中的任务缓冲（终态后保留一段时间供轮询读取，进程重启则由 DB 兜底）。
 var liveJobs sync.Map
+
+// jobRetention 任务结束后内存缓冲的保留时长；到期删除，避免长期运行无限增长。
+const jobRetention = 10 * time.Minute
+
+func retireJob(jobID string) {
+	time.AfterFunc(jobRetention, func() { liveJobs.Delete(jobID) })
+}
 
 // CleanupStale 启动时把上次进程残留的 running/pending 任务置 failed。
 // 上游 SSE 连接随进程死亡无法恢复，诚实标记中断比假装还在跑更好（前端据此提示重试）。
@@ -141,6 +148,7 @@ func (h *JobHandler) Start(w http.ResponseWriter, r *http.Request) {
 
 // run 后台流式拉取上游，边收边定期落库 output，终态写 status/error 与 llm_call_log。
 func (h *JobHandler) run(jobID, userID, lessonID, model, target string, body []byte, t *jobTask) {
+	defer retireJob(jobID)
 	persist := func(status, errMsg string) {
 		text, _, _, _ := t.snapshot()
 		_, _ = h.pool.Exec(context.Background(), `

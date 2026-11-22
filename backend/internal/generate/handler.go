@@ -118,6 +118,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.Internal(err.Error()))
 		return
 	}
+	defer wrows.Close()
 	for wrows.Next() {
 		var wid string
 		var isKey bool

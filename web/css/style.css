@@ -2085,6 +2085,11 @@ body.rec-playing #sc-recite-play { padding-bottom: 104px; }
 .gra-tag.nb { background: var(--jade-soft); color: var(--jade); }
 
 .gra-head h2 { margin-bottom: 4px; }
+.gra-test-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: auto; height: 32px; margin: 0; padding: 0 12px;
+  border-radius: 9px; font-size: 12.5px; line-height: 1; white-space: nowrap;
+}
 .gra-books {
   display: inline-flex; margin-top: 12px; padding: 4px;
   border-radius: 99px; background: var(--surface-2);

@@ -349,6 +349,12 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+	// 上游断流时 scanner 会带错误退出：不能把半截回答当完整回复入库。
+	if err := sc.Err(); err != nil {
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", mustJSON(map[string]any{"message": "AI 输出中断，请重试"}))
+		fl.Flush()
+		return
+	}
 	if reply.Len() == 0 {
 		fmt.Fprintf(w, "event: error\ndata: %s\n\n", mustJSON(map[string]any{"message": "AI 返回空回复"}))
 		fl.Flush()

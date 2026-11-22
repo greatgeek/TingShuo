@@ -279,6 +279,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		httpx.Err(w, httpx.Internal(err.Error()))
 		return
 	}
+	defer wrows.Close()
 	for wrows.Next() {
 		var id, surface, mastery string
 		var reading, pos, meaning, skipReason *string
@@ -376,6 +377,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 			httpx.Err(w, httpx.Internal(aerr.Error()))
 			return
 		}
+		defer audioRows.Close()
 		audiosBySent := map[string][]map[string]any{}
 		for audioRows.Next() {
 			var aid, sid, voice string

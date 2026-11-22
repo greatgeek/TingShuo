@@ -29,7 +29,6 @@ const tokenKey = 'ts_token', refreshKey = 'ts_refresh', emailKey = 'ts_email';
 let TOKEN = localStorage.getItem(tokenKey) || '';
 let REFRESH = localStorage.getItem(refreshKey) || '';
 let EMAIL = localStorage.getItem(emailKey) || ''; // 刷新后登录框为空，账号名从这里恢复
-let CFG = {};        // /config 结果（仅 llm_model；Key 永不下放客户端）
 let LESSON = null;   // 当前课程全量
 let CUR_MAT = 0;     // 当前材料 tab
 let CUR_MODE = 'normal'; // 跟读/盲听/译文（重渲染后需恢复）
@@ -70,7 +69,11 @@ function histOwn() {
   return !!(s && s.tsSid === HIST_SID);
 }
 function applyScreen(name) {
-  if (CUR_SCREEN !== name) clipStopAll();
+  if (CUR_SCREEN !== name) {
+    clipStopAll();
+    stopPlay();
+    if (RV_AUDIO) { RV_AUDIO.pause(); RV_AUDIO = null; }
+  }
   if (CUR_SCREEN === 'quiz' && name !== 'quiz' && WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
   if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
   if (CUR_SCREEN === 'listen-play' && name !== 'listen-play') lisLeave();
@@ -140,6 +143,7 @@ function updateBackBtn() {
 function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.display = 'block'; }
 function hideErr(id) { $(id).style.display = 'none'; }
 function esc(s) { return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escAttr(s) { return esc(s).replace(/"/g, '&quot;'); }
 
 // toast 底部提示：播放/请求失败可见，不再静默
 function toast(msg) {
@@ -294,7 +298,6 @@ async function afterLogin() {
   $('userchip').textContent = EMAIL;
   $('logout-btn').style.display = 'inline-flex';
   hideErr('home-err');
-  CFG = await api('/config').catch(() => ({}));
   await loadFavs();
   await loadReviewPool();
   await loadHome();
@@ -1239,9 +1242,11 @@ async function submitWords() {
       const okk = await genPhrasesCore(lessonID, words);
       if (!okk) return; // Core 已在生成屏显示真实错误与重试按钮，勿覆盖
       genLog('短语包落库成功');
-      LESSON = await api('/lessons/' + lessonID);
-      VIEW = 'phrases';
-      go('learn'); renderPhrasesView();
+      if (CUR_SCREEN === 'gen') {
+        LESSON = await api('/lessons/' + lessonID);
+        VIEW = 'phrases';
+        go('learn'); renderPhrasesView();
+      }
       return;
     }
 
@@ -1311,8 +1316,10 @@ async function submitWords() {
       genLog('对话/短文此前已生成，直接使用');
     }
 
-    LESSON = await api('/lessons/' + lessonID);
-    go('learn'); renderLearn();
+    if (CUR_SCREEN === 'gen') {
+      LESSON = await api('/lessons/' + lessonID);
+      go('learn'); renderLearn();
+    }
   } catch (e) {
     showErr('gen-err', e.message);
     $('gen-retry').style.display = 'block';
@@ -2042,6 +2049,7 @@ let RV_IDX = 0;      // 当前索引
 let RV_PASS = 0;     // 本轮认识计数
 let RV_FAIL = 0;     // 本轮不认识计数
 let RV_AUDIO = null;  // 当前播放的 Audio
+let RV_GRADING = false; // 判分请求进行中，防重复提交跳题
 
 async function loadReviewCount() {
   const card = $('review-card');
@@ -2133,6 +2141,8 @@ function reviewReveal() {
 }
 
 async function reviewResult(result) {
+  if (RV_GRADING) return;
+  RV_GRADING = true;
   const it = RV_ITEMS[RV_IDX];
   try {
     await api('/reviews/' + it.id + '/result', {
@@ -2140,11 +2150,13 @@ async function reviewResult(result) {
       body: JSON.stringify({ result }),
     });
     if (result === 'pass') RV_PASS++; else RV_FAIL++;
+    RV_IDX++;
+    renderReviewItem();
   } catch (e) {
-    alert(e.message);
+    alert(e.message); // 失败留在当前句，可重试
+  } finally {
+    RV_GRADING = false;
   }
-  RV_IDX++;
-  renderReviewItem();
 }
 
 async function reviewMaster() {
@@ -2750,7 +2762,12 @@ async function wsPick(i) {
   const w = WS_ITEMS[WS_IDX];
   const ok = i === w.quiz.answer;
   document.querySelectorAll('#ws-front .ws-opt').forEach(b => { b.disabled = true; });
-  try { await wsGrade(ok ? 'pass' : 'fail'); } catch (e) { WS_GRADING = false; alert(e.message); return; }
+  try { await wsGrade(ok ? 'pass' : 'fail'); } catch (e) {
+    document.querySelectorAll('#ws-front .ws-opt').forEach(b => { b.disabled = false; });
+    WS_GRADING = false;
+    alert(e.message);
+    return;
+  }
   wsShowReview(w, ok, i);
   WS_GRADING = false;
 }
@@ -2767,7 +2784,7 @@ async function wsTypeConfirm() {
   const acc = (w.quiz && w.quiz.accept && w.quiz.accept.length) ? w.quiz.accept : [w.surface, w.reading || ''];
   const ok = acc.some(x => wsNorm(v) === wsNorm(x));
   inp.disabled = true;
-  try { await wsGrade(ok ? 'pass' : 'fail'); } catch (e) { WS_GRADING = false; alert(e.message); return; }
+  try { await wsGrade(ok ? 'pass' : 'fail'); } catch (e) { inp.disabled = false; WS_GRADING = false; alert(e.message); return; }
   wsShowReview(w, ok, v);
   WS_GRADING = false;
 }
@@ -2783,8 +2800,7 @@ async function wsResult(result) {
 
 function wsQuit() {
   wsStopAudio();
-  loadWordStudyStatus();
-  loadHome();
+  loadHome(); // 首页加载时已包含 loadWordStudyStatus
 }
 
 function renderWordStudyDone() {
@@ -4207,7 +4223,7 @@ function mdRender(src) {
   s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*<])\*([^*\n]+)\*/g, '$1<em>$2</em>')
-    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, label, url) => `<a href="${escAttr(url)}" target="_blank" rel="noopener">${label}</a>`);
   // 段落：空行分段，段内换行 <br>；块级与代码占位不包 <p>
   s = s.split(/\n{2,}/).map(blk => {
     blk = blk.trim();
@@ -4922,7 +4938,7 @@ function renderGraDetail() {
   let html = `<div class="card gra-head">
     <div class="rec-head-top">
       <h2>${esc(GRAM.title)}</h2>
-      <button class="btn ghost rec-gra-btn" id="gra-test-lesson">测本课</button>
+      <button class="btn ghost gra-test-btn" id="gra-test-lesson">测本课</button>
     </div>
     <p class="hint">点知识点展开 · 点喇叭朗读例句与词表 · 「原声」「生词本」可直接跳到对应位置</p>
   </div>`;
@@ -6044,6 +6060,7 @@ function lisLeave() {
 }
 function lisStop() {
   if (LIS_AUDIO) { try { LIS_AUDIO.pause(); } catch {} }
+  LIS_AUDIO = null;
   syncLisPlayBtns();
 }
 function lisAudio() {
@@ -6117,6 +6134,39 @@ function lisSeek(no, ev) {
   a.currentTime = ms / 1000;
   lisSyncBar(no, ms);
 }
+// 听力练习：←/→ 后退/前进 5 秒（输入框内留给光标移动）。
+document.addEventListener('keydown', e => {
+  if (CUR_SCREEN !== 'listen-play' || !LIS) return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
+  e.preventDefault();
+  lisNudge(e.key === 'ArrowRight' ? 5000 : -5000);
+});
+function lisSectionNearView() {
+  let best = null, bestD = Infinity;
+  document.querySelectorAll('#lis-sections .lis-sec').forEach(el => {
+    const r = el.getBoundingClientRect();
+    const d = Math.abs((r.top + r.bottom) / 2 - innerHeight / 2);
+    if (d < bestD) { bestD = d; best = +el.id.replace('lis-sec-', ''); }
+  });
+  return best ? lisSec(best) : null;
+}
+function lisNudge(deltaMs) {
+  const s = LIS_SEC != null ? lisSec(LIS_SEC) : lisSectionNearView();
+  if (!s) return;
+  const a = lisAudio();
+  const start = s.audio_start_ms / 1000, end = s.audio_end_ms / 1000;
+  // 记住播放头：刚播完停在段落末尾时，← 仍从末尾往回退。
+  const cur = a.currentTime >= start - 0.1 && a.currentTime <= end + 0.1 ? a.currentTime : start;
+  const target = Math.max(start, Math.min(end, cur + deltaMs / 1000));
+  LIS_SEC = s.section_no;
+  LIS_STOP_MS = s.audio_end_ms;
+  a.currentTime = target;
+  lisSyncBar(s.section_no, target * 1000);
+  syncLisPlayBtns();
+}
 function lisAnsText(a) {
   return String(a || '').split('|')[0];
 }
@@ -6179,7 +6229,7 @@ function lisRender() {
       </div>
       <div class="lis-player">
         <button class="lis-play" data-lis-play="${s.section_no}" data-lis-toggle="${s.section_no}" aria-label="播放本大题">▶</button>
-        <div class="lis-bar" data-lis-seek="${s.section_no}"><div class="lis-fill"></div></div>
+        <div class="lis-bar" data-lis-seek="${s.section_no}" title="←/→ 后退/前进 5 秒"><div class="lis-fill"></div></div>
         <span class="lis-time">${recFmt(s.audio_start_ms)} / ${recFmt(s.audio_end_ms)}</span>
       </div>
       ${example}
@@ -7359,7 +7409,7 @@ async function podWatch(jobId) {
     await podSleep(400);
     $('pod-log').hidden = true;
     await podLoad(meta);
-    podPlay(true);
+    if (!$('pod-panel').hidden) podPlay(true);
   } catch (e) {
     podLog('音频载入失败：' + e.message);
     $('pod-state').textContent = '生成完成，但音频载入失败：' + e.message;
