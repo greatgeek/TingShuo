@@ -6096,7 +6096,7 @@ function renderDict() {
         </span>
       </div>
       <div class="rec-dict">
-        <input id="rec-input" type="text" lang="ja" placeholder="听音频，输入这句日语…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+        <textarea id="rec-input" rows="1" lang="ja" placeholder="听音频，输入这句日语…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
         <button class="btn accent" id="rec-check">检查</button>
       </div>
       <div class="rec-feedback" id="rec-feedback"></div>
@@ -6117,6 +6117,14 @@ function renderDict() {
   $('rec-input').addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); recCheckDict(); }
   });
+  $('rec-input').addEventListener('input', recDictAutosize);
+  recDictAutosize();
+}
+function recDictAutosize() {
+  const inp = $('rec-input');
+  if (!inp) return;
+  inp.style.height = 'auto';
+  inp.style.height = Math.min(inp.scrollHeight + 2, 168) + 'px';
 }
 async function recCheckDict() {
   if (!REC || REC_MODE !== 'dict' || REC_DICT_LOCK || REC_DICT_CHECKING) return;

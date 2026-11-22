@@ -1901,13 +1901,15 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 .rec-run-combo { flex: none; font-size: 11px; color: var(--ink3); letter-spacing: 0; }
 .rec-run-combo.on { color: var(--accent); font-weight: 700; }
 .rec-dict { margin-top: 16px; }
-.rec-dict input {
-  width: 100%; padding: 13px 14px;
+.rec-dict textarea {
+  display: block; width: 100%; height: auto; min-height: 52px; max-height: 168px;
+  padding: 12px 14px; resize: none; overflow-y: auto;
   border: 1px solid var(--line-strong); border-radius: 12px;
   background: var(--surface-2); color: var(--ink);
   font-family: var(--serif); font-size: 18px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word;
 }
-.rec-dict input:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.rec-dict textarea:focus { outline: none; border-color: var(--accent); background: var(--surface); }
 .rec-dict .btn { width: auto; margin-top: 10px; padding: 10px 22px; font-size: 13px; }
 .rec-feedback { margin-top: 10px; font-size: 12.5px; line-height: 1.7; min-height: 18px; }
 .rec-feedback.ok { color: var(--jade); }
