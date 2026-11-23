@@ -1,0 +1,4 @@
+BEGIN;
+DROP TABLE IF EXISTS word_hook;
+DROP TABLE IF EXISTS word_quiz_state;
+COMMIT;

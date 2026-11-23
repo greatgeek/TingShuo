@@ -6,12 +6,12 @@ package wordstudy
 // 语境提示=句子翻译里把词义替换成○○的模糊版，替换不了就不给提示（宁缺勿泄）。
 
 import (
+	"context"
 	"encoding/json"
 	"math/rand"
+	"net/url"
 	"regexp"
 	"strings"
-
-	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -48,10 +48,12 @@ func parseMode(s string) Mode {
 }
 
 type sentAudio struct {
-	Kind string          `json:"kind"` // asset=audio_asset 点播；say=/audio/say 文本合成缓存
+	Kind string          `json:"kind"` // asset=audio_asset；say=/audio/say 合成；url=原声片段
 	ID   string          `json:"id,omitempty"`
 	Text string          `json:"text,omitempty"`
 	Ruby json.RawMessage `json:"ruby,omitempty"` // say 时传注音，纠多音字误读
+	URL  string          `json:"url,omitempty"`  // url 时同源媒体地址
+	Alt  string          `json:"alt,omitempty"`  // 同源缓存不可用时的 CDN 回退
 }
 
 type sentToken struct {
@@ -70,6 +72,7 @@ type Quiz struct {
 	Audio     *sentAudio  `json:"audio,omitempty"`
 	BlankText string      `json:"blank_text,omitempty"` // 空白处正解显示文本（句式条目=句式部分）
 	Accept    []string    `json:"accept,omitempty"`     // 输入题可接受答案（词面/读音/句式部分）
+	SentKey   string      `json:"sent_key,omitempty"`   // 本次例句标识，答完记入轮换状态
 }
 
 // tokSpan 词元在句中的字节区间；ruby_tokens 必须与正文逐字对齐。
@@ -328,19 +331,81 @@ func blurHint(trans, meaning *string) *string {
 }
 
 type sentRow struct {
-	Src   string
-	Text  string
-	Ruby  json.RawMessage
-	Trans *string
-	Audio *string
+	Src       string
+	Key       string // nb:<id> / ls:<id> / wc:<segment_id>
+	Text      string
+	Ruby      json.RawMessage
+	Trans     *string
+	Audio     *string // audio_asset id
+	ClipAudio string  // 原声 CDN 地址
 }
 
-// pickSentences 挖空素材：生词本句优先（有翻译、导入质检过），回退课程句。
-// 返回一批候选而不是单条：某句挖空位置读音对不上时，继续试下一条。
-func pickSentences(ctx context.Context, pool *pgxpool.Pool, userID, wordID, target string) []sentRow {
+// clipRuby 把 Nadeshiko 的 [{s,r,...}] 转成 ruby_tokens 的 [[text,reading]]。
+// 读音统一转平假名；拼接必须与正文逐字一致，否则这条片段不出题。
+func clipRuby(raw json.RawMessage, text string) json.RawMessage {
+	var src []struct {
+		S string `json:"s"`
+		R string `json:"r"`
+	}
+	if json.Unmarshal(raw, &src) != nil || len(src) == 0 {
+		return nil
+	}
+	out := make([][2]*string, 0, len(src))
+	var joined strings.Builder
+	for _, t := range src {
+		if t.S == "" {
+			continue
+		}
+		joined.WriteString(t.S)
+		s := t.S
+		var rp *string
+		if r := kanaReading(t.R); r != "" && r != s && r != kanaReading(s) {
+			rr := r
+			rp = &rr
+		}
+		out = append(out, [2]*string{&s, rp})
+	}
+	if joined.String() != text {
+		return nil
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// kanaReading 把片假名读音转平假名；含非假名字符则视为不可用读音。
+func kanaReading(s string) string {
+	rs := []rune(strings.TrimSpace(s))
+	hasKana := false
+	for i, r := range rs {
+		switch {
+		case r >= 0x3041 && r <= 0x3096:
+			hasKana = true
+		case r >= 0x30A1 && r <= 0x30F6:
+			rs[i] = r - 0x60
+			hasKana = true
+		case r == 0x30FC: // 长音
+			hasKana = true
+		default:
+			return ""
+		}
+	}
+	if !hasKana {
+		return ""
+	}
+	return string(rs)
+}
+
+// pickSentences 挖空素材：生词本句优先（有翻译、导入质检过），回退课程句，
+// 再回退带中文翻译与音频的原声片段。返回一批候选而不是单条。
+func pickSentences(ctx context.Context, pool *pgxpool.Pool, userID string, w word, target string) []sentRow {
 	rows, err := pool.Query(ctx, `
-		SELECT src, text, ruby_tokens, translation, audio_id FROM (
-			SELECT '1nb' AS src, s.text, s.ruby_tokens, s.translation, NULL::text AS audio_id
+		SELECT src, sent_key, text, ruby_tokens, translation, audio_id, clip_tokens, clip_audio FROM (
+			SELECT '1nb' AS src, 'nb:' || s.id AS sent_key, s.text,
+			       COALESCE(s.ruby_tokens, '[]'::jsonb) AS ruby_tokens, s.translation,
+			       NULL::text AS audio_id, '[]'::jsonb AS clip_tokens, ''::text AS clip_audio
 			FROM notebook_sentence s
 			JOIN notebook_word nw ON nw.id = s.notebook_word_id
 			JOIN notebook nb     ON nb.id = nw.notebook_id
@@ -349,7 +414,8 @@ func pickSentences(ctx context.Context, pool *pgxpool.Pool, userID, wordID, targ
 			  AND char_length(s.text) BETWEEN 6 AND 40
 			  AND s.text !~ '[〜~…○□?？]' -- 句式占位符句子念出来不明所以，不出听力题
 			UNION ALL
-			SELECT '2ls', s.text, s.ruby_tokens, s.translation, a.id
+			SELECT '2ls', 'ls:' || s.id, s.text, COALESCE(s.ruby_tokens, '[]'::jsonb),
+			       s.translation, a.id, '[]'::jsonb, ''::text
 			FROM word_sentence ws
 			JOIN sentence s ON s.id = ws.sentence_id
 			LEFT JOIN LATERAL (
@@ -361,22 +427,56 @@ func pickSentences(ctx context.Context, pool *pgxpool.Pool, userID, wordID, targ
 			  AND s.translation IS NOT NULL AND s.text LIKE '%' || $3 || '%'
 			  AND char_length(s.text) BETWEEN 6 AND 40
 			  AND s.text !~ '[〜~…○□?？]'
-		) q ORDER BY src LIMIT 12`, wordID, userID, target)
+			UNION ALL
+			SELECT '3wc', 'wc:' || c.segment_id, c.text_ja, '[]'::jsonb, c.text_zh,
+			       NULL::text, COALESCE(c.tokens, '[]'::jsonb), c.audio_url
+			FROM word w
+			JOIN word_clip c ON c.word_key = word_clip_key(w.surface, w.reading)
+			WHERE w.id = $1 AND w.user_id = $2
+			  AND c.match_text = $3
+			  AND c.zh_source = 'llm'
+			  AND c.text_zh IS NOT NULL AND btrim(c.text_zh) <> ''
+			  AND char_length(c.text_ja) BETWEEN 6 AND 40
+			  AND c.text_ja !~ '[〜~…○□?？]'
+			  AND c.audio_url <> ''
+		) q ORDER BY src, sent_key LIMIT 12`, w.ID, userID, target)
 	if err != nil {
 		return nil
 	}
 	defer rows.Close()
 	out := []sentRow{}
+	seen := map[string]bool{}
 	for rows.Next() {
 		var r sentRow
-		var ruby []byte
-		if err := rows.Scan(&r.Src, &r.Text, &ruby, &r.Trans, &r.Audio); err != nil {
+		var ruby, clipTokens []byte
+		if err := rows.Scan(&r.Src, &r.Key, &r.Text, &ruby, &r.Trans, &r.Audio,
+			&clipTokens, &r.ClipAudio); err != nil {
 			continue
 		}
 		r.Ruby = json.RawMessage(ruby)
+		if r.Src == "3wc" {
+			r.Ruby = clipRuby(json.RawMessage(clipTokens), r.Text)
+			if r.Ruby == nil {
+				continue
+			}
+		}
+		if seen[r.Text] {
+			continue
+		}
+		seen[r.Text] = true
 		out = append(out, r)
 	}
 	return out
+}
+
+// lastSentence 上次答完时记录的例句 key；没记录返回空串。
+func lastSentence(ctx context.Context, pool *pgxpool.Pool, wordID string) string {
+	var key string
+	if err := pool.QueryRow(ctx,
+		`SELECT last_sent FROM word_quiz_state WHERE word_id = $1`, wordID).Scan(&key); err != nil {
+		return ""
+	}
+	return key
 }
 
 // distractors 随机取 n 个互异干扰项（exclude 之外、非空）。
@@ -406,97 +506,168 @@ func distractors(ctx context.Context, pool *pgxpool.Pool, userID, col, exclude s
 }
 
 // buildQuiz 按模式与序号轮换题型；素材不齐就降级，绝不硬凑坏卡。
-func buildQuiz(ctx context.Context, pool *pgxpool.Pool, userID string, w word, idx int, mode Mode) *Quiz {
-	shuffle := func(opts []string, answer string) ([]string, int) {
-		rand.Shuffle(len(opts), func(i, j int) { opts[i], opts[j] = opts[j], opts[i] })
-		at := 0
-		for i, o := range opts {
-			if o == answer {
-				at = i
+// mix=true 用于到期复习/整目录测试：标准模式一场内交错四种题型；
+// 新词首学传 false，保持认词/听音两种温和题型。
+func buildQuiz(ctx context.Context, pool *pgxpool.Pool, userID string, w word, idx int, mode Mode, mix bool) *Quiz {
+	if mode == ModeListening {
+		if q := buildListening(ctx, pool, userID, w, idx); q != nil {
+			return q
+		}
+	}
+	return buildStandard(ctx, pool, userID, w, idx, mix)
+}
+
+func buildStandard(ctx context.Context, pool *pgxpool.Pool, userID string, w word, idx int, mix bool) *Quiz {
+	want := qPickMean
+	if mix {
+		want = mixType(idx)
+		if want == qClozePick || want == qClozeType {
+			if q := buildCloze(ctx, pool, userID, w, want == qClozePick); q != nil {
+				return q
+			}
+			// 没句可挖：按奇偶退到认词/听音，保证每词都有题
+			want = qPickMean
+			if idx%2 == 1 && !patternWord(w.Surface) {
+				want = qHearMean
 			}
 		}
-		return opts, at
+	} else if idx%2 == 1 && !patternWord(w.Surface) {
+		want = qHearMean
 	}
+	return buildMeaning(ctx, pool, userID, w, want)
+}
 
+// mixType 一场测试内的交错顺序：看词选义 → 挖空选词 → 听词选义 → 挖空输入。
+func mixType(idx int) quizType {
+	return []quizType{qPickMean, qClozePick, qHearMean, qClozeType}[idx%4]
+}
+
+func buildMeaning(ctx context.Context, pool *pgxpool.Pool, userID string, w word, want quizType) *Quiz {
 	meaning := ""
 	if w.Meaning != nil {
 		meaning = *w.Meaning
 	}
-
-	if mode == ModeStandard {
-		want := qPickMean
-		// 句式条目（〜さん之类）念出来不明所以：只看不听
-		if idx%2 == 1 && !patternWord(w.Surface) {
-			want = qHearMean
-		}
-		if meaning == "" {
-			return &Quiz{Type: qFlip, Hint: nil}
-		}
-		ds := distractors(ctx, pool, userID, "meaning", meaning, 3)
-		if len(ds) < 3 {
-			return &Quiz{Type: qFlip, Hint: nil}
-		}
-		opts, at := shuffle(append(ds, meaning), meaning)
-		return &Quiz{Type: want, Options: opts, Answer: at, Hint: nil}
+	if meaning == "" {
+		return &Quiz{Type: qFlip, Hint: nil}
 	}
+	// 句式条目（〜さん之类）念出来不明所以：只看不听
+	if want == qHearMean && patternWord(w.Surface) {
+		want = qPickMean
+	}
+	ds := distractors(ctx, pool, userID, "meaning", meaning, 3)
+	if len(ds) < 3 {
+		return &Quiz{Type: qFlip, Hint: nil}
+	}
+	opts := append(ds, meaning)
+	rand.Shuffle(len(opts), func(i, j int) { opts[i], opts[j] = opts[j], opts[i] })
+	at := 0
+	for i, o := range opts {
+		if o == meaning {
+			at = i
+		}
+	}
+	return &Quiz{Type: want, Options: opts, Answer: at, Hint: nil}
+}
 
-	// 听力模式：句式条目挖"句式部分"（〜さんのおかげです → さんのおかげです）；
-	// 占位符原句已被 SQL 排除，只有补出来的具体句会被选中；没句就退标准通道
-	target := w.Surface
+// buildListening 听力模式：句式条目挖"句式部分"（〜さんのおかげです → さんのおかげです）；
+// 占位符原句已被 SQL 排除，只有补出来的具体句会被选中；没句返回 nil 由调用方退标准通道。
+func buildListening(ctx context.Context, pool *pgxpool.Pool, userID string, w word, idx int) *Quiz {
+	target := clozeTarget(w)
+	if target == "" {
+		return nil
+	}
+	return buildCloze(ctx, pool, userID, w, idx%2 == 0)
+}
+
+func clozeTarget(w word) string {
 	if patternWord(w.Surface) {
-		target = patternTail(w.Surface)
-		if target == "" {
-			return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
-		}
+		return patternTail(w.Surface)
 	}
-	// 逐条候选试挖空：读音对不上就换下一条；跨句优先独立词元那句（本 选「この本」而非「本番/日本」）。
-	// 全部不合格再退标准通道。
-	var pick *sentRow
-	var pickTokens []sentToken
-	pickScore := scoreBad
-	srs := pickSentences(ctx, pool, userID, w.ID, target)
-	for i := range srs {
-		tokens, sc := blankTokensScored(srs[i].Ruby, srs[i].Text, target, wordReading(w))
+	return w.Surface
+}
+
+// buildCloze 选一句能准确挖空的例句。先按可信度选出最高质量档，
+// 同档内若有多句，轮换避开上次用过的那句；质量绝不为了换句而降级。
+func buildCloze(ctx context.Context, pool *pgxpool.Pool, userID string, w word, wantPick bool) *Quiz {
+	target := clozeTarget(w)
+	if target == "" {
+		return nil
+	}
+	type cand struct {
+		row    sentRow
+		tokens []sentToken
+	}
+	best := []cand{}
+	bestScore := scoreBad
+	for _, sr := range pickSentences(ctx, pool, userID, w, target) {
+		tokens, sc := blankTokensScored(sr.Ruby, sr.Text, target, wordReading(w))
 		if tokens == nil {
 			continue
 		}
-		if pick == nil || sc > pickScore {
-			pick, pickTokens, pickScore = &srs[i], tokens, sc
+		if sc > bestScore {
+			bestScore = sc
+			best = best[:0]
 		}
-		if pickScore == scoreExact {
-			break
+		if sc == bestScore {
+			best = append(best, cand{sr, tokens})
 		}
 	}
-	if pick != nil {
-		sr, tokens := *pick, pickTokens
-		q := &Quiz{Tokens: tokens, Hint: blurHint(sr.Trans, w.Meaning), Trans: sr.Trans}
-		q.BlankText = target
-		q.Accept = []string{w.Surface}
-		if w.Reading != nil && *w.Reading != w.Surface {
-			q.Accept = append(q.Accept, *w.Reading)
+	if len(best) == 0 {
+		return nil
+	}
+	pick := best[0]
+	if len(best) > 1 {
+		if last := lastSentence(ctx, pool, w.ID); last != "" {
+			for i := range best {
+				if best[i].row.Key == last {
+					pick = best[(i+1)%len(best)]
+					break
+				}
+			}
 		}
-		if target != w.Surface {
-			q.Accept = append(q.Accept, target)
+	}
+	sr, tokens := pick.row, pick.tokens
+	q := &Quiz{Tokens: tokens, Hint: blurHint(sr.Trans, w.Meaning), Trans: sr.Trans, SentKey: sr.Key}
+	q.BlankText = target
+	q.Accept = []string{w.Surface}
+	if w.Reading != nil && *w.Reading != w.Surface {
+		q.Accept = append(q.Accept, *w.Reading)
+	}
+	if target != w.Surface {
+		q.Accept = append(q.Accept, target)
+	}
+	switch {
+	case sr.Audio != nil:
+		q.Audio = &sentAudio{Kind: "asset", ID: *sr.Audio}
+	case sr.ClipAudio != "":
+		seg := strings.TrimPrefix(sr.Key, "wc:")
+		q.Audio = &sentAudio{
+			Kind: "url",
+			URL:  "/clipmedia/audio/" + url.PathEscape(seg),
+			Alt:  sr.ClipAudio,
 		}
-		if sr.Audio != nil {
-			q.Audio = &sentAudio{Kind: "asset", ID: *sr.Audio}
-		} else {
-			q.Audio = &sentAudio{Kind: "say", Text: sr.Text, Ruby: sr.Ruby}
-		}
-		if idx%2 == 1 {
-			q.Type = qClozeType
-			return q
-		}
-		ds := distractors(ctx, pool, userID, "surface", w.Surface, 3)
-		if len(ds) < 3 {
-			q.Type = qClozeType
-			return q
-		}
-		opts, at := shuffle(append(ds, w.Surface), w.Surface)
-		q.Type = qClozePick
-		q.Options = opts
-		q.Answer = at
+	default:
+		q.Audio = &sentAudio{Kind: "say", Text: sr.Text, Ruby: sr.Ruby}
+	}
+	if !wantPick {
+		q.Type = qClozeType
 		return q
 	}
-	return buildQuiz(ctx, pool, userID, w, idx, ModeStandard)
+	ds := distractors(ctx, pool, userID, "surface", w.Surface, 3)
+	if len(ds) < 3 {
+		q.Type = qClozeType
+		return q
+	}
+	opts := append(ds, w.Surface)
+	rand.Shuffle(len(opts), func(i, j int) { opts[i], opts[j] = opts[j], opts[i] })
+	at := 0
+	for i, o := range opts {
+		if o == w.Surface {
+			at = i
+		}
+	}
+	q.Type = qClozePick
+	q.Options = opts
+	q.Answer = at
+	return q
 }

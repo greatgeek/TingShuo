@@ -86,7 +86,7 @@ func (h *Handler) NewWords(w http.ResponseWriter, r *http.Request) {
 	userID := auth.FromContext(r.Context())
 	rows, err := h.pool.Query(r.Context(), `
 		SELECT w.id, w.surface, w.reading, w.pos, w.meaning,
-		       COALESCE(BOOL_OR(lw.is_key), false), aa.audio_id
+		       COALESCE(BOOL_OR(lw.is_key), false), aa.audio_id, 0 AS error_count
 		FROM word w
 		LEFT JOIN lesson_word lw ON lw.word_id = w.id
 		LEFT JOIN LATERAL (
@@ -108,7 +108,7 @@ func (h *Handler) NewWords(w http.ResponseWriter, r *http.Request) {
 	items := scanWordRows(rows)
 	qm := parseMode(r.URL.Query().Get("mode"))
 	for i := range items {
-		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i], i, qm)
+		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i], i, qm, false)
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"words": items, "mode": "new", "quiz_mode": string(qm)})
 }
@@ -138,12 +138,11 @@ func (h *Handler) DueWords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
-	// 到期列表额外带卡状态（间隔/错次），前端展示用
+	// 到期列表额外带卡状态（间隔/到期日），前端展示用
 	type dueWord struct {
 		word
 		IntervalDays int    `json:"interval_days"`
 		DueDate      string `json:"due_date"`
-		ErrorCount   int    `json:"error_count"`
 	}
 	items := []dueWord{}
 	for rows.Next() {
@@ -157,7 +156,8 @@ func (h *Handler) DueWords(w http.ResponseWriter, r *http.Request) {
 	}
 	qm := parseMode(r.URL.Query().Get("mode"))
 	for i := range items {
-		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i].word, i, qm)
+		// 到期复习：标准模式一场内交错四种题型，更接近真实提取
+		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i].word, i, qm, true)
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"words": items, "mode": "due", "quiz_mode": string(qm)})
 }
@@ -169,13 +169,15 @@ func (h *Handler) DirQuiz(w http.ResponseWriter, r *http.Request) {
 	dirID := chi.URLParam(r, "dir_id")
 	rows, err := h.pool.Query(r.Context(), `
 		SELECT w.id, w.surface, w.reading, w.pos, w.meaning,
-		       COALESCE(BOOL_OR(lw.is_key), false), NULL::text AS audio_id
+		       COALESCE(BOOL_OR(lw.is_key), false), NULL::text AS audio_id,
+		       COALESCE(c.error_count, 0)
 		FROM notebook_word nw
 		JOIN notebook nb ON nb.id = nw.notebook_id
 		JOIN word w      ON w.id = nw.word_id
 		LEFT JOIN lesson_word lw ON lw.word_id = w.id
+		LEFT JOIN word_review_item c ON c.word_id = w.id
 		WHERE nw.dir_id = $1 AND nb.user_id = $2
-		GROUP BY w.id
+		GROUP BY w.id, c.error_count
 		ORDER BY min(nw.sort_order)`, dirID, userID)
 	if err != nil {
 		httpx.Err(w, httpx.Internal(err.Error()))
@@ -185,7 +187,8 @@ func (h *Handler) DirQuiz(w http.ResponseWriter, r *http.Request) {
 	items := scanWordRows(rows)
 	qm := parseMode(r.URL.Query().Get("mode"))
 	for i := range items {
-		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i], i, qm)
+		// 整目录测试同样交错出题，避免一版只有一种题型
+		items[i].Quiz = buildQuiz(r.Context(), h.pool, userID, items[i], i, qm, true)
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"words": items, "mode": "dir", "quiz_mode": string(qm), "dir_id": dirID,
@@ -312,14 +315,15 @@ func (h *Handler) NbSentences(w http.ResponseWriter, r *http.Request) {
 }
 
 type word struct {
-	ID      string  `json:"id"`
-	Surface string  `json:"surface"`
-	Reading *string `json:"reading"`
-	Pos     *string `json:"pos"`
-	Meaning *string `json:"meaning"`
-	IsKey   bool    `json:"is_key"`
-	AudioID *string `json:"audio_id"` // 首个可用例句音频（可空）
-	Quiz    *Quiz   `json:"quiz"`     // 模式题型载荷（首版标准/听力）
+	ID         string  `json:"id"`
+	Surface    string  `json:"surface"`
+	Reading    *string `json:"reading"`
+	Pos        *string `json:"pos"`
+	Meaning    *string `json:"meaning"`
+	IsKey      bool    `json:"is_key"`
+	AudioID    *string `json:"audio_id"`    // 首个可用例句音频（可空）
+	ErrorCount int     `json:"error_count"` // 错次：记忆钩子按需生成用
+	Quiz       *Quiz   `json:"quiz"`        // 模式题型载荷（标准/听力）
 }
 
 func scanWordRows(rows pgx.Rows) []word {
@@ -327,7 +331,7 @@ func scanWordRows(rows pgx.Rows) []word {
 	for rows.Next() {
 		var it word
 		if err := rows.Scan(&it.ID, &it.Surface, &it.Reading, &it.Pos, &it.Meaning,
-			&it.IsKey, &it.AudioID); err != nil {
+			&it.IsKey, &it.AudioID, &it.ErrorCount); err != nil {
 			continue
 		}
 		items = append(items, it)
@@ -345,6 +349,7 @@ func (h *Handler) Result(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Result   review.Result `json:"result"`
 		HintUsed bool          `json:"hint_used"` // 本卡点开了语境提示
+		SentKey  string        `json:"sent_key"`  // 本次考的例句，记入轮换状态
 	}
 	if e := httpx.Decode(r, &req); e != nil {
 		httpx.Err(w, e)
@@ -403,6 +408,16 @@ func (h *Handler) Result(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		httpx.Err(w, httpx.Internal("更新背词状态失败: "+err.Error()))
 		return
+	}
+
+	// 轮换状态尽力而为：写失败只影响下次是否换句，不影响本次成绩
+	if k := strings.TrimSpace(req.SentKey); k != "" && len([]rune(k)) <= 100 {
+		_, _ = h.pool.Exec(r.Context(), `
+			INSERT INTO word_quiz_state (word_id, last_sent, updated_at)
+			VALUES ($1, $2, now())
+			ON CONFLICT (word_id) DO UPDATE
+			  SET last_sent = EXCLUDED.last_sent, updated_at = now()`,
+			wordID, k)
 	}
 
 	// mastery 联动：答错标 weak、掌握标 learned，其余保持不变

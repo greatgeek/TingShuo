@@ -28,6 +28,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/podcast"
 	"github.com/greatgeek/TingShuo/backend/internal/recitation"
 	"github.com/greatgeek/TingShuo/backend/internal/review"
+	"github.com/greatgeek/TingShuo/backend/internal/speech"
 	"github.com/greatgeek/TingShuo/backend/internal/study"
 	"github.com/greatgeek/TingShuo/backend/internal/tts"
 	"github.com/greatgeek/TingShuo/backend/internal/user"
@@ -85,7 +86,9 @@ func run() error {
 		return err
 	}
 
-	azureTTS := ttsclient.New(mustEnv("AZURE_SPEECH_KEY"), mustEnv("AZURE_SPEECH_REGION"))
+	azureKey, azureRegion := mustEnv("AZURE_SPEECH_KEY"), mustEnv("AZURE_SPEECH_REGION")
+	azureTTS := ttsclient.New(azureKey, azureRegion)
+	speechH := speech.NewHandler(azureKey, azureRegion)
 
 	signer := jwtw.New(jwtSecret)
 	authH := auth.NewHandler(pool, signer)
@@ -161,6 +164,7 @@ func run() error {
 			sec.Delete("/ai/chat", aiH.ChatClear)
 			sec.Get("/words/{id}/usage", wordH.Usage)
 			sec.Get("/words/{id}/association", assocH.Get)
+			sec.Get("/words/{id}/hook", assocH.Hook)
 			sec.Get("/words/{id}/clips", clipH.Clips)
 			sec.Post("/words/{id}/clips", clipH.Enqueue)
 			sec.Post("/words/clips/backfill", clipH.Backfill)
@@ -218,6 +222,7 @@ func run() error {
 			sec.Get("/grammar/quiz", gpH.Quiz)
 			sec.Post("/grammar/quiz/attempt", gpH.Attempt)
 
+			sec.Post("/speech/recognize", speechH.Recognize)
 			sec.Post("/audio/say", ttsH.Say)
 			sec.Post("/podcast/jobs", podH.CreateJob)
 			sec.Get("/podcast/jobs/latest", podH.LatestJob)

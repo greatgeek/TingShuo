@@ -15,6 +15,7 @@ const SVG_SPEAK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const SVG_HEADPHONES = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="13.5" width="4.5" height="7" rx="2"/><rect x="16.5" y="13.5" width="4.5" height="7" rx="2"/></svg>';
 const SVG_BULB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z"/></svg>';
 const SVG_BUSY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10M7 21h10"/><path d="M8 3v3.5c0 1.6 1.5 3.1 4 5.5-2.5 2.4-4 3.9-4 5.5V21"/><path d="M16 3v3.5c0 1.6-1.5 3.1-4 5.5 2.5 2.4 4 3.9 4 5.5V21"/></svg>';
+const SVG_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>';
 const SVG_CHEV = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 // 播放/合成按钮：忙碌时临时换成沙漏，结束后恢复按钮原本的图标（不写死 ▶ 或 🔊）
 function markBtnBusy(btn) {
@@ -2512,6 +2513,25 @@ async function wsPlayQuizSent(btn) {
       restoreBtnIcon(btn);
       return;
     }
+    if (q.audio.kind === 'url') {
+      wsStopAudio();
+      const a = new Audio(q.audio.url);
+      WS_AUDIO = a;
+      let altTried = false;
+      a.onended = () => restoreBtnIcon(btn);
+      a.onerror = () => {
+        if (!altTried && q.audio.alt) {
+          altTried = true;
+          a.src = q.audio.alt;
+          a.play().catch(() => { restoreBtnIcon(btn); toast('原声播放失败'); });
+          return;
+        }
+        restoreBtnIcon(btn);
+        toast('原声播放失败');
+      };
+      await playUnlock(a);
+      return;
+    }
     wsStopAudio();
     const url = await audioBlobURL(q.audio.id);
     WS_AUDIO = new Audio(url);
@@ -2535,7 +2555,7 @@ async function wsPrefetchSent() {
     if (q.audio.kind === 'say') {
       // 与 🎧 的 sayAudio 同键同注音预热，预热命中才有意义
       URL.revokeObjectURL(await sayBlobURL(q.audio.text, undefined, q.audio.ruby));
-    } else {
+    } else if (q.audio.kind === 'asset') {
       await audioBlobURL(q.audio.id);
     }
   } catch (e) { /* 预热失败不碍事，点 🎧 时再取并会报错 */ }
@@ -2543,7 +2563,8 @@ async function wsPrefetchSent() {
 
 function wsFrontQuiz(w) {
   const q = w.quiz;
-  const play = `<button class="ws-mini ws-playbtn" data-act="ws-sent" title="播放句子">${SVG_HEADPHONES}</button>`;
+  const play = `<button class="ws-mini ws-playbtn" data-act="ws-sent" title="播放句子">${SVG_HEADPHONES}</button>` +
+    (q.audio && q.audio.kind === 'url' ? '<span class="ws-origin">原声</span>' : '');
   const hint = q.hint != null
     ? `<details class="ws-hint"><summary>显示中文语境提示</summary><p>${esc(q.hint)}</p></details>`
     : '';
@@ -2583,9 +2604,11 @@ function wsBackFlipHTML(w) {
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
+    <div id="ws-hook"></div>
     <div id="ws-clips"></div>
     <div id="ws-usage"><p class="hint">加载例句…</p></div>
     <div id="ws-nb"></div>
+    <div class="ws-oral-row"><button class="btn ghost" data-act="ws-oral">${SVG_MIC} 用它说一句</button></div>
     <div class="rv-actions">
       <button class="btn" data-act="ws-fail">不认识</button>
       <button class="btn accent" data-act="ws-pass">认识</button>
@@ -2613,10 +2636,13 @@ function wsBackQuizHTML(w, ok, chosen) {
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${q.tokens ? `<div class="ws-cloze ws-cloze-full">${wsTokensFullHTML(q, w)}</div>` : ''}
     ${q.trans ? `<div class="ws-trans">句子翻译：${esc(q.trans)}</div>` : ''}
+    ${q.audio && q.audio.kind === 'url' ? '<div class="ws-src-tag">原声例句</div>' : ''}
+    <div id="ws-hook"></div>
     <div id="ws-clips"></div>
     ${WS_HINT_USED ? '<div class="rv-meta">本次使用了语境提示（弱通过：间隔不增长）</div>' : ''}
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
     ${mark}
+    <div class="ws-oral-row"><button class="btn ghost" data-act="ws-oral">${SVG_MIC} 用它说一句</button></div>
     <div class="rv-actions"><button class="btn accent" data-act="ws-next">下一词</button></div>`;
 }
 
@@ -2658,6 +2684,7 @@ async function wsFlip() {
   back.style.display = 'block';
   back.innerHTML = wsBackFlipHTML(WS_ITEMS[WS_IDX]);
   const w = WS_ITEMS[WS_IDX];
+  wsHookInit(w);
   loadWordClips(w, $('ws-clips'), { title: '原声助记' });
   const box = $('ws-usage');
   try {
@@ -2708,7 +2735,10 @@ async function wsGrade(result) {
   if (!WS_PRACTICE) {
     await api('/word-study/' + w.id + '/result', {
       method: 'POST',
-      body: JSON.stringify({ result, hint_used: WS_HINT_USED }),
+      body: JSON.stringify({
+        result, hint_used: WS_HINT_USED,
+        sent_key: (w.quiz && w.quiz.sent_key) || '',
+      }),
     });
   }
   WS_DONE.add(w.id);
@@ -2726,7 +2756,312 @@ function wsShowReview(w, ok, chosen) {
   const back = $('ws-back');
   back.style.display = 'block';
   back.innerHTML = wsBackQuizHTML(w, ok, chosen);
+  wsHookInit(w);
   loadWordClips(w, $('ws-clips'), { title: '原声助记' });
+}
+
+// ===== 记忆钩子：错满 2 次的词自动生成，其余按需点开；服务端按词缓存 =====
+const WS_HOOK_CACHE = new Map();
+const WS_HOOK_FAILED = new Set();
+const WS_HOOK_LOADING = new Set();
+
+function wsHookInit(w) {
+  const box = document.getElementById('ws-hook');
+  if (!box || !w) return;
+  const got = WS_HOOK_CACHE.get(w.id);
+  if (got) { wsHookRender(box, got); return; }
+  if (WS_HOOK_LOADING.has(w.id)) { box.innerHTML = '<div class="ws-hook-load">正在生成记忆钩子…</div>'; return; }
+  if ((w.error_count || 0) >= 2 && !WS_HOOK_FAILED.has(w.id)) { wsLoadHook(w, false); return; }
+  wsHookLink(box, WS_HOOK_FAILED.has(w.id) ? '钩子暂时生成不了' : '');
+}
+
+function wsHookLink(box, extra) {
+  box.innerHTML = `<div class="ws-hook-idle">${extra ? esc(extra) + ' · ' : ''}<button class="ws-hook-link" data-act="ws-hook">记不住？生成记忆钩子</button></div>`;
+}
+
+async function wsLoadHook(w, manual) {
+  if (!w || WS_HOOK_LOADING.has(w.id)) return;
+  const box = document.getElementById('ws-hook');
+  if (!box) return;
+  WS_HOOK_FAILED.delete(w.id);
+  WS_HOOK_LOADING.add(w.id);
+  box.innerHTML = '<div class="ws-hook-load">正在生成记忆钩子…</div>';
+  try {
+    const r = await api('/words/' + w.id + '/hook' + (manual ? '' : '?auto=1'));
+    if (!r || r.available === false) { wsHookLink(box, ''); return; }
+    WS_HOOK_CACHE.set(w.id, r);
+    wsHookRender(box, r);
+  } catch (e) {
+    WS_HOOK_FAILED.add(w.id);
+    wsHookLink(box, '钩子暂时生成不了，点此重试');
+  } finally {
+    WS_HOOK_LOADING.delete(w.id);
+  }
+}
+
+function wsHookRender(box, r) {
+  const kanji = (r.kanji || []).slice(0, 4).map(k =>
+    `<span class="ws-hook-k"><b>${esc(k.char)}</b><i>${esc(k.reading)}</i><em>${esc(k.hint)}</em></span>`).join('');
+  box.innerHTML = `<div class="ws-hook">
+    <div class="ws-hook-head"><span>记忆钩子</span><span class="ws-hook-tag">${esc(r.notice || '')}</span></div>
+    <div class="ws-hook-mn">${esc(r.mnemonic || '')}</div>
+    ${r.structure ? `<div class="ws-hook-st">${esc(r.structure)}</div>` : ''}
+    ${kanji ? `<div class="ws-hook-kanji">${kanji}</div>` : ''}
+  </div>`;
+}
+
+// ===== 口头造句：录音 → 16k 单声道 WAV → 服务端 STT → 关键词命中 =====
+const ORAL = { cfg: null, stream: null, rec: null, chunks: [], timer: 0, tick: 0, t0: 0 };
+
+function oralOpen(cfg) {
+  oralClose();
+  ORAL.cfg = cfg || {};
+  wsStopAudio();
+  if (REC_AUDIO) { try { REC_AUDIO.pause(); } catch (e) {} }
+  const mask = document.createElement('div');
+  mask.id = 'oral-mask';
+  mask.className = 'oral-mask';
+  mask.innerHTML = `<div class="oral-card" role="dialog" aria-modal="true" aria-label="口头造句">
+    <div class="oral-head"><b>${esc(ORAL.cfg.title || '口头造句')}</b><button class="oral-x" id="oral-x" title="关闭" aria-label="关闭">×</button></div>
+    <div class="oral-prompt">${esc(ORAL.cfg.prompt || '')}</div>
+    ${ORAL.cfg.hint ? `<div class="oral-hint">${esc(ORAL.cfg.hint)}</div>` : ''}
+    <div class="oral-state" id="oral-state">点麦克风开始，最多录 15 秒</div>
+    <div class="oral-actions"><button class="oral-mic" id="oral-mic" title="开始录音" aria-label="开始录音">${SVG_MIC}</button></div>
+    <div class="oral-text" id="oral-text" style="display:none"></div>
+    <div class="oral-hits" id="oral-hits" style="display:none"></div>
+    ${ORAL.cfg.refHTML ? `<div class="oral-ref" id="oral-ref" style="display:none"><div class="oral-ref-label">参考说法</div>${ORAL.cfg.refHTML}</div>` : ''}
+    <div class="oral-priv">录音只用于本次语音识别，服务器不保存。</div>
+  </div>`;
+  document.body.appendChild(mask);
+  mask.addEventListener('click', e => { if (e.target === mask) oralClose(); });
+  $('oral-x').onclick = oralClose;
+  $('oral-mic').onclick = () => {
+    if (ORAL.rec && ORAL.rec.state === 'recording') oralStop();
+    else oralStart();
+  };
+}
+
+function oralClose() {
+  clearTimeout(ORAL.timer); ORAL.timer = 0;
+  clearInterval(ORAL.tick); ORAL.tick = 0;
+  const rec = ORAL.rec;
+  ORAL.rec = null;
+  if (rec && rec.state !== 'inactive') {
+    rec.onstop = null;
+    try { rec.stop(); } catch (e) {}
+  }
+  oralRelease();
+  ORAL.cfg = null;
+  const m = document.getElementById('oral-mask');
+  if (m) m.remove();
+}
+
+function oralRelease() {
+  if (!ORAL.stream) return;
+  ORAL.stream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+  ORAL.stream = null;
+}
+
+function oralMicSet(mode) {
+  const mic = $('oral-mic');
+  if (!mic) return;
+  const label = mode === 'rec' ? '停止并判定' : mode === 'busy' ? '识别中' : '开始录音';
+  mic.classList.toggle('on', mode === 'rec');
+  mic.disabled = mode === 'busy';
+  mic.title = label;
+  mic.setAttribute('aria-label', label);
+}
+
+function oralStart() {
+  const st = $('oral-state');
+  if (!ORAL.cfg || !st) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    st.textContent = '当前浏览器不支持录音，请用 Chrome / Edge 打开。';
+    return;
+  }
+  oralMicSet('busy');
+  st.classList.remove('on');
+  st.textContent = '正在打开麦克风…';
+  navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+    .then(stream => {
+      if (!ORAL.cfg) { stream.getTracks().forEach(t => t.stop()); return; }
+      ORAL.stream = stream;
+      const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+      const mime = types.find(m => window.MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      ORAL.rec = rec;
+      ORAL.chunks = [];
+      rec.ondataavailable = e => { if (e.data && e.data.size) ORAL.chunks.push(e.data); };
+      rec.onstop = oralFinish;
+      rec.start(250);
+      ORAL.t0 = Date.now();
+      oralMicSet('rec');
+      st.classList.add('on');
+      st.textContent = '正在听… 0.0s / 15s';
+      ORAL.tick = setInterval(() => {
+        if (!st) return;
+        const s = Math.min(15, (Date.now() - ORAL.t0) / 1000);
+        st.textContent = `正在听… ${s.toFixed(1)}s / 15s`;
+      }, 200);
+      ORAL.timer = setTimeout(oralStop, 15000);
+    })
+    .catch(err => {
+      oralMicSet('idle');
+      const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      st.textContent = denied
+        ? '麦克风权限被拒绝：点地址栏的麦克风图标允许后重试。'
+        : '录音启动失败：' + ((err && err.message) || '未知错误');
+    });
+}
+
+function oralStop() {
+  clearTimeout(ORAL.timer); ORAL.timer = 0;
+  clearInterval(ORAL.tick); ORAL.tick = 0;
+  const rec = ORAL.rec;
+  if (!rec || rec.state === 'inactive') return;
+  const st = $('oral-state');
+  if (st) { st.classList.remove('on'); st.textContent = '识别中…'; }
+  oralMicSet('busy');
+  try { rec.stop(); } catch (e) { oralFinish(); }
+}
+
+async function oralFinish() {
+  const rec = ORAL.rec;
+  ORAL.rec = null;
+  oralRelease();
+  const st = $('oral-state');
+  if (!st) return;
+  const chunks = ORAL.chunks;
+  ORAL.chunks = [];
+  if (!chunks.length) {
+    st.textContent = '没录到声音，点麦克风再试一次。';
+    oralMicSet('idle');
+    oralRevealRef();
+    return;
+  }
+  try {
+    const wav = await oralWav(new Blob(chunks, { type: (rec && rec.mimeType) || 'audio/webm' }));
+    const r = await fetchAuth('/api/v1/speech/recognize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'audio/wav' },
+      body: wav,
+    });
+    const b = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((b && b.error && b.error.message) || ('HTTP ' + r.status));
+    const text = String(b.text || '').trim();
+    if (!text) {
+      st.textContent = /Silence|Timeout/i.test(b.status || '')
+        ? '没听到声音，点麦克风再试一次。'
+        : '没听清，再说一次（离麦克风近一点、背景音小一点）。';
+      oralMicSet('idle');
+      oralRevealRef();
+      return;
+    }
+    st.textContent = '识别完成';
+    oralMicSet('idle');
+    oralShowResult(text);
+  } catch (e) {
+    st.classList.remove('on');
+    st.textContent = '识别失败：' + ((e && e.message) || '请稍后再试');
+    oralMicSet('idle');
+    oralRevealRef();
+  }
+}
+
+// oralWav 浏览器录音转 16kHz 单声道 16bit WAV（Azure STT 只吃这个格式）
+async function oralWav(blob) {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) throw new Error('浏览器不支持音频处理');
+  const ac = new AC();
+  try {
+    const buf = await ac.decodeAudioData(await blob.arrayBuffer());
+    const rate = 16000;
+    const frames = Math.min(Math.ceil(buf.duration * rate), rate * 15);
+    const pcm = new Int16Array(frames);
+    const chs = [];
+    for (let c = 0; c < buf.numberOfChannels; c++) chs.push(buf.getChannelData(c));
+    const ratio = buf.sampleRate / rate;
+    for (let i = 0; i < frames; i++) {
+      const pos = i * ratio;
+      const i0 = Math.min(Math.floor(pos), buf.length - 1);
+      const i1 = Math.min(i0 + 1, buf.length - 1);
+      const fr = pos - i0;
+      let v = 0;
+      for (let c = 0; c < chs.length; c++) v += chs[c][i0] + (chs[c][i1] - chs[c][i0]) * fr;
+      v /= chs.length || 1;
+      pcm[i] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
+    }
+    return oralWavBytes(pcm, rate);
+  } finally {
+    ac.close().catch(() => {});
+  }
+}
+
+function oralWavBytes(pcm, rate) {
+  const ab = new ArrayBuffer(44 + pcm.length * 2);
+  const dv = new DataView(ab);
+  const wr = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+  wr(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); wr(8, 'WAVE');
+  wr(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, 1, true); dv.setUint32(24, rate, true);
+  dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  wr(36, 'data'); dv.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) dv.setInt16(44 + i * 2, pcm[i], true);
+  return ab;
+}
+
+function oralRevealRef() {
+  const ref = $('oral-ref');
+  if (ref) ref.style.display = '';
+}
+
+function oralShowResult(text) {
+  const cfg = ORAL.cfg || {};
+  const t = $('oral-text');
+  if (t) { t.style.display = ''; t.textContent = text; }
+  const groups = cfg.groups || [];
+  const norm = recNorm(text);
+  const hits = groups.map(g => g.some(k => k && norm.includes(recNorm(k))));
+  const n = hits.filter(Boolean).length;
+  const h = $('oral-hits');
+  if (h && groups.length) {
+    h.style.display = '';
+    if (groups.length === 1) {
+      h.className = 'oral-hits ' + (n ? 'ok' : 'no');
+      h.textContent = n ? `用上了「${groups[0][0]}」` : `没听到「${groups[0][0]}」，再试一次`;
+    } else {
+      h.className = 'oral-hits ' + (n === groups.length ? 'ok' : n ? 'mid' : 'no');
+      h.textContent = `关键词命中 ${n} / ${groups.length}`;
+    }
+  }
+  oralRevealRef();
+}
+
+// oralKanaCore 从语法形态里取可判定的假名核心（Vてしまう → てしまう）
+function oralKanaCore(pat) {
+  const s = String(pat || '').replace(/[A-Za-zＡ-Ｚａ-ｚ0-9０-９]+/g, '');
+  const runs = s.match(/[\u3041-\u30ff\u4e00-\u9fff々]+/g) || [];
+  runs.sort((a, b) => b.length - a.length);
+  return runs[0] || '';
+}
+
+function wsOral() {
+  const w = WS_ITEMS[WS_IDX];
+  if (!w) return;
+  const q = w.quiz || {};
+  let ref = '';
+  if (q.tokens && q.tokens.length) {
+    ref = `<div class="oral-ref-jp">${wsTokensFullHTML(q, w)}</div>` +
+      (q.trans ? `<div class="oral-ref-zh">${esc(q.trans)}</div>` : '');
+  }
+  const keys = [w.surface, w.reading || ''].filter(Boolean);
+  oralOpen({
+    title: '用它说一句',
+    prompt: `用「${w.surface}」说一句日语`,
+    hint: w.meaning ? `词义：${w.meaning}` : '',
+    groups: keys.length ? [keys] : [],
+    refHTML: ref,
+  });
 }
 
 // wsAutoPlayFront 题面出现后主动播一次音频：听力题播句子，其余播单词。
@@ -5255,10 +5590,15 @@ function qzPick(i) {
     <div class="quiz-whys">${whys}</div>
     <div class="quiz-after">
       <span class="quiz-pat-now">考点：${esc(q.point_pattern || '')}</span>
-      <button class="quiz-link" data-act="quiz-gra" data-arg="${q.lesson_no}">回看本课语法</button>
+      <span class="quiz-after-links">
+        <button class="quiz-link quiz-oral">${SVG_MIC} 用它说一句</button>
+        <button class="quiz-link" data-act="quiz-gra" data-arg="${q.lesson_no}">回看本课语法</button>
+      </span>
     </div>
     <button class="btn accent quiz-next">${last ? '查看结果 →' : '下一题 →'}</button>`;
   $('quiz-feedback').querySelector('.quiz-next').onclick = qzNext;
+  const oralBtn = $('quiz-feedback').querySelector('.quiz-oral');
+  if (oralBtn) oralBtn.onclick = () => qzOral(q);
   const sayBtn = $('quiz-feedback').querySelector('.quiz-src-say');
   if (sayBtn) sayBtn.onclick = () => sayAudio(q.source.text, sayBtn, false, q.source.ruby_tokens);
   // 作答后题干发音补全：空格换成正确选项，读完整句子
@@ -5270,6 +5610,23 @@ function qzPick(i) {
     stemSayBtn.onclick = () => sayAudio(fullSay.text, stemSayBtn, false, fullSay.ruby);
   }
   $('quiz-feedback').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// qzOral 用当前语法点口头造句：只判形态里的假名核心，参考原句在录音后揭晓
+function qzOral(q) {
+  if (!q) return;
+  const pat = q.point_pattern || q.formation || '';
+  const core = oralKanaCore(pat) || oralKanaCore(q.formation || '');
+  const src = q.source
+    ? `<div class="oral-ref-jp">${rubyHTML(q.source.ruby_tokens) || esc(q.source.text)}</div>` +
+      (q.source.translation ? `<div class="oral-ref-zh">${esc(q.source.translation)}</div>` : '')
+    : '';
+  oralOpen({
+    title: '用这个句型说一句',
+    prompt: `用「${pat}」说一句日语`,
+    groups: core ? [[core]] : [],
+    refHTML: src,
+  });
 }
 
 function qzNext() {
@@ -6991,7 +7348,10 @@ function renderZh2Jp() {
   $('rec-focus').innerHTML = `
     <div class="rec-focus rec-zh">
       <div class="rec-focus-top"><span>第 ${REC_IDX + 1} / ${REC.lines.length} 句 · 中译日</span><span>${REC_ZH_USED_THIS ? '本句已用提示' : '本句零提示'}</span></div>
-      <div class="rec-zh-prompt">${esc(l.translation)}</div>
+      <div class="rec-zh-prompt-row">
+        <div class="rec-zh-prompt">${esc(l.translation)}</div>
+        <button class="rec-zh-mic" id="rec-zh-oral" title="录音说日语" aria-label="录音说日语">${SVG_MIC}</button>
+      </div>
       <div class="rec-zh-sub">把这句话用日语说出来。</div>
       <div class="rec-zh-hintbox">${recZhHintHTML(l)}</div>
       <div class="rec-focus-actions">
@@ -7003,7 +7363,25 @@ function renderZh2Jp() {
     </div>`;
   $('rec-zh-hint').onclick = recZhHint;
   $('rec-zh-show').onclick = recZhShow;
+  $('rec-zh-oral').onclick = recZhOral;
   $('rec-zh-next').onclick = recZhNext;
+}
+// recZhOral 口头产出：关键词只显示命中数，参考说法在录音后揭晓
+function recZhOral() {
+  if (!REC || REC_MODE !== 'zh2jp') return;
+  const l = recLine();
+  if (!l) return;
+  const toks = recTokens(l);
+  const groups = recZhKeywords(l).map(kw => {
+    const t = toks.find(x => x[0] === kw);
+    return [kw, (t && t[1]) || ''].filter(Boolean);
+  });
+  oralOpen({
+    title: '中译日 · 说出来',
+    prompt: l.translation || '',
+    groups,
+    refHTML: `<div class="oral-ref-jp">${recJP(l)}</div>`,
+  });
 }
 function recZhHint() {
   if (!REC || REC_MODE !== 'zh2jp' || REC_ZH_LVL >= 4) return;
@@ -8516,6 +8894,8 @@ document.addEventListener('click', (e) => {
     case 'ws-next': wsNext(); break;
     case 'ws-retry-wrong': wsRetryWrong(); break;
     case 'ws-quit': wsQuit(); break;
+    case 'ws-oral': wsOral(); break;
+    case 'ws-hook': wsLoadHook(WS_ITEMS[WS_IDX], true); break;
   }
 });
 // toggle 事件不冒泡：捕获阶段记"用过语境提示"

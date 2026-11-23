@@ -922,6 +922,110 @@ body.no-rt rt { display: none; }
 .ws-ans.ok { color: var(--jade); }
 .ws-ans.no { color: var(--danger); }
 
+/* 原声例句 / 口头造句 / 记忆钩子 */
+.ws-origin {
+  display: inline-flex; align-items: center; padding: 2px 7px;
+  border-radius: 999px; background: var(--accent-soft); color: var(--accent-deep);
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+}
+.ws-src-tag { margin: 4px 0 2px; font-size: 10.5px; color: var(--ink3); letter-spacing: .06em; }
+.ws-oral-row { display: flex; justify-content: center; margin: 12px 0 2px; }
+.ws-oral-row .btn { width: auto; flex: 0 0 auto; margin-top: 0; padding: 8px 16px; gap: 6px; }
+.ws-oral-row svg, .rec-zh-mic svg, .quiz-oral svg { width: 15px; height: 15px; }
+.ws-hook {
+  text-align: left; margin: 10px 0; padding: 10px 12px;
+  background: var(--surface-2); border: 1px solid var(--line);
+  border-left: 3px solid rgba(184, 64, 44, .45); border-radius: 0 10px 10px 0;
+}
+.ws-hook-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  font-size: 11px; color: var(--ink3); letter-spacing: .06em;
+}
+.ws-hook-tag { font-size: 10px; color: var(--ink3); letter-spacing: 0; }
+.ws-hook-mn { margin-top: 6px; font-size: 13px; line-height: 1.75; color: var(--ink); }
+.ws-hook-st { margin-top: 4px; font-size: 12px; color: var(--ink2); }
+.ws-hook-kanji { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ws-hook-k {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  padding: 4px 8px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: 9px; font-size: 11.5px;
+}
+.ws-hook-k b { font-family: var(--serif); font-size: 15px; color: var(--accent-deep); }
+.ws-hook-k i { font-style: normal; font-size: 10px; color: var(--ink3); }
+.ws-hook-k em { font-style: normal; color: var(--ink2); }
+.ws-hook-idle, .ws-hook-load { font-size: 11.5px; color: var(--ink3); }
+.ws-hook-link {
+  border: 0; background: none; padding: 0; font: inherit;
+  color: var(--accent); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* 口头造句面板 */
+.oral-mask {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(30, 25, 19, .42);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: mask-in .18s ease;
+}
+.oral-card {
+  width: 100%; max-width: 420px; max-height: 86vh; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 20px; box-shadow: var(--shadow-md);
+  padding: 18px 18px 16px; text-align: center;
+  animation: pop-in .22s var(--ease);
+}
+.oral-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
+.oral-head b { font-size: 14px; }
+.oral-x {
+  width: 28px; height: 28px; flex: none; border: 0; border-radius: 8px;
+  background: transparent; color: var(--ink3);
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.oral-x:hover { background: var(--surface-2); color: var(--ink); }
+.oral-prompt { margin-top: 12px; font-size: 16px; font-weight: 600; line-height: 1.7; color: var(--ink); }
+.oral-hint { margin-top: 6px; font-size: 12px; color: var(--ink3); line-height: 1.7; }
+.oral-state { margin-top: 14px; min-height: 18px; font-size: 12px; color: var(--ink3); }
+.oral-state.on { color: var(--accent); }
+.oral-actions { display: flex; justify-content: center; margin-top: 12px; }
+.oral-mic {
+  width: 64px; height: 64px; border-radius: 50%;
+  border: 1px solid rgba(184, 64, 44, .3); background: var(--accent-soft);
+  color: var(--accent); display: grid; place-items: center; cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.oral-mic svg { width: 26px; height: 26px; }
+.oral-mic:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.oral-mic.on {
+  background: var(--danger); border-color: var(--danger); color: #fff;
+  animation: oral-pulse 1.2s ease-in-out infinite;
+}
+.oral-mic:disabled { opacity: .6; cursor: default; }
+@keyframes oral-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(178, 58, 50, .35); }
+  50% { box-shadow: 0 0 0 10px rgba(178, 58, 50, 0); }
+}
+.oral-text {
+  margin-top: 14px; padding: 10px 12px; border-radius: 10px;
+  background: var(--surface-2); font-size: 14px; line-height: 1.75;
+  text-align: left; color: var(--ink);
+}
+.oral-hits { margin-top: 8px; font-size: 12.5px; font-weight: 600; }
+.oral-hits.ok { color: var(--jade); }
+.oral-hits.mid { color: var(--gold); }
+.oral-hits.no { color: var(--danger); }
+.oral-ref { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 10px; text-align: left; }
+.oral-ref-label { margin-bottom: 4px; font-size: 10.5px; letter-spacing: .08em; color: var(--ink3); }
+.oral-ref-jp { font-family: var(--serif); font-size: 16px; line-height: 1.9; }
+.oral-ref-zh { margin-top: 4px; font-size: 12px; color: var(--ink2); line-height: 1.7; }
+.oral-priv { margin-top: 12px; font-size: 10.5px; color: var(--ink3); }
+@media (max-width: 420px) {
+  .oral-card { padding: 16px 14px 14px; }
+  .oral-prompt { font-size: 15px; }
+  .oral-mic { width: 58px; height: 58px; }
+}
+
 /* ===== 生词本 ===== */
 .nb-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .nb-head #nb-title { font-size: 15px; font-weight: 700; }
@@ -1969,6 +2073,15 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
   margin-top: 18px; font-size: 21px; font-weight: 650;
   line-height: 1.75; letter-spacing: .01em; color: var(--ink);
 }
+.rec-zh-prompt-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 18px; }
+.rec-zh-prompt-row .rec-zh-prompt { flex: 1; min-width: 0; margin-top: 0; }
+.rec-zh-mic {
+  flex: none; width: 36px; height: 36px; margin-top: 2px; border-radius: 50%;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink2);
+  display: grid; place-items: center; cursor: pointer;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.rec-zh-mic:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .rec-zh-sub { margin-top: 6px; font-size: 11.5px; color: var(--ink3); }
 .rec-zh-hintbox {
   margin-top: 16px; padding: 13px 14px; min-height: 62px;
@@ -2424,6 +2537,8 @@ body.rec-playing #sc-recite-play { padding-bottom: 104px; }
 .quiz-why.ok, .quiz-why.ok b, .quiz-why.ok span { color: var(--ok); }
 .quiz-why.bad b, .quiz-why.bad span { color: var(--danger); }
 .quiz-after { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.quiz-after-links { display: inline-flex; align-items: baseline; gap: 6px; flex: none; }
+.quiz-link.quiz-oral { display: inline-flex; align-items: center; gap: 3px; }
 .quiz-pat-now { min-width: 0; font-size: 11.5px; color: var(--ink3); }
 .quiz-link {
   flex: none; padding: 2px 4px; border: 0; background: none;

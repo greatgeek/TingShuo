@@ -207,3 +207,76 @@ func TestBlurHint(t *testing.T) {
 		t.Error("缺翻译或缺词义应为 nil")
 	}
 }
+
+// 一场测试内四种题型都要出现，再按本轮循环，避免整场固定一种模式。
+func TestMixTypeInterleaves(t *testing.T) {
+	want := []quizType{qPickMean, qClozePick, qHearMean, qClozeType}
+	seen := map[quizType]bool{}
+	for i := 0; i < 8; i++ {
+		if got := mixType(i); got != want[i%4] {
+			t.Fatalf("mixType(%d) = %s, 想 %s", i, got, want[i%4])
+		}
+		seen[mixType(i)] = true
+	}
+	for _, typ := range want {
+		if !seen[typ] {
+			t.Errorf("交错题型缺少 %s", typ)
+		}
+	}
+}
+
+// 原声片段读音转注音：片假名转平假名、空读音不挂 rt，拼接不符则整条放弃。
+func TestClipRuby(t *testing.T) {
+	raw := json.RawMessage(`[{"s":"彼","r":"カレ"},{"s":"は","r":"ワ"},{"s":"学生","r":"ガクセイ"},{"s":"です","r":"デス"}]`)
+	got := clipRuby(raw, "彼は学生です")
+	if got == nil {
+		t.Fatal("clipRuby 返回 nil")
+	}
+	var out [][2]*string
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("token 数 = %d, 想 4", len(out))
+	}
+	if out[0][1] == nil || *out[0][1] != "かれ" {
+		t.Errorf("彼 读音 = %v, 想 かれ", out[0][1])
+	}
+	if out[1][1] == nil || *out[1][1] != "わ" {
+		t.Errorf("は 读音 = %v, 想 わ", out[1][1])
+	}
+	if out[2][1] == nil || *out[2][1] != "がくせい" {
+		t.Errorf("学生 读音 = %v, 想 がくせい", out[2][1])
+	}
+	// 拼接与正文不一致：整条不出题，避免注音错位
+	if clipRuby(raw, "彼女は学生です") != nil {
+		t.Error("正文对不上应返回 nil")
+	}
+	raw2 := json.RawMessage(`[{"s":"コーヒー","r":"コーヒー"}]`)
+	got2 := clipRuby(raw2, "コーヒー")
+	var out2 [][2]*string
+	if err := json.Unmarshal(got2, &out2); err != nil || len(out2) != 1 {
+		t.Fatalf("out2 = %v, err = %v", out2, err)
+	}
+	if out2[0][1] != nil {
+		t.Errorf("读音等于词面不应挂 rt, 得 %q", *out2[0][1])
+	}
+}
+
+func TestKanaReading(t *testing.T) {
+	cases := map[string]string{
+		"カレ":    "かれ",
+		"デス":    "です",
+		"コーヒー":  "こーひー",
+		"かれ":    "かれ",
+		"":      "",
+		"abc":   "",
+		"漢字":    "",
+		"ガク セイ": "",
+	}
+	for in, want := range cases {
+		if got := kanaReading(in); got != want {
+			t.Errorf("kanaReading(%q) = %q, 想 %q", in, got, want)
+		}
+	}
+}
