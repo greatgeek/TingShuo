@@ -2761,6 +2761,20 @@ document.addEventListener('keydown', e => {
   wsNext();
 });
 
+// 选择题键盘：A—D 选答案（听写输入框里不拦截，保证能正常输入）
+document.addEventListener('keydown', e => {
+  if (CUR_SCREEN !== 'wordstudy') return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || e.isComposing) return;
+  const t = e.target;
+  if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''))) return;
+  const opts = document.querySelectorAll('#ws-front .ws-opt:not(:disabled)');
+  if (!opts.length) return;
+  const k = 'abcd'.indexOf(String(e.key).toLowerCase());
+  if (k < 0 || k >= opts.length) return;
+  e.preventDefault();
+  wsPick(k);
+});
+
 async function wsPick(i) {
   if (WS_GRADING) return; // 连点防护：一次作答只提交一次
   WS_GRADING = true;
@@ -5300,7 +5314,7 @@ function qzFinish() {
   window.scrollTo(0, 0);
 }
 
-// 测验键盘：1—4 选项，答完回车下一题（输入框/可点按钮上的回车让给原生行为）
+// 测验键盘：1—4 或 A—D 选项，答完回车下一题（输入框/可点按钮上的回车让给原生行为）
 document.addEventListener('keydown', e => {
   if (CUR_SCREEN !== 'quiz' || !QZ || e.ctrlKey || e.metaKey || e.altKey) return;
   const t = e.target;
@@ -5313,7 +5327,8 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
-  const k = '1234'.indexOf(e.key);
+  let k = '1234'.indexOf(e.key);
+  if (k < 0) k = 'abcd'.indexOf(e.key.toLowerCase());
   if (k >= 0) { e.preventDefault(); qzPick(k); }
 });
 
