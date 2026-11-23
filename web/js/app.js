@@ -3242,7 +3242,8 @@ async function nbOpenDir(dirId) {
   assocClose();
   nbPlayStop();
   clipStopAll();
-  if (LPOD) lpodClose();
+  // 本课播客绑「第N课」：同一课里换子目录（会话/语法解释/习题…）继续放，换课才关
+  if (LPOD && LPOD.key !== 'word-' + nbDirLessonNo(dirId)) lpodClose();
   NB_CURDIR = dirId;
   $('nb-sharepanel').hidden = true;
   if (!NB_SHARE) localStorage.setItem('ts_nb_dir', dirId);
@@ -5010,15 +5011,19 @@ function renderGraDetail() {
   });
 }
 
-// 生词本反向入口：当前目录向上找到「第N课」
-function nbGrammarLessonNo() {
-  let d = NB_DIRS.find(x => x.id === NB_CURDIR);
+// 目录树向上找到「第N课」，找不到返回 0
+function nbDirLessonNo(dirId) {
+  let d = NB_DIRS.find(x => x.id === dirId);
   while (d) {
     const m = /^第(\d+)课$/.exec(d.name || '');
     if (m) return parseInt(m[1], 10);
     d = NB_DIRS.find(x => x.id === (d.parent_id || ''));
   }
   return 0;
+}
+// 生词本反向入口：当前目录向上找到「第N课」
+function nbGrammarLessonNo() {
+  return nbDirLessonNo(NB_CURDIR);
 }
 
 async function openNotebookAt(ref) {
