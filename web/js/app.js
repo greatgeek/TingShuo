@@ -53,6 +53,7 @@ const NAV_PARENT = {
   grammar: 'home', quiz: 'grammar',
   study: 'home',
   aiask: 'notebook',
+  dict: 'home',
 };
 let CUR_SCREEN = 'login';
 let GEN_FROM = 'create';
@@ -76,6 +77,7 @@ function applyScreen(name) {
     if (RV_AUDIO) { RV_AUDIO.pause(); RV_AUDIO = null; }
   }
   if (CUR_SCREEN === 'quiz' && name !== 'quiz' && WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
+  if (CUR_SCREEN === 'dict' && name !== 'dict') wsStopAudio();
   if (CUR_SCREEN === 'recite-play' && name !== 'recite-play') recLeave();
   if (CUR_SCREEN === 'listen-play' && name !== 'listen-play') lisLeave();
   assocClose(); // 联想悬浮卡片不属于任何屏，切屏时收起
@@ -8011,6 +8013,318 @@ async function stNav(dir) {
   await stLoadCal();
 }
 
+// ============ 查词（JMdict + AI 释义/例句）============
+let DICT_ITEMS = [];
+let DICT_OPEN_ID = null;   // 当前展开的 entry_id（null=无）
+let DICT_DETAIL = {};      // entry_id -> 详情响应（AI 兜底词条用 0）
+let DICT_LAST_Q = '';
+let DICT_SEQ = 0;
+
+const SVG_DICT_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>';
+
+function dictWordOf(it) {
+  const forms = it.forms || [];
+  const k = forms.find(f => f.kind === 'k') || forms[0] || {};
+  const readings = it.readings || [];
+  const zh = (it.zh || []).filter(Boolean);
+  const en = (it.glosses || []).filter(Boolean).slice(0, 3);
+  return {
+    surface: k.text || readings[0] || '',
+    reading: readings[0] || '',
+    meaning: zh.length ? zh.join('；') : en.join('; '),
+  };
+}
+
+function dictDetailWord(it, d) {
+  const forms = (d.forms && d.forms.length ? d.forms : it.forms) || [];
+  const readings = (d.readings && d.readings.length ? d.readings : it.readings) || [];
+  const k = forms.find(f => f.kind === 'k') || forms[0] || {};
+  const senses = (d.zh && d.zh.senses) || [];
+  const meaning = senses.length
+    ? senses.map(s => (s.zh || []).join('、')).join('；')
+    : (d.glosses || []).slice(0, 4).join('; ');
+  return {
+    surface: k.text || readings[0] || '',
+    reading: readings[0] || '',
+    meaning,
+    pos: senses.length ? (senses[0].pos || '') : '',
+  };
+}
+
+function dictSearch() {
+  const q = $('dict-q').value.trim();
+  if (!q) { $('dict-q').focus(); return; }
+  DICT_LAST_Q = q;
+  const seq = ++DICT_SEQ;
+  const box = $('dict-results');
+  $('dict-go').disabled = true;
+  $('dict-mode-chip').style.display = 'none';
+  DICT_OPEN_ID = null;
+  box.innerHTML = '<div class="card"><div class="dict-loading"><span class="dict-spin"></span>查询中…</div></div>';
+  api('/dict/search?q=' + encodeURIComponent(q)).then(r => {
+    if (seq !== DICT_SEQ) return;
+    DICT_ITEMS = r.items || [];
+    dictRenderResults(r);
+  }).catch(e => {
+    if (seq !== DICT_SEQ) return;
+    box.innerHTML = `<div class="card"><p class="err" style="display:block">查询失败：${esc(e.message)}</p></div>`;
+  }).finally(() => { $('dict-go').disabled = false; });
+}
+
+function dictRenderResults(r) {
+  const box = $('dict-results');
+  box.innerHTML = '';
+  $('dict-mode-chip').style.display = r.mode === 'zh' ? '' : 'none';
+  if (!DICT_ITEMS.length) {
+    box.innerHTML = `<div class="card dict-empty">
+      <p class="hint">词典没有收录「${esc(r.query || DICT_LAST_Q)}」。</p>
+      <button class="btn ghost" id="dict-fb-btn">AI 生成这个词条</button>
+    </div>`;
+    $('dict-fb-btn').onclick = e => dictFallback(DICT_LAST_Q, e.currentTarget);
+    return;
+  }
+  DICT_ITEMS.forEach(it => {
+    const w = dictWordOf(it);
+    const card = document.createElement('div');
+    card.className = 'card dict-card';
+    card.dataset.id = it.entry_id;
+    card.innerHTML = `
+      <div class="dict-card-head">
+        <div class="dict-word">
+          <span class="dict-surface">${rubyWordHTML(w.surface, w.reading)}</span>
+          ${w.reading && w.reading !== w.surface ? `<span class="dict-reading">${esc(w.reading)}</span>` : ''}
+          <button class="dict-pron" type="button" title="播放发音" aria-label="播放发音">${SVG_SPEAK}</button>
+        </div>
+        <div class="dict-tags">
+          ${it.common ? '<span class="dict-badge">常用</span>' : ''}
+          ${it.match === 'base' ? '<span class="dict-badge alt">辞书形</span>' : ''}
+          ${it.match === 'prefix' ? '<span class="dict-badge alt">前缀</span>' : ''}
+        </div>
+      </div>
+      ${w.meaning ? `<div class="dict-gloss">${esc(w.meaning)}</div>` : ''}
+      <div class="dict-detail" hidden></div>`;
+    card.onclick = e => {
+      // composedPath：按钮内元素可能在自身 onclick 里被 markBtnBusy 换掉，
+      // 事件冒上来时 e.target 已脱离 DOM，closest 会失配误收起卡片
+      const path = e.composedPath ? e.composedPath() : [];
+      if (path.some(n => n.nodeType === 1 && (n.tagName === 'BUTTON' || n.classList.contains('dict-detail')))) return;
+      dictToggle(it, card);
+    };
+    const pron = card.querySelector('.dict-pron');
+    pron.onclick = e => {
+      e.stopPropagation();
+      dictSpeak(w.surface, w.reading && w.reading !== w.surface ? w.reading : '', pron);
+    };
+    box.appendChild(card);
+  });
+}
+
+async function dictToggle(it, card) {
+  const box = card.querySelector('.dict-detail');
+  if (DICT_OPEN_ID === it.entry_id) {
+    DICT_OPEN_ID = null;
+    card.classList.remove('open');
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  document.querySelectorAll('#dict-results .dict-card.open').forEach(c => {
+    c.classList.remove('open');
+    const d = c.querySelector('.dict-detail');
+    d.hidden = true;
+    d.innerHTML = '';
+  });
+  DICT_OPEN_ID = it.entry_id;
+  card.classList.add('open');
+  box.hidden = false;
+  if (DICT_DETAIL[it.entry_id]) { dictRenderDetail(it, DICT_DETAIL[it.entry_id], box); return; }
+  box.innerHTML = `<div class="dict-loading"><span class="dict-spin"></span>${
+    (it.zh && it.zh.length) ? '加载释义、补例句…' : '首次打开由 AI 生成释义与例句，约 2—10 秒'}</div>`;
+  try {
+    const d = await api('/dict/entries/' + it.entry_id);
+    DICT_DETAIL[it.entry_id] = d;
+    if (DICT_OPEN_ID === it.entry_id && box.isConnected) dictRenderDetail(it, d, box);
+  } catch (e) {
+    if (DICT_OPEN_ID === it.entry_id && box.isConnected) {
+      box.innerHTML = `<p class="err" style="display:block">加载失败：${esc(e.message)}</p>`;
+    }
+  }
+}
+
+function dictRenderDetail(it, d, box) {
+  const word = dictDetailWord(it, d);
+  const senses = (d.zh && d.zh.senses) || [];
+  const examples = (d.zh && d.zh.examples) || [];
+  let html = '';
+  if (senses.length) {
+    html += '<div class="dict-senses">' + senses.map(s =>
+      `<div class="dict-sense"><span class="dict-sense-pos">${esc(s.pos || '释义')}</span><span>${esc((s.zh || []).join('、'))}</span></div>`).join('') + '</div>';
+  } else {
+    html += `<div class="dict-gloss">${esc(word.meaning || '暂无释义')}</div>
+      <p class="hint">中文释义暂时生成失败，可稍后再试。</p>`;
+  }
+  if (examples.length) {
+    html += '<div class="dict-examples"><div class="usage-head">例句</div>' + examples.map((ex, i) => `
+      <div class="dict-ex" data-i="${i}">
+        <button class="dict-ex-play" title="播放例句">${SVG_DICT_PLAY}</button>
+        <div class="dict-ex-main">
+          <div class="dict-ex-jp">${rubyHTML(ex.ruby) || esc(ex.jp)}</div>
+          <div class="dict-ex-zh">${esc(ex.zh || '')}</div>
+        </div>
+      </div>`).join('') + '</div>';
+  }
+  html += `<div class="dict-actions">
+    <button class="btn ghost dict-add-btn">＋ 加入生词本</button>
+  </div>
+  <div class="dict-dirpop" hidden></div>`;
+  box.innerHTML = html;
+
+  box.querySelectorAll('.dict-ex-play').forEach((btn, i) => {
+    btn.onclick = e => { e.stopPropagation(); dictSpeak(examples[i].jp, '', e.currentTarget); };
+  });
+  const pop = box.querySelector('.dict-dirpop');
+  box.querySelector('.dict-add-btn').onclick = e => { e.stopPropagation(); dictPickDir(e.currentTarget, pop, word); };
+}
+
+function dictAudioKey(text, reading) { return 'dict:' + text + '|' + String(reading || ''); }
+
+async function dictAudioBlobURL(text, reading) {
+  const key = dictAudioKey(text, reading);
+  const hit = await idbGet(key);
+  if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
+  let url = '/api/v1/dict/audio?text=' + encodeURIComponent(text);
+  if (reading) url += '&reading=' + encodeURIComponent(reading);
+  const r = await fetchAuth(url);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const blob = await r.blob();
+  idbPut(key, blob);
+  return URL.createObjectURL(blob);
+}
+
+async function dictSpeak(text, reading, btn, retry) {
+  if (!text) return;
+  try {
+    markBtnBusy(btn);
+    const url = await dictAudioBlobURL(text, reading);
+    wsStopAudio();
+    WS_AUDIO = new Audio(url);
+    const a = WS_AUDIO;
+    a.onended = () => restoreBtnIcon(btn);
+    a.onerror = () => { restoreBtnIcon(btn); toast('播放失败：音频解码错误'); };
+    await playUnlock(a);
+    setTimeout(() => {
+      if (!retry && WS_AUDIO === a && !a.paused && a.currentTime < 0.05) {
+        wsStopAudio(); idbDel(dictAudioKey(text, reading));
+        dictSpeak(text, reading, btn, true);
+      }
+    }, 800);
+  } catch (e) {
+    restoreBtnIcon(btn);
+    toast('发音失败：' + e.message);
+  }
+}
+
+async function dictFallback(q, btn) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = 'AI 生成中，约 5—15 秒…';
+  try {
+    const r = await api('/dict/fallback?q=' + encodeURIComponent(q));
+    if (!r.valid) {
+      toast('AI 判断这不是可解释的日语词');
+      btn.disabled = false; btn.textContent = old;
+      return;
+    }
+    const zhSenses = (r.zh && r.zh.senses) || [];
+    const item = {
+      entry_id: 0, q: r.q,
+      forms: [{ text: r.surface || r.q, kind: 'k' }],
+      readings: r.reading ? [r.reading] : [],
+      common: false, pos: [], glosses: [], match: 'ai',
+      zh: zhSenses.flatMap(s => s.zh || []),
+    };
+    DICT_DETAIL[0] = {
+      entry_id: 0, forms: item.forms, readings: item.readings,
+      common: false, pos: [], glosses: [], zh: r.zh, cached: r.cached,
+    };
+    DICT_ITEMS = [item];
+    dictRenderResults({ query: r.q, mode: 'jp', items: [item] });
+    const card = $('dict-results').querySelector('.dict-card');
+    if (card) dictToggle(item, card);
+  } catch (e) {
+    toast('生成失败：' + e.message);
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+
+// dictPickDir 目录选择面板：贴在「加入生词本」下方，记住上次目录
+async function dictPickDir(btn, pop, word) {
+  if (!pop.hidden) { pop.hidden = true; return; }
+  if (!word.reading) { toast('这个词没有读音，暂不能加入生词本'); return; }
+  pop.hidden = false;
+  pop.innerHTML = '<div class="dict-loading"><span class="dict-spin"></span>读取生词本…</div>';
+  try {
+    const list = (await api('/notebooks')).items || [];
+    const groups = await Promise.all(list.map(async nb => ({
+      nb, dirs: ((await api('/notebooks/' + nb.id + '/tree')).dirs || []),
+    })));
+    dictRenderDirPop(pop, word, groups);
+  } catch (e) {
+    pop.innerHTML = `<p class="err" style="display:block">读取失败：${esc(e.message)}</p>`;
+  }
+}
+
+function dictRenderDirPop(pop, word, groups) {
+  const last = localStorage.getItem('ts_nb_dir');
+  const hasDir = groups.some(g => g.dirs.length);
+  if (!hasDir) {
+    pop.innerHTML = '<div class="dict-pickempty">还没有生词本目录，先去「生词本」建一个吧</div>';
+    return;
+  }
+  let html = '<div class="dict-dirpop-head">加入生词本</div>';
+  groups.forEach(g => {
+    if (!g.dirs.length) return;
+    const byId = {}, kids = {};
+    g.dirs.forEach(d => { byId[d.id] = d; (kids[d.parent_id || ''] = kids[d.parent_id || ''] || []).push(d); });
+    html += `<div class="dict-dir-grp">${esc(g.nb.name)}</div>`;
+    // 接口是平铺返回，这里按父子关系做先序展开，子目录紧跟父目录
+    const ordered = [];
+    const walk = (pid, depth) => {
+      (kids[pid] || []).forEach(d => { ordered.push({ d, depth }); if (depth < 8) walk(d.id, depth + 1); });
+    };
+    walk('', 0);
+    g.dirs.forEach(d => { if (!byId[d.parent_id] && d.parent_id) ordered.push({ d, depth: 0 }); }); // 孤儿目录兜底
+    ordered.forEach(({ d, depth }) => {
+      html += `<button class="dict-dir${d.id === last ? ' on' : ''}" data-dir="${escAttr(d.id)}" style="padding-left:${8 + depth * 14}px">
+        <span class="nm">${esc(d.name)}</span><span class="ct">${d.word_count || 0}</span></button>`;
+    });
+  });
+  pop.innerHTML = html;
+  pop.querySelectorAll('.dict-dir').forEach(b => {
+    b.onclick = e => { e.stopPropagation(); dictAddTo(b.dataset.dir, word, pop, b); };
+  });
+}
+
+async function dictAddTo(dirId, word, pop, btn) {
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    const r = await api('/notebooks/dir/' + dirId + '/words', {
+      method: 'POST',
+      body: JSON.stringify({ surface: word.surface, reading: word.reading, meaning: word.meaning, pos: word.pos || '' }),
+    });
+    localStorage.setItem('ts_nb_dir', dirId);
+    pop.hidden = true;
+    const addBtn = pop.parentElement.querySelector('.dict-add-btn');
+    if (addBtn) { addBtn.textContent = '✓ 已在生词本'; addBtn.disabled = true; }
+    toast(r.added ? `已加入生词本：${word.surface}` : `已在生词本：${word.surface}`);
+  } catch (e) {
+    btn.disabled = false;
+    toast('加入失败：' + e.message);
+  }
+}
+
 // ============ 启动 ============
 // 原内联 onclick/oninput 全部改为绑定（CSP 禁内联脚本）
 $('nav-back').onclick = goBack;
@@ -8028,6 +8342,9 @@ $('home-rec-btn').onclick = goRecite;
 $('home-gra-btn').onclick = goGrammar;
 $('home-nbres-btn').onclick = goNbres;
 $('nav-study').onclick = goStudy;
+$('nav-dict').onclick = () => go('dict');
+$('dict-go').onclick = dictSearch;
+$('dict-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); dictSearch(); } };
 $('st-view-month').onclick = () => stSetView('month');
 $('st-view-year').onclick = () => stSetView('year');
 $('st-prev').onclick = () => stNav(-1);

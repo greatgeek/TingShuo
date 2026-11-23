@@ -33,3 +33,6 @@ web/media/listening/
 
 # ===== 本课播客音频（同步自 J:/DoubaoDownload/jp_learning，不入公开仓库）=====
 web/media/podcast/
+
+# ===== 原声片段媒体缓存（服务端回源后落盘，不入公开仓库）=====
+web/media/clips/

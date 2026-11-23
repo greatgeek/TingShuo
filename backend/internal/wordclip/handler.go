@@ -12,8 +12,9 @@ import (
 )
 
 type Handler struct {
-	pool *pgxpool.Pool
-	cli  *Client
+	pool      *pgxpool.Pool
+	cli       *Client
+	mediaRoot string
 }
 
 func NewHandler(pool *pgxpool.Pool) *Handler {
@@ -80,6 +81,18 @@ func (h *Handler) Clips(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		it.DurationMs = it.EndMs - it.StartMs
+		// 媒体改走服务端同源缓存转发（浏览器带不了 Authorization，且部分网络直连 CDN 被拦）
+		if h.mediaRoot != "" {
+			if it.ImageURL != "" {
+				it.ImageURL = clipMediaPath("image", it.SegmentID, it.ImageURL)
+			}
+			if it.AudioURL != "" {
+				it.AudioURL = clipMediaPath("audio", it.SegmentID, it.AudioURL)
+			}
+			if it.VideoURL != "" {
+				it.VideoURL = clipMediaPath("video", it.SegmentID, it.VideoURL)
+			}
+		}
 		items = append(items, it)
 	}
 

@@ -17,6 +17,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/aiask"
 	"github.com/greatgeek/TingShuo/backend/internal/auth"
 	"github.com/greatgeek/TingShuo/backend/internal/dev"
+	"github.com/greatgeek/TingShuo/backend/internal/dict"
 	"github.com/greatgeek/TingShuo/backend/internal/favorite"
 	"github.com/greatgeek/TingShuo/backend/internal/generate"
 	"github.com/greatgeek/TingShuo/backend/internal/grammar"
@@ -99,6 +100,7 @@ func run() error {
 	favH := favorite.NewHandler(pool)
 	wordH := word.NewHandler(pool)
 	clipH := wordclip.NewHandler(pool)
+	clipH.SetMediaRoot(podcast.MediaRoot())
 	assocH := wordassoc.NewHandler(pool)
 	wordclip.NewWorker(pool).Start(ctx)
 
@@ -145,6 +147,12 @@ func run() error {
 			sec.Use(authH.Middleware)
 			sec.Get("/me", userH.Me)
 			sec.Put("/me", userH.Update)
+
+			dictH := dict.NewHandler(pool, azureTTS, store)
+			sec.Get("/dict/search", dictH.Search)
+			sec.Get("/dict/entries/{entry_id}", dictH.Entry)
+			sec.Get("/dict/fallback", dictH.Fallback)
+			sec.Get("/dict/audio", dictH.Audio)
 
 			sec.Get("/words/library", wordH.Library)
 			aiH := aiask.NewHandler(pool)
@@ -262,6 +270,15 @@ func run() error {
 			sec.Post("/reviews/{id}/result", reviewH.SubmitResult)
 			sec.Post("/reviews/{id}/master", reviewH.Master)
 		})
+	})
+
+	// 原声片段媒体（audio/image/video）同源缓存转发：<audio>/<img> 带不了
+	// Authorization，公开但只放行 word_clip 里存在的片段；首访回源 CDN 后
+	// 落盘 MEDIA_DIR/clips，之后同源直出（Range 由 ServeContent 支持）。
+	r.Group(func(pub chi.Router) {
+		pub.Use(httpx.Limit(httpx.NewLimiter(300, 150), httpx.ClientIP))
+		pub.Method(http.MethodGet, "/clipmedia/{kind}/{seg}", http.HandlerFunc(clipH.Media))
+		pub.Method(http.MethodHead, "/clipmedia/{kind}/{seg}", http.HandlerFunc(clipH.Media))
 	})
 
 	// 听力/本课播客等媒体走独立目录：生产 MEDIA_DIR=/opt/tingshuo/media，

@@ -24,6 +24,9 @@
       <button class="nav-btn" id="nav-study" title="学习足迹" aria-label="学习足迹">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20v-6"/><path d="M12 20V9"/><path d="M19 20V4"/><path d="M3 20h18"/></svg>
       </button>
+      <button class="nav-btn" id="nav-dict" title="查词" aria-label="查词">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </button>
     </div>
     <div class="brand">
       <span class="brand-seal">听</span>
@@ -159,6 +162,22 @@
       <p class="hint">① 粘贴今天的词单（哪怕 1 个词也行，推荐每天 20 个）→ ② AI 生成材料（约 2—5 分钟）→
       ③ 一键配音（Azure TTS，逐句生成）→ ④ 点句播放、看振り仮名跟读。</p>
     </details>
+  </section>
+
+  <!-- 查词 -->
+  <section class="screen" id="sc-dict">
+    <div class="card dict-hero">
+      <div class="card-head">
+        <h2>查词</h2>
+        <span class="status-chip" id="dict-mode-chip" style="display:none">中文反查</span>
+      </div>
+      <div class="dict-search-row">
+        <input id="dict-q" placeholder="日语或中文，如 部屋 / 房间" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        <button class="btn accent" id="dict-go">查</button>
+      </div>
+      <p class="hint">支持原形、变形与假名；中文可反查；词典未收录的词可让 AI 生成。</p>
+    </div>
+    <div id="dict-results"></div>
   </section>
 
   <!-- 学习足迹 -->

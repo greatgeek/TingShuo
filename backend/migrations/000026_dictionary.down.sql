@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS dict_fallback;
+DROP TABLE IF EXISTS dict_reverse;
+DROP TABLE IF EXISTS dict_zh;
+DROP TABLE IF EXISTS dict_form;
+DROP TABLE IF EXISTS dict_entry;
