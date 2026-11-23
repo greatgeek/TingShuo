@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // 本课播客同步：扫描 J:/DoubaoDownload/jp_learning（可用 JP_LEARNING_DIR 覆盖），
-// 把「生词 第13课.m4a」「语法 第13课.m4a」规范化为 web/media/podcast/word-13.m4a / grammar-13.m4a。
+// 把「生词 第13课.m4a」「生词_初级上_第5课.m4a」「语法_第10课_映画の約束（初级上）.m4a」
+// 规范化为 web/media/podcast/word-13.m4a / word-5.m4a / grammar-10.m4a。
 // 音频不进 Git，上线时把 web/media/podcast 上传到 /opt/tingshuo/media/podcast。
 const fs = require('fs');
 const path = require('path');
@@ -8,7 +9,7 @@ const path = require('path');
 const SRC = process.env.JP_LEARNING_DIR || 'J:/DoubaoDownload/jp_learning';
 const DST = path.resolve(__dirname, '../../web/media/podcast');
 const EXT = ['m4a', 'mp3', 'wav', 'ogg', 'aac'];
-const RE = /^(生词|语法)[\s_\-]*第\s*(\d{1,3})\s*[课課]\s*\.(m4a|mp3|wav|ogg|aac)$/i;
+const RE = /^(生词|语法)[^第]*第\s*(\d{1,3})\s*[课課][^.]*\.(m4a|mp3|wav|ogg|aac)$/i;
 const KIND = { 生词: 'word', 语法: 'grammar' };
 
 if (!fs.existsSync(SRC)) {
