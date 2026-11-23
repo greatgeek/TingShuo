@@ -7382,6 +7382,22 @@ function podStopAudio() {
 let LPOD = null;       // {key, url, audio, seeking}
 let LPOD_FILES = null; // Map('word-13' → '/media/podcast/word-13.m4a')
 let LPOD_FILES_P = null;
+const LPOD_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+let LPOD_RATE = (() => {
+  const v = parseFloat(localStorage.getItem('ts_lpod_rate') || '1');
+  return LPOD_RATES.includes(v) ? v : 1;
+})();
+function lpodRateSync() {
+  const s = $('lpod-rate');
+  if (!s) return;
+  s.value = String(LPOD_RATE);
+  s.classList.toggle('mod', LPOD_RATE !== 1);
+}
+function lpodApplyRate(a) {
+  if (!a) return;
+  a.defaultPlaybackRate = LPOD_RATE;
+  a.playbackRate = LPOD_RATE;
+}
 function lpodFmt(sec) {
   const s = Math.max(0, Math.floor(sec || 0));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
@@ -7473,6 +7489,8 @@ async function lpodOpen(kind, lesson, slot, afterEl) {
   LPOD = { key, url, audio: a, seeking: false };
   a.src = url;
   a.currentTime = 0;
+  lpodApplyRate(a);
+  lpodRateSync();
   $('lpod-play').classList.remove('playing');
   $('lpod-time').textContent = '0:00 / 0:00';
   $('lpod-seek').value = '0';
@@ -8223,6 +8241,14 @@ $('lpod-play').onclick = lpodPlayToggle;
 $('lpod-back10').onclick = () => lpodNudge(-10);
 $('lpod-fwd10').onclick = () => lpodNudge(10);
 $('lpod-close').onclick = lpodClose;
+lpodRateSync();
+$('lpod-rate').onchange = (e) => {
+  const v = parseFloat(e.target.value);
+  LPOD_RATE = LPOD_RATES.includes(v) ? v : 1;
+  localStorage.setItem('ts_lpod_rate', String(LPOD_RATE));
+  lpodRateSync();
+  if (LPOD) lpodApplyRate(LPOD.audio);
+};
 {
   const a = $('lpod-audio');
   const setLpodPlaying = (on) => {
