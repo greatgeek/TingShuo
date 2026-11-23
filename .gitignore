@@ -30,3 +30,6 @@ tools/recitation/out/
 
 # ===== 听力训练素材（教材音频，不入公开仓库）=====
 web/media/listening/
+
+# ===== 本课播客音频（同步自 J:/DoubaoDownload/jp_learning，不入公开仓库）=====
+web/media/podcast/

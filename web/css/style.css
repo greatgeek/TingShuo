@@ -1456,6 +1456,47 @@ body.nb-playing #sc-notebook { padding-bottom: 92px; }
 .pod-log .cur { color: #A8D5B8; }
 @keyframes podlog-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
+/* ===== 本课播客（预生成音频，±10 秒） ===== */
+.lpod { margin: 10px 0 12px; padding: 12px 14px; }
+.lpod[hidden] { display: none; }
+.lpod-head { display: flex; align-items: center; gap: 8px; }
+.lpod-title { font-weight: 700; font-size: 13.5px; }
+.lpod-close {
+  width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: var(--surface); color: var(--ink3);
+  font: inherit; font-size: 17px; line-height: 1; cursor: pointer;
+}
+.lpod-close:hover { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }
+.lpod-bar { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.lpod-bar .btn { width: auto; flex: 0 0 auto; margin: 0; }
+.lpod-btn {
+  min-width: 48px; padding: 7px 9px; border-radius: 9px;
+  font-size: 12px; font-variant-numeric: tabular-nums;
+}
+.lpod-play {
+  width: 40px; height: 40px; padding: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px; line-height: 1;
+}
+.lpod-seek {
+  flex: 1 1 120px; min-width: 80px; height: 24px; margin: 0;
+  accent-color: var(--accent); cursor: pointer;
+}
+.lpod-time {
+  flex: 0 0 auto; font-size: 11.5px; color: var(--ink3);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+#lpod-slot-nb .lpod { margin-top: 10px; }
+.gra-head + .lpod { margin-top: 10px; }
+@media (max-width: 430px) {
+  .lpod-bar { gap: 6px; }
+  .lpod-btn { min-width: 44px; padding: 7px 7px; }
+  .lpod-seek { flex-basis: 100%; order: 4; }
+  .lpod-time { order: 5; margin-left: auto; }
+}
+
 /* ===== 播放设置弹层（单词 / 句子分组） ===== */
 .nb-cfg-mask { align-items: center; padding: 20px; }
 .nb-cfg {
@@ -2090,6 +2131,13 @@ body.rec-playing #sc-recite-play { padding-bottom: 104px; }
   width: auto; height: 32px; margin: 0; padding: 0 12px;
   border-radius: 9px; font-size: 12.5px; line-height: 1; white-space: nowrap;
 }
+.gra-pod-btn {
+  flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  width: auto; height: 32px; margin: 0; padding: 0 11px;
+  border-radius: 9px; font-size: 12.5px; line-height: 1; white-space: nowrap;
+}
+.gra-pod-btn svg { width: 14px; height: 14px; }
+.gra-pod-btn[hidden] { display: none; }
 .gra-books {
   display: inline-flex; margin-top: 12px; padding: 4px;
   border-radius: 99px; background: var(--surface-2);

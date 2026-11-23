@@ -215,6 +215,7 @@ func run() error {
 			sec.Get("/podcast/jobs/latest", podH.LatestJob)
 			sec.Get("/podcast/jobs/{id}", podH.GetJob)
 			sec.Get("/podcast/estimate", podH.Estimate)
+			sec.Get("/podcast/lesson-audio", podH.LessonAudio)
 			sec.Get("/podcast/{id}/play", podH.Play)
 			sec.Get("/podcast/by-lesson/{lesson_id}", podH.Latest)
 			sec.Get("/podcast/by-dir/{dir_id}", podH.LatestDir)
@@ -262,6 +263,12 @@ func run() error {
 			sec.Post("/reviews/{id}/master", reviewH.Master)
 		})
 	})
+
+	// 听力/本课播客等媒体走独立目录：生产 MEDIA_DIR=/opt/tingshuo/media，
+	// deploy.sh 整目录替换 src 时不会被清掉（2026-11-23 线上听力音频被清事故）。
+	if md := podcast.MediaRoot(); md != "" {
+		r.Handle("/media/*", noCache(http.StripPrefix("/media/", http.FileServer(http.Dir(md)))))
+	}
 
 	// 桌面前端静态托管：优先仓库根的 web/（正式代码库），回退 backend/web/
 	// no-cache：前端迭代期保证浏览器拿到最新 JS/CSS

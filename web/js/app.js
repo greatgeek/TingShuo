@@ -72,6 +72,7 @@ function applyScreen(name) {
   if (CUR_SCREEN !== name) {
     clipStopAll();
     stopPlay();
+    if (LPOD) lpodClose();
     if (RV_AUDIO) { RV_AUDIO.pause(); RV_AUDIO = null; }
   }
   if (CUR_SCREEN === 'quiz' && name !== 'quiz' && WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
@@ -3028,6 +3029,12 @@ function renderNbStrip() {
   $('nb-kbd-btn').hidden = shared;
   $('nb-tool-sep').hidden = shared;
   $('nb-play-group').hidden = shared;
+  // 本课播客：当前目录能向上找到「第N课」且该课有音频时才出现
+  const lpodNo = nbGrammarLessonNo();
+  $('nb-lpod-btn').hidden = !lpodNo;
+  if (lpodNo) lpodAvailable('word', lpodNo).then(url => {
+    if (CUR_SCREEN === 'notebook' && nbGrammarLessonNo() === lpodNo) $('nb-lpod-btn').hidden = !url;
+  });
 }
 
 // 目录选择面板：横条正下方就地展开/收起（不再底部弹窗）
@@ -3235,6 +3242,7 @@ async function nbOpenDir(dirId) {
   assocClose();
   nbPlayStop();
   clipStopAll();
+  if (LPOD) lpodClose();
   NB_CURDIR = dirId;
   $('nb-sharepanel').hidden = true;
   if (!NB_SHARE) localStorage.setItem('ts_nb_dir', dirId);
@@ -4734,6 +4742,7 @@ async function goGrammar() {
 
 function showGraList() {
   GRAM = null;
+  if (LPOD) lpodClose();
   $('gra-list-card').hidden = false;
   $('gra-lesson').hidden = true;
   window.scrollTo(0, 0);
@@ -4840,6 +4849,7 @@ async function copyGraLesson(no, btn) {
 async function openGrammarLesson(no) {
   if (!TOKEN) { go('login'); return; }
   stopPlay();
+  if (LPOD) lpodClose();
   go('grammar');
   $('gra-list-card').hidden = true;
   $('gra-lesson').hidden = false;
@@ -4938,6 +4948,7 @@ function renderGraDetail() {
   let html = `<div class="card gra-head">
     <div class="rec-head-top">
       <h2>${esc(GRAM.title)}</h2>
+      <button class="btn ghost gra-pod-btn" id="gra-lpod-btn" type="button" title="本课播客（可后退 / 前进 10 秒）" aria-label="本课播客" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="14.5" width="4" height="7" rx="1.8"/><rect x="17.5" y="14.5" width="4" height="7" rx="1.8"/></svg>播客</button>
       <button class="btn ghost gra-test-btn" id="gra-test-lesson">测本课</button>
     </div>
     <p class="hint">点知识点展开 · 点喇叭朗读例句与词表 · 「原声」「生词本」可直接跳到对应位置</p>
@@ -4954,6 +4965,15 @@ function renderGraDetail() {
   box.innerHTML = html;
   const testBtn = $('gra-test-lesson');
   if (testBtn) testBtn.onclick = () => startGraQuiz({ lesson: GRAM.lesson_no });
+
+  const lpodBtn = $('gra-lpod-btn');
+  if (lpodBtn) {
+    const no = GRAM.lesson_no;
+    lpodBtn.onclick = () => lpodOpen('grammar', no, null, box.querySelector('.gra-head'));
+    lpodAvailable('grammar', no).then(url => {
+      if (CUR_SCREEN === 'grammar' && GRAM && GRAM.lesson_no === no) lpodBtn.hidden = !url;
+    });
+  }
 
   box.querySelectorAll('.gra-point').forEach(cardEl => {
     const head = cardEl.querySelector('.gra-head-toggle');
@@ -7200,6 +7220,7 @@ function podLog(msg, replace) {
 }
 async function podOpen(kind, id, slot) {
   if (!id) { return; }
+  if (LPOD) lpodClose();
   POD_SRC = { kind, id };
   POD_EST = null;
   podMount(slot);
@@ -7351,6 +7372,105 @@ function podPlay(on) {
 function podStopAudio() {
   if (POD && POD.audio) { try { POD.audio.pause(); POD.audio.src = ''; } catch (e) {} } // 断开流式下载
   POD = null;
+}
+
+// ============ 本课播客（预生成固定音频：每课生词/语法一个文件） ============
+// 文件由 tools/podcast/sync_lesson_audio.js 从 J:/DoubaoDownload/jp_learning 同步到
+// web/media/podcast/word-N.m4a / grammar-N.m4a；按钮只在清单接口里有该课音频时出现。
+let LPOD = null;       // {key, url, audio, seeking}
+let LPOD_FILES = null; // Map('word-13' → '/media/podcast/word-13.m4a')
+let LPOD_FILES_P = null;
+function lpodFmt(sec) {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(ss).padStart(2, '0');
+}
+function lpodFiles() {
+  if (LPOD_FILES) return Promise.resolve(LPOD_FILES);
+  if (LPOD_FILES_P) return LPOD_FILES_P;
+  LPOD_FILES_P = api('/podcast/lesson-audio').then(r => {
+    const m = new Map((r.items || []).map(it => [it.kind + '-' + it.lesson, it.url]));
+    LPOD_FILES = m;
+    LPOD_FILES_P = null;
+    return m;
+  }).catch(() => {
+    LPOD_FILES_P = null;
+    return new Map();
+  });
+  return LPOD_FILES_P;
+}
+async function lpodAvailable(kind, lesson) {
+  if (!lesson) return null;
+  const m = await lpodFiles();
+  return m.get(kind + '-' + lesson) || null;
+}
+function lpodTick() {
+  if (!LPOD) return;
+  const a = LPOD.audio;
+  const d = isFinite(a.duration) ? a.duration : 0;
+  const c = isFinite(a.currentTime) ? a.currentTime : 0;
+  if (!LPOD.seeking) $('lpod-seek').value = d ? String(Math.round(c / d * 1000)) : '0';
+  $('lpod-time').textContent = lpodFmt(c) + ' / ' + lpodFmt(d);
+}
+function lpodStop(keepOpen) {
+  if (LPOD) {
+    try { LPOD.audio.pause(); } catch (e) {}
+    if (!keepOpen) { try { LPOD.audio.removeAttribute('src'); LPOD.audio.load(); } catch (e) {} }
+  }
+  LPOD = null;
+  if (!keepOpen) {
+    const p = $('lpod');
+    // 播放器会被临时挂进语法课详情卡片，而该卡片整块重渲染；
+    // 关闭时挪回 body 宿主，免得节点被销毁后再也打不开（2026-11-23 验收发现）
+    if (p && p.parentNode !== document.body) document.body.appendChild(p);
+    if (p) p.hidden = true;
+    $('lpod-play').textContent = '▶';
+    $('lpod-time').textContent = '0:00 / 0:00';
+    $('lpod-seek').value = '0';
+  }
+}
+function lpodClose() { lpodStop(false); }
+function lpodPlayToggle() {
+  if (!LPOD) return;
+  const a = LPOD.audio;
+  if (a.paused) a.play().catch(() => {});
+  else a.pause();
+}
+function lpodNudge(sec) {
+  if (!LPOD) return;
+  const a = LPOD.audio;
+  if (!isFinite(a.duration)) return;
+  a.currentTime = Math.min(Math.max(0, a.currentTime + sec), a.duration);
+  lpodTick();
+}
+async function lpodOpen(kind, lesson, slot, afterEl) {
+  if (!lesson) return;
+  const url = await lpodAvailable(kind, lesson);
+  if (!url) { toast('本课暂无播客音频'); return; }
+  // 等清单期间可能已切走屏幕/课次，别再弹出来
+  if (kind === 'word' && nbGrammarLessonNo() !== lesson) return;
+  if (kind === 'grammar' && (!GRAM || GRAM.lesson_no !== lesson)) return;
+  const key = kind + '-' + lesson;
+  if (LPOD && LPOD.key === key) { lpodPlayToggle(); return; }
+  if (LPOD) lpodStop(true);
+  podStopAudio();
+  $('pod-panel').hidden = true; // 与 AI 生成播客互斥，避免两路同时响
+  stopPlay();
+  const p = $('lpod');
+  if (!p) { lpodStop(true); return; }
+  if (afterEl && afterEl.parentNode) afterEl.insertAdjacentElement('afterend', p);
+  else (slot || document.body).appendChild(p);
+  $('lpod-title').textContent = `第${lesson}课 · ${kind === 'word' ? '生词' : '语法'}播客`;
+  p.hidden = false;
+  const a = $('lpod-audio');
+  LPOD = { key, url, audio: a, seeking: false };
+  a.src = url;
+  a.currentTime = 0;
+  $('lpod-time').textContent = '0:00 / 0:00';
+  $('lpod-seek').value = '0';
+  try { await a.play(); } catch (e) { /* 浏览器拦自动播时保留手动控制 */ }
+  if (!LPOD || LPOD.audio !== a) return;
+  lpodTick();
 }
 async function podGenerate() {
   if (!POD_SRC) return;
@@ -8083,6 +8203,38 @@ $('nb-pod-btn').onclick = (e) => {
   if (!NB_CURDIR) { toast('先选择目录'); return; }
   podOpen('dir', NB_CURDIR, $('pod-slot-nb'));
 };
+// 本课播客（预生成音频）：按钮由 renderNbStrip 按清单显隐
+$('nb-lpod-btn').onclick = (e) => {
+  e.stopPropagation();
+  const no = nbGrammarLessonNo();
+  if (!no) return;
+  lpodOpen('word', no, $('lpod-slot-nb'));
+};
+$('lpod-play').onclick = lpodPlayToggle;
+$('lpod-back10').onclick = () => lpodNudge(-10);
+$('lpod-fwd10').onclick = () => lpodNudge(10);
+$('lpod-close').onclick = lpodClose;
+{
+  const a = $('lpod-audio');
+  a.addEventListener('play', () => { $('lpod-play').textContent = '⏸'; $('lpod-play').title = '暂停'; });
+  a.addEventListener('pause', () => { $('lpod-play').textContent = '▶'; $('lpod-play').title = '播放'; });
+  a.addEventListener('ended', () => { $('lpod-play').textContent = '▶'; });
+  a.addEventListener('timeupdate', lpodTick);
+  a.addEventListener('loadedmetadata', lpodTick);
+  a.addEventListener('error', () => { if (LPOD) $('lpod-time').textContent = '音频加载失败'; });
+  const seek = $('lpod-seek');
+  seek.addEventListener('pointerdown', () => { if (LPOD) LPOD.seeking = true; });
+  const endSeek = () => { if (LPOD && LPOD.seeking) { LPOD.seeking = false; lpodTick(); } };
+  addEventListener('pointerup', endSeek);
+  addEventListener('pointercancel', endSeek);
+  seek.addEventListener('input', (e) => {
+    if (!LPOD) return;
+    const audio = LPOD.audio;
+    if (isFinite(audio.duration) && audio.duration > 0) {
+      audio.currentTime = audio.duration * (Number(e.target.value) / 1000);
+    }
+  });
+}
 $('pod-close').onclick = () => { podStopAudio(); $('pod-panel').hidden = true; };
 $('pod-gen').onclick = podGenerate;
 $('pod-play').onclick = () => { if (POD) podPlay(POD.audio.paused); };

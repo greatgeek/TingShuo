@@ -388,6 +388,9 @@
         <button class="btn ghost nb-icon" id="nb-pod-btn" title="用本单元的词和句子生成播客" aria-label="生成播客">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/><path d="M9 21h6"/></svg>
         </button>
+        <button class="btn ghost nb-icon" id="nb-lpod-btn" title="本课播客（可后退 / 前进 10 秒）" aria-label="本课播客" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="14.5" width="4" height="7" rx="1.8"/><rect x="17.5" y="14.5" width="4" height="7" rx="1.8"/></svg>
+        </button>
         <button class="btn ghost nb-icon" id="nb-copy-btn" title="复制本单元全部词和句子" aria-label="复制本单元">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="10" height="10" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>
         </button>
@@ -414,6 +417,7 @@
       </div>
     </div>
     </div>
+    <div id="lpod-slot-nb"></div>
     <!-- 目录选择面板紧跟横条：播客面板可能很高（生成中日志+几百行列表），
          放在它下面时点"更换"弹出来的面板在屏幕外，看着像没反应（2026-11-04 报障） -->
     <div class="card nb-pickpanel" id="nbp-panel" hidden>
@@ -640,6 +644,21 @@
     <h2 id="nb-new-title">新建生词本</h2>
     <p class="nb-cfg-sub" id="nb-new-sub"></p>
     <div id="nb-new-body"></div>
+  </div>
+</div>
+<div class="card lpod" id="lpod" hidden>
+  <div class="lpod-head">
+    <span class="lpod-title" id="lpod-title">本课播客</span>
+    <span style="flex:1"></span>
+    <button class="lpod-close" id="lpod-close" type="button" title="收起" aria-label="收起播客">×</button>
+  </div>
+  <div class="lpod-bar">
+    <button class="btn ghost lpod-btn" id="lpod-back10" type="button" title="后退 10 秒" aria-label="后退 10 秒">↺10</button>
+    <button class="btn accent lpod-play" id="lpod-play" type="button" title="播放" aria-label="播放">▶</button>
+    <button class="btn ghost lpod-btn" id="lpod-fwd10" type="button" title="前进 10 秒" aria-label="前进 10 秒">10↻</button>
+    <input type="range" class="lpod-seek" id="lpod-seek" min="0" max="1000" step="1" value="0" aria-label="播放进度">
+    <span class="lpod-time" id="lpod-time">0:00 / 0:00</span>
+    <audio id="lpod-audio" preload="metadata"></audio>
   </div>
 </div>
 <script src="js/ruby-splits.js"></script>
