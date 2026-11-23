@@ -648,14 +648,22 @@
 </div>
 <div class="card lpod" id="lpod" hidden>
   <div class="lpod-head">
+    <span class="lpod-note" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="14.5" width="4" height="7" rx="1.8"/><rect x="17.5" y="14.5" width="4" height="7" rx="1.8"/></svg></span>
     <span class="lpod-title" id="lpod-title">本课播客</span>
     <span style="flex:1"></span>
-    <button class="lpod-close" id="lpod-close" type="button" title="收起" aria-label="收起播客">×</button>
+    <button class="lpod-close" id="lpod-close" type="button" title="收起" aria-label="收起播客"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></button>
   </div>
   <div class="lpod-bar">
-    <button class="btn ghost lpod-btn" id="lpod-back10" type="button" title="后退 10 秒" aria-label="后退 10 秒">↺10</button>
-    <button class="btn accent lpod-play" id="lpod-play" type="button" title="播放" aria-label="播放">▶</button>
-    <button class="btn ghost lpod-btn" id="lpod-fwd10" type="button" title="前进 10 秒" aria-label="前进 10 秒">10↻</button>
+    <button class="lpod-skip" id="lpod-back10" type="button" title="后退 10 秒" aria-label="后退 10 秒">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><text x="12.4" y="15" text-anchor="middle">10</text></svg>
+    </button>
+    <button class="lpod-play" id="lpod-play" type="button" title="播放" aria-label="播放">
+      <svg class="lpod-i-play" viewBox="0 0 24 24"><path d="M9 5.7v12.6L19.4 12z" fill="currentColor"/></svg>
+      <svg class="lpod-i-pause" viewBox="0 0 24 24"><rect x="7.4" y="5.4" width="3.4" height="13.2" rx="1.4" fill="currentColor"/><rect x="13.2" y="5.4" width="3.4" height="13.2" rx="1.4" fill="currentColor"/></svg>
+    </button>
+    <button class="lpod-skip" id="lpod-fwd10" type="button" title="前进 10 秒" aria-label="前进 10 秒">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(24 0) scale(-1 1)"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></g><text x="11.6" y="15" text-anchor="middle">10</text></svg>
+    </button>
     <input type="range" class="lpod-seek" id="lpod-seek" min="0" max="1000" step="1" value="0" aria-label="播放进度">
     <span class="lpod-time" id="lpod-time">0:00 / 0:00</span>
     <audio id="lpod-audio" preload="metadata"></audio>

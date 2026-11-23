@@ -7409,7 +7409,9 @@ function lpodTick() {
   const a = LPOD.audio;
   const d = isFinite(a.duration) ? a.duration : 0;
   const c = isFinite(a.currentTime) ? a.currentTime : 0;
-  if (!LPOD.seeking) $('lpod-seek').value = d ? String(Math.round(c / d * 1000)) : '0';
+  const seek = $('lpod-seek');
+  if (!LPOD.seeking) seek.value = d ? String(Math.round(c / d * 1000)) : '0';
+  seek.style.setProperty('--fill', d ? (c / d * 100) + '%' : '0%');
   $('lpod-time').textContent = lpodFmt(c) + ' / ' + lpodFmt(d);
 }
 function lpodStop(keepOpen) {
@@ -7424,9 +7426,12 @@ function lpodStop(keepOpen) {
     // 关闭时挪回 body 宿主，免得节点被销毁后再也打不开（2026-11-23 验收发现）
     if (p && p.parentNode !== document.body) document.body.appendChild(p);
     if (p) p.hidden = true;
-    $('lpod-play').textContent = '▶';
+    $('lpod-play').classList.remove('playing');
+    $('lpod-play').title = '播放';
+    $('lpod-play').setAttribute('aria-label', '播放');
     $('lpod-time').textContent = '0:00 / 0:00';
     $('lpod-seek').value = '0';
+    $('lpod-seek').style.setProperty('--fill', '0%');
   }
 }
 function lpodClose() { lpodStop(false); }
@@ -7466,8 +7471,10 @@ async function lpodOpen(kind, lesson, slot, afterEl) {
   LPOD = { key, url, audio: a, seeking: false };
   a.src = url;
   a.currentTime = 0;
+  $('lpod-play').classList.remove('playing');
   $('lpod-time').textContent = '0:00 / 0:00';
   $('lpod-seek').value = '0';
+  $('lpod-seek').style.setProperty('--fill', '0%');
   try { await a.play(); } catch (e) { /* 浏览器拦自动播时保留手动控制 */ }
   if (!LPOD || LPOD.audio !== a) return;
   lpodTick();
@@ -8216,9 +8223,15 @@ $('lpod-fwd10').onclick = () => lpodNudge(10);
 $('lpod-close').onclick = lpodClose;
 {
   const a = $('lpod-audio');
-  a.addEventListener('play', () => { $('lpod-play').textContent = '⏸'; $('lpod-play').title = '暂停'; });
-  a.addEventListener('pause', () => { $('lpod-play').textContent = '▶'; $('lpod-play').title = '播放'; });
-  a.addEventListener('ended', () => { $('lpod-play').textContent = '▶'; });
+  const setLpodPlaying = (on) => {
+    const b = $('lpod-play');
+    b.classList.toggle('playing', on);
+    b.title = on ? '暂停' : '播放';
+    b.setAttribute('aria-label', on ? '暂停' : '播放');
+  };
+  a.addEventListener('play', () => setLpodPlaying(true));
+  a.addEventListener('pause', () => setLpodPlaying(false));
+  a.addEventListener('ended', () => setLpodPlaying(false));
   a.addEventListener('timeupdate', lpodTick);
   a.addEventListener('loadedmetadata', lpodTick);
   a.addEventListener('error', () => { if (LPOD) $('lpod-time').textContent = '音频加载失败'; });
@@ -8228,10 +8241,12 @@ $('lpod-close').onclick = lpodClose;
   addEventListener('pointerup', endSeek);
   addEventListener('pointercancel', endSeek);
   seek.addEventListener('input', (e) => {
+    const v = Number(e.target.value);
+    e.target.style.setProperty('--fill', (v / 10) + '%');
     if (!LPOD) return;
     const audio = LPOD.audio;
     if (isFinite(audio.duration) && audio.duration > 0) {
-      audio.currentTime = audio.duration * (Number(e.target.value) / 1000);
+      audio.currentTime = audio.duration * (v / 1000);
     }
   });
 }
