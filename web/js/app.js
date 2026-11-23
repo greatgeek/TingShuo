@@ -1896,10 +1896,12 @@ async function audioBlobURL(audioId) {
   idbPut(audioId, blob);
   return URL.createObjectURL(blob);
 }
-// 缓存优先取单词发音 blob URL（key 加 w3: 前缀与句子音频区分；w3 使旧词音缓存全部失效，
-// 2026-11-16 修复「キャプテン翼」读音缺字导致词音只念「つばさ」后需要重新拉取）
-async function wordAudioBlobURL(wordId) {
-  const key = 'w3:' + wordId;
+// 词音缓存键带读音：读音修正后自动换键重拉。前缀同时从 w3 升到 w4，
+// 清掉历史坏词音（2026-11-23 部屋 报障：服务端已是 へや，浏览器仍播旧音频）。
+function wordAudioKey(wordId, reading) { return 'w4:' + wordId + ':' + String(reading || '').trim(); }
+// 缓存优先取单词发音 blob URL
+async function wordAudioBlobURL(wordId, reading) {
+  const key = wordAudioKey(wordId, reading);
   const hit = await idbGet(key);
   if (hit && hit.blob && hit.blob.size >= 1024) { idbPut(key, hit.blob); return URL.createObjectURL(hit.blob); }
   const r = await fetchAuth('/api/v1/word-study/' + wordId + '/audio');
@@ -2253,7 +2255,7 @@ function renderLibrary() {
       </div>
       <button class="word-speak" title="听单词发音">${SVG_SPEAK}</button>
       <button class="play" title="展开用法">${SVG_CHEV}</button>`;
-    div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.id, e.currentTarget); };
+    div.querySelector('.word-speak').onclick = (e) => { e.stopPropagation(); wsSpeakWord(w.id, e.currentTarget, false, w.reading); };
     div.onclick = () => toggleWordUsage(w, div);
     box.appendChild(div);
   });
@@ -2425,11 +2427,11 @@ function wsStopAudio() {
 }
 
 // wsSpeakWord 单词发音：后端 /word-study/{id}/audio（首次合成落库，之后直接用缓存）
-function wsSpeakWord(wordId, btn, retry) {
+function wsSpeakWord(wordId, btn, retry, reading) {
   return new Promise(async resolve => {
     try {
       markBtnBusy(btn);
-      const url = await wordAudioBlobURL(wordId);
+      const url = await wordAudioBlobURL(wordId, reading);
       wsStopAudio();
       WS_AUDIO = new Audio(url);
       const a = WS_AUDIO;
@@ -2439,7 +2441,7 @@ function wsSpeakWord(wordId, btn, retry) {
       // 播了但不走字 = 本地缓存坏流：丢缓存重取一次（2026-11-06 用户设备曾缓存静音块）
       setTimeout(() => {
         if (!retry && WS_AUDIO === a && !a.paused && a.currentTime < 0.05) {
-          wsStopAudio(); idbDel('w3:' + wordId); wsSpeakWord(wordId, btn, true);
+          wsStopAudio(); idbDel(wordAudioKey(wordId, reading)); wsSpeakWord(wordId, btn, true, reading);
         }
       }, 800);
       setTimeout(() => wsAudioDbg(a, '词'), 900);
@@ -2520,7 +2522,7 @@ async function wsPlayQuizSent(btn) {
   }
 }
 
-function wsPrefetchWord(wordId) { wordAudioBlobURL(wordId).catch(() => {}); }
+function wsPrefetchWord(wordId, reading) { wordAudioBlobURL(wordId, reading).catch(() => {}); }
 
 // wsPrefetchSent 渲染时只预热音频缓存不播放：无手势的自动播在安卓上易被静音卡死，
 // 预热后用户点 🎧 走本地缓存，play() 落在点击手势内，声音才出得来
@@ -2545,11 +2547,11 @@ function wsFrontQuiz(w) {
     : '';
   if (q.type === 'pick_mean') {
     return `<div class="ws-word-line"><span class="ws-word-txt">${esc(w.surface)}</span>` +
-      `<button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button></div>
+      `<button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" data-ver="${escAttr(w.reading || '')}" title="听单词发音">${SVG_SPEAK}</button></div>
       <p class="hint">看词选义：它的中文意思是？</p>${wsOptsHTML(q)}`;
   }
   if (q.type === 'hear_mean') {
-    return `<div class="ws-word-line"><button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button></div>
+    return `<div class="ws-word-line"><button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" data-ver="${escAttr(w.reading || '')}" title="听单词发音">${SVG_SPEAK}</button></div>
       <p class="hint">听词选义：听音选中文意思</p>${wsOptsHTML(q)}`;
   }
   if (q.type === 'cloze_pick') {
@@ -2566,7 +2568,7 @@ function wsFrontQuiz(w) {
 function wsFrontFlip(w) {
   return `<div class="ws-word-line">
       <span class="ws-word-txt">${esc(w.surface)}</span>
-      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button>
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" data-ver="${escAttr(w.reading || '')}" title="听单词发音">${SVG_SPEAK}</button>
     </div>
     <p class="hint">回想它的读音和意思，然后翻面</p>
     <button class="btn ghost" data-act="ws-flip">翻面</button>`;
@@ -2575,7 +2577,7 @@ function wsFrontFlip(w) {
 function wsBackFlipHTML(w) {
   return `<div class="ws-word-line">
       ${rubyWordHTML(w.surface, w.reading)}
-      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button>
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" data-ver="${escAttr(w.reading || '')}" title="听单词发音">${SVG_SPEAK}</button>
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
     ${w.interval_days ? `<div class="rv-meta">间隔 ${w.interval_days} 天 · 错 ${w.error_count} 次</div>` : '<div class="rv-meta">首次学习</div>'}
@@ -2603,7 +2605,7 @@ function wsBackQuizHTML(w, ok, chosen) {
   return `<div class="ws-mark ${ok ? 'ok' : 'no'}">${ok ? '答对了' : '答错了'}</div>
     <div class="ws-word-line">
       ${rubyWordHTML(w.surface, w.reading)}
-      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" title="听单词发音">${SVG_SPEAK}</button>
+      <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" data-ver="${escAttr(w.reading || '')}" title="听单词发音">${SVG_SPEAK}</button>
       ${q.audio ? `<button class="ws-mini" data-act="ws-sent" title="听整句">${SVG_HEADPHONES}</button>` : ''}
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
@@ -2643,7 +2645,7 @@ function renderWordStudyItem() {
   if (inp) inp.onkeydown = e => { if (e.key === 'Enter') wsTypeConfirm(); };
   // 渲染时预热题面音频缓存；入场与「下一词」由 wsAutoPlayFront 播一次，
   // 自动播失败（无手势被拦）时用户点 🎧 走已预热缓存
-  if (q.type === 'hear_mean') wsPrefetchWord(w.id);
+  if (q.type === 'hear_mean') wsPrefetchWord(w.id, w.reading);
   if (q.type === 'cloze_pick' || q.type === 'cloze_type') wsPrefetchSent();
 }
 
@@ -2736,7 +2738,7 @@ function wsAutoPlayFront() {
     if (q.audio) wsPlayQuizSent(front.querySelector('.ws-playbtn'));
     return;
   }
-  wsSpeakWord(it.id, front.querySelector('[data-act="ws-speak"]'));
+  wsSpeakWord(it.id, front.querySelector('[data-act="ws-speak"]'), false, it.reading);
 }
 
 function wsNext() { WS_IDX = wsNextUndone(WS_IDX + 1); renderWordStudyItem(); wsAutoPlayFront(); }
@@ -3292,7 +3294,7 @@ function renderNbWords() {
       e.stopPropagation(); nbSelectWord(w, div);
       // 共享本里的词属于作者，词音走通用 TTS（带注音）
       if (shared) sayAudio(w.surface, e.currentTarget, false, w.ruby_tokens);
-      else wsSpeakWord(w.word_id, e.currentTarget);
+      else wsSpeakWord(w.word_id, e.currentTarget, false, w.reading);
     };
     div.onclick = () => { nbSelectWord(w, div); if (PL && nbPlayJumpTo(w)) return; nbToggleWord(w, div); };
     box.appendChild(div);
@@ -4578,7 +4580,7 @@ async function nbPlayStep(autoplay = true) {
   const pl = PL, idx = PL.i; // 连续跳转时丢弃过期请求，避免旧音频盖掉新选的项
   try {
     let url;
-    if (it.kind === 'word') url = await wordAudioBlobURL(it.w.word_id);
+    if (it.kind === 'word') url = await wordAudioBlobURL(it.w.word_id, it.w.reading);
     else if (it.kind === 'wmean') url = await sayBlobURL(it.say, ZH_VOICE);
     else if (it.kind === 'smean') url = await sayBlobURL(it.s.translation, ZH_VOICE);
     else url = await sayBlobURL(it.s.text, undefined, it.s.ruby_tokens);
@@ -8174,7 +8176,7 @@ document.addEventListener('click', (e) => {
     case 'home': goHome(); break;
     case 'ws-seg': wsSetMode(arg); break;
     case 'ws-sent': wsPlayQuizSent(el); break;
-    case 'ws-speak': wsSpeakWord(arg, el); break;
+    case 'ws-speak': wsSpeakWord(arg, el, false, el.dataset.ver); break;
     case 'ws-type': wsTypeConfirm(); break;
     case 'ws-flip': wsFlip(); break;
     case 'ws-fail': wsResult('fail'); break;
