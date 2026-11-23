@@ -4948,8 +4948,10 @@ function renderGraDetail() {
   let html = `<div class="card gra-head">
     <div class="rec-head-top">
       <h2>${esc(GRAM.title)}</h2>
-      <button class="btn ghost gra-pod-btn" id="gra-lpod-btn" type="button" title="本课播客（可后退 / 前进 10 秒）" aria-label="本课播客" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="14.5" width="4" height="7" rx="1.8"/><rect x="17.5" y="14.5" width="4" height="7" rx="1.8"/></svg>播客</button>
-      <button class="btn ghost gra-test-btn" id="gra-test-lesson">测本课</button>
+      <div class="gra-acts">
+        <button class="gra-act" id="gra-lpod-btn" type="button" title="本课播客（可后退 / 前进 10 秒）" aria-label="本课播客" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2.5" y="14.5" width="4" height="7" rx="1.8"/><rect x="17.5" y="14.5" width="4" height="7" rx="1.8"/></svg>播客</button>
+        <button class="gra-act gra-act-test" id="gra-test-lesson" type="button">测本课</button>
+      </div>
     </div>
     <p class="hint">点知识点展开 · 点喇叭朗读例句与词表 · 「原声」「生词本」可直接跳到对应位置</p>
   </div>`;
