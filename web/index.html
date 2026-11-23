@@ -172,10 +172,23 @@
         <span class="status-chip" id="dict-mode-chip" style="display:none">中文反查</span>
       </div>
       <div class="dict-search-row">
-        <input id="dict-q" placeholder="日语或中文，如 部屋 / 房间" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        <div class="dict-input-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="dict-q" placeholder="日语或中文，如 部屋 / 房间" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+        </div>
         <button class="btn accent" id="dict-go">查</button>
       </div>
       <p class="hint">支持原形、变形与假名；中文可反查；词典未收录的词可让 AI 生成。</p>
+    </div>
+    <div class="card dict-idle" id="dict-idle">
+      <p class="dict-idle-title">查一个日语词</p>
+      <p class="hint">读音、中文释义与例句一站看全，还能直接加入生词本。</p>
+      <div class="dict-chips" id="dict-chips">
+        <button type="button" data-q="部屋">部屋</button>
+        <button type="button" data-q="勉強">勉強</button>
+        <button type="button" data-q="ありがとう">ありがとう</button>
+        <button type="button" data-q="房间">房间</button>
+      </div>
     </div>
     <div id="dict-results"></div>
   </section>
@@ -360,8 +373,13 @@
   </section>
   <!-- 生词库 -->
   <section class="screen" id="sc-library">
-    <input id="lib-search" placeholder="搜索单词 / 读音 / 含义">
-    <div class="sents" id="lib-list" style="margin-top:10px"></div>
+    <div class="card lib-search-card">
+      <div class="lib-search-row">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="lib-search" placeholder="搜索单词 / 读音 / 含义" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+      </div>
+    </div>
+    <div class="sents" id="lib-list"></div>
     <p class="hint" id="lib-hint" style="margin-top:12px"></p>
   </section>
   <!-- 背词 -->

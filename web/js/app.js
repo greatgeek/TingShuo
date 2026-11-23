@@ -17,6 +17,8 @@ const SVG_BULB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const SVG_BUSY = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10M7 21h10"/><path d="M8 3v3.5c0 1.6 1.5 3.1 4 5.5-2.5 2.4-4 3.9-4 5.5V21"/><path d="M16 3v3.5c0 1.6-1.5 3.1-4 5.5 2.5 2.4 4 3.9 4 5.5V21"/></svg>';
 const SVG_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>';
 const SVG_CHEV = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const SVG_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+const SVG_BOOKS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 18.5V5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5Z"/><path d="M11 4h7.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H11"/></svg>';
 // 播放/合成按钮：忙碌时临时换成沙漏，结束后恢复按钮原本的图标（不写死 ▶ 或 🔊）
 function markBtnBusy(btn) {
   if (!btn) return;
@@ -2243,7 +2245,17 @@ function renderLibrary() {
   const box = $('lib-list'); box.innerHTML = '';
   const words = libFilter(LIB_WORDS, LIB_Q);
   if (!words.length) {
-    box.innerHTML = `<p class="hint" style="text-align:center;margin-top:30px">${LIB_WORDS.length ? '没有匹配的词。' : '生词库是空的。提交词单创建课程后，词语会自动累积到这里。'}</p>`;
+    box.innerHTML = LIB_WORDS.length
+      ? `<div class="empty-state">
+           <span class="es-ic">${SVG_SEARCH}</span>
+           <b>没有匹配「${esc(LIB_Q)}」的词</b>
+           <p>换个词面、读音或中文含义再试试。</p>
+         </div>`
+      : `<div class="empty-state">
+           <span class="es-ic">${SVG_BOOKS}</span>
+           <b>生词库还是空的</b>
+           <p>提交词单创建课程后，词语会自动累积到这里。</p>
+         </div>`;
     $('lib-hint').textContent = '';
     return;
   }
@@ -2594,7 +2606,7 @@ function wsFrontFlip(w) {
       <button class="ws-mini" data-act="ws-speak" data-arg="${w.id}" data-ver="${escAttr(w.reading || '')}" title="听单词发音">${SVG_SPEAK}</button>
     </div>
     <p class="hint">回想它的读音和意思，然后翻面</p>
-    <button class="btn ghost" data-act="ws-flip">翻面</button>`;
+    <button class="btn accent ws-flip-btn" data-act="ws-flip">翻面</button>`;
 }
 
 function wsBackFlipHTML(w) {
@@ -2666,7 +2678,7 @@ function renderWordStudyItem() {
       <div class="ws-back" id="ws-back" style="display:none"></div>
       <div id="ws-dbg" class="hint" style="margin-top:6px"></div>
     </div>
-    <button class="btn ghost" data-act="ws-quit" style="margin-top:8px">返回首页</button>`;
+    <button class="ws-quit" data-act="ws-quit">← 返回首页</button>`;
   if (!isQuiz) return;
   box.querySelectorAll('.ws-opt').forEach(b => { b.onclick = () => wsPick(+b.dataset.i); });
   const inp = $('ws-type-in');
@@ -5118,9 +5130,11 @@ function renderGraList() {
           <button class="gra-copy" data-no="${it.lesson_no}" title="复制本课全部语法内容" aria-label="复制本课全部语法内容">⧉</button>
           <button class="gra-test" data-no="${it.lesson_no}" title="测验本课语法" aria-label="测验本课语法">测</button>
         </span>
+      </div>
+      <div class="gra-item-sub">
+        <span>${it.examples} 条例句 ${tags}</span>
         <span class="gra-item-meta">语法 ${it.grammar_points} · 表达 ${it.expression_points}</span>
       </div>
-      <div class="gra-item-sub">${it.examples} 条例句 ${tags}</div>
     </div>`;
   }).join('');
 }
@@ -8450,6 +8464,7 @@ function dictSearch() {
   DICT_LAST_Q = q;
   const seq = ++DICT_SEQ;
   const box = $('dict-results');
+  $('dict-idle').hidden = true;
   $('dict-go').disabled = true;
   $('dict-mode-chip').style.display = 'none';
   DICT_OPEN_ID = null;
@@ -8476,6 +8491,10 @@ function dictRenderResults(r) {
     $('dict-fb-btn').onclick = e => dictFallback(DICT_LAST_Q, e.currentTarget);
     return;
   }
+  const sum = document.createElement('div');
+  sum.className = 'dict-summary';
+  sum.innerHTML = `<span>「${esc(r.query || DICT_LAST_Q)}」· ${DICT_ITEMS.length} 条</span><span>点卡片看释义与例句</span>`;
+  box.appendChild(sum);
   DICT_ITEMS.forEach(it => {
     const w = dictWordOf(it);
     const card = document.createElement('div');
@@ -8738,6 +8757,12 @@ $('nav-study').onclick = goStudy;
 $('nav-dict').onclick = () => go('dict');
 $('dict-go').onclick = dictSearch;
 $('dict-q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); dictSearch(); } };
+$('dict-chips').addEventListener('click', e => {
+  const b = e.target.closest('[data-q]');
+  if (!b) return;
+  $('dict-q').value = b.dataset.q;
+  dictSearch();
+});
 $('st-view-month').onclick = () => stSetView('month');
 $('st-view-year').onclick = () => stSetView('year');
 $('st-prev').onclick = () => stNav(-1);
