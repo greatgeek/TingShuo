@@ -482,7 +482,7 @@ func sanitizeExamples(src []zhExample) []zhExample {
 		if jp == "" || zh == "" || seen[jp] || len([]rune(jp)) > 70 || len([]rune(zh)) > 70 {
 			continue
 		}
-		if !hasJapanese(jp) || !hasKana(jp) || hasLatin(jp) || hasInvalidRune(jp) {
+		if !hasJapanese(jp) || !hasKana(jp) || hasLatin(jp) || hasInvalidRune(jp) || hasChineseOnly(jp) {
 			continue
 		}
 		seen[jp] = true
@@ -527,7 +527,7 @@ func (h *Handler) verifyExamples(ctx context.Context, userID string, item Item, 
 		b.WriteString(fmt.Sprintf("%d. %s（%s）\n", i+1, ex.Jp, ex.Zh))
 	}
 	b.WriteString("请找出存在以下问题的例句序号：\n" +
-		"①不是自然、地道的日语，或混入了中文/英文；\n" +
+		"①不是自然、地道的日语，或混入了中文/英文（含简体中文专用字，如 这、们、说、时、做）；\n" +
 		"②与词条含义不符，或句子里根本没有用到该词（含活用形）；\n" +
 		"③中文翻译与日语句子意思不符；\n" +
 		"④出现中文或外国的人名、地名等专有名词。\n" +
@@ -609,6 +609,18 @@ func hasInvalidRune(s string) bool {
 func hasLatin(s string) bool {
 	for _, r := range s {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return true
+		}
+	}
+	return false
+}
+
+// chineseOnlyRunes 收集简体中文专用字形（日文不这样写），用于拦截「做的就是」这类混入中文的例句。
+const chineseOnlyRunes = "这们说时话见爱听头对开关门问间吗呢吧啊呀做谢请让给谁哪变应该还过发觉得么从无车东马鸟鱼长电风飞龙书认讲读买卖钱网软张边义难样现实题习练个为员军战队单场试种动你她怎什"
+
+func hasChineseOnly(s string) bool {
+	for _, r := range s {
+		if strings.ContainsRune(chineseOnlyRunes, r) {
 			return true
 		}
 	}
