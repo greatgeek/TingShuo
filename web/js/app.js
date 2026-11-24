@@ -5292,9 +5292,36 @@ function graExampleHTML(p, e) {
   </div>`;
 }
 
+// 语法点内的专属套题入口（按 point id 绑题库 tag）
+const GRA_DRILLS = {
+  'gp-cjs-L09-01': {
+    note: '只考现在・将来时的肯定与否定',
+    sets: [
+      { set: 'adj-i', label: 'Ⅰ类形容词', count: 100 },
+      { set: 'adj-na', label: 'Ⅱ类形容词', count: 100 },
+    ],
+  },
+  'gp-cjs-L10-01': {
+    note: '现在・将来与过去的肯定与否定',
+    sets: [
+      { set: 'adj-past-i', label: 'Ⅰ类形容词', count: 100 },
+      { set: 'adj-past-na', label: 'Ⅱ类形容词', count: 100 },
+    ],
+  },
+};
+
 function graPointHTML(p, open) {
   const ask = (p.section || 'grammar') === 'grammar'
     ? '<button class="ai-ask gra-ask" title="就这个语法点问 AI">问AI</button>' : '';
+  const drills = GRA_DRILLS[p.id];
+  const drillHTML = drills ? `<div class="gra-drills">
+      <div class="gra-drills-head">
+        <span class="gra-drills-title">专属测试</span>
+        <span class="gra-drills-sub">${esc(drills.note)}</span>
+      </div>
+      <div class="gra-drills-btns">${drills.sets.map(d =>
+        `<button class="gra-drill" data-set="${esc(d.set)}">${esc(d.label)}<b>${d.count} 题</b></button>`).join('')}</div>
+    </div>` : '';
   return `<div class="card gra-point${open ? ' open' : ''}" data-pid="${esc(p.id)}">
     <div class="gra-point-head">
       <button class="gra-head-toggle" aria-expanded="${open}">
@@ -5306,6 +5333,7 @@ function graPointHTML(p, open) {
     <div class="gra-point-body"${open ? '' : ' hidden'}>
       ${p.formation ? `<p class="gra-formation"><b>接续</b>${esc(p.formation)}</p>` : ''}
       ${graRenderBody(p.body, p)}
+      ${drillHTML}
     </div>
   </div>`;
 }
@@ -5358,6 +5386,10 @@ function renderGraDetail() {
       ev.stopPropagation();
       openAiAskGrammar(points.find(x => x.id === cardEl.dataset.pid));
     };
+  });
+
+  box.querySelectorAll('.gra-drill').forEach(btn => {
+    btn.onclick = () => startGraQuiz({ set: btn.dataset.set });
   });
 
   box.querySelectorAll('.gra-cell-say').forEach(btn => {
@@ -5421,7 +5453,7 @@ async function openNotebookAt(ref) {
 let QZ = null;      // {title, book, lesson, questions, i, answers:[{chosen,ok}]}
 let QZ_REQ = 0;     // 请求序号：离开/重开后丢弃旧响应
 
-const QZ_KIND = { cloze: '完形', form: '接续', discriminate: '辨析', expression: '情景' };
+const QZ_KIND = { cloze: '完形', form: '接续', discriminate: '辨析', expression: '情景', conjugate: '变形' };
 
 async function startGraQuiz(opts = {}) {
   if (!TOKEN) { go('login'); return; }
@@ -5430,12 +5462,13 @@ async function startGraQuiz(opts = {}) {
   if (WS_AUDIO) { WS_AUDIO.pause(); WS_AUDIO = null; }
   QZ = null;
   go('quiz');
-  $('quiz-title').textContent = opts.lesson ? `第${opts.lesson}课 · 语法测验` : '语法测验';
+  $('quiz-title').textContent = opts.set ? '语法专项' : opts.lesson ? `第${opts.lesson}课 · 语法测验` : '语法测验';
   $('quiz-count').textContent = '';
   $('quiz-bar-fill').style.width = '0%';
   $('quiz-body').innerHTML = '<div class="card"><p class="hint">正在准备题目…</p></div>';
   const params = new URLSearchParams({ book: GRAM_BOOK });
-  if (opts.lesson) params.set('lesson', String(opts.lesson));
+  if (opts.set) params.set('set', opts.set);
+  else if (opts.lesson) params.set('lesson', String(opts.lesson));
   else params.set('n', '20');
   let r;
   try { r = await api('/grammar/quiz?' + params.toString()); }
@@ -5447,12 +5480,14 @@ async function startGraQuiz(opts = {}) {
   if (req !== QZ_REQ || CUR_SCREEN !== 'quiz') return;
   const qs = r.questions || [];
   QZ = {
-    title: r.title || '', book: r.book || GRAM_BOOK, lesson: r.lesson_no || 0,
+    title: r.title || '', book: r.book || GRAM_BOOK, lesson: r.lesson_no || 0, set: opts.set || '',
     questions: qs, i: 0, answers: [],
   };
-  $('quiz-title').textContent = QZ.lesson ? `${r.title || '第' + QZ.lesson + '课'} · 语法测验` : `综合测验 · 随机 ${qs.length} 题`;
+  $('quiz-title').textContent = QZ.set
+    ? `${r.title || '语法专项'} · ${qs.length} 题`
+    : QZ.lesson ? `${r.title || '第' + QZ.lesson + '课'} · 语法测验` : `综合测验 · 随机 ${qs.length} 题`;
   if (!qs.length) {
-    $('quiz-body').innerHTML = `<div class="card"><p class="hint">${QZ.lesson ? '这一课还没有题目，题库生成后再来。' : '题库还没有题目，稍后再试。'}</p>
+    $('quiz-body').innerHTML = `<div class="card"><p class="hint">${QZ.set ? '这套题还没有内容，题库生成后再来。' : QZ.lesson ? '这一课还没有题目，题库生成后再来。' : '题库还没有题目，稍后再试。'}</p>
       <button class="btn ghost" data-act="quiz-back">回语法本</button></div>`;
     return;
   }
@@ -5681,7 +5716,7 @@ function qzFinish() {
     <button class="btn accent" id="quiz-again">再来一轮</button>
     <button class="btn ghost" data-act="quiz-back">返回语法本</button>
   </div>`;
-  $('quiz-again').onclick = () => startGraQuiz({ lesson: QZ.lesson });
+  $('quiz-again').onclick = () => startGraQuiz(QZ.set ? { set: QZ.set } : { lesson: QZ.lesson });
   window.scrollTo(0, 0);
 }
 

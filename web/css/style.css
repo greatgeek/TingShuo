@@ -2490,6 +2490,29 @@ body.rec-playing #sc-recite-play { padding-bottom: 104px; }
 .gra-cell-say svg { width: 11px; height: 11px; }
 .gra-cell-say:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-deep); }
 .gra-hit { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: var(--r-md); transition: outline-color .3s; }
+.gra-drills {
+  margin-top: 14px; padding: 12px 14px;
+  border: 1px solid rgba(184, 64, 44, .2); border-radius: var(--r-md);
+  background: linear-gradient(180deg, #FFF8F2, var(--surface));
+}
+.gra-drills-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.gra-drills-title { font-size: 13px; font-weight: 700; color: var(--ink); }
+.gra-drills-sub { font-size: 11px; color: var(--ink3); }
+.gra-drills-btns { display: flex; gap: 8px; margin-top: 10px; }
+.gra-drill {
+  flex: 1; min-width: 0;
+  display: inline-flex; align-items: baseline; justify-content: center; gap: 7px;
+  padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--surface); color: var(--ink);
+  font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+.gra-drill b { font-size: 11px; font-weight: 500; color: var(--ink3); }
+.gra-drill:hover { border-color: var(--accent); background: var(--accent-soft); box-shadow: var(--shadow-sm); }
+@media (max-width: 480px) {
+  .gra-drills-btns { flex-direction: column; }
+}
 
 /* 语法测验 */
 .gra-quiz-entry {

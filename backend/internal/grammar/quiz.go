@@ -56,12 +56,21 @@ const quizColumns = `
 	gp.id, gp.pattern, gp.formation, gp.section, gp.book, gp.lesson_no,
 	ge.text, ge.translation, COALESCE(ge.ruby_tokens, '[]'::jsonb)`
 
+// quizSets 专属套题：tag → 标题。只在显式传 set 时抽取，普通课测/整册测验排除。
+var quizSets = map[string]string{
+	"adj-i":       "Ⅰ类形容词 · 现在・将来",
+	"adj-na":      "Ⅱ类形容词 · 现在・将来",
+	"adj-past-i":  "Ⅰ类形容词 · 现在・过去",
+	"adj-past-na": "Ⅱ类形容词 · 现在・过去",
+}
+
 // Quiz GET /grammar/quiz?book=&lesson=|n=
 // lesson>0：本课每个知识点随机抽 1 题；否则整册随机 n 题（默认 20，上限 40）。
 func (h *Handler) Quiz(w http.ResponseWriter, r *http.Request) {
 	book := bookParam(r.URL.Query().Get("book"))
 	lesson, _ := strconv.Atoi(r.URL.Query().Get("lesson"))
 	n, _ := strconv.Atoi(r.URL.Query().Get("n"))
+	set := strings.TrimSpace(r.URL.Query().Get("set"))
 	if n <= 0 {
 		n = 20
 	}
@@ -72,7 +81,23 @@ func (h *Handler) Quiz(w http.ResponseWriter, r *http.Request) {
 	title := "综合测验"
 	var rows pgx.Rows
 	var err error
-	if lesson > 0 {
+	if set != "" {
+		var ok bool
+		title, ok = quizSets[set]
+		if !ok {
+			httpx.Err(w, httpx.BadRequest("QUIZ_SET_INVALID", "没有这套题"))
+			return
+		}
+		lesson = 0
+		rows, err = h.pool.Query(r.Context(), `
+			SELECT `+quizColumns+`
+			FROM grammar_question q
+			JOIN grammar_point gp ON gp.id = q.point_id
+			LEFT JOIN grammar_example ge ON ge.id = q.source_example_id
+			WHERE q.status = 'ok' AND q.tag = $1
+			ORDER BY random()
+			LIMIT 200`, set)
+	} else if lesson > 0 {
 		if e := h.pool.QueryRow(r.Context(),
 			`SELECT title FROM grammar_lesson WHERE book = $1 AND lesson_no = $2`, book, lesson).Scan(&title); e != nil {
 			httpx.Err(w, httpx.NotFound("没有这课的语法内容"))
@@ -84,6 +109,7 @@ func (h *Handler) Quiz(w http.ResponseWriter, r *http.Request) {
 				SELECT DISTINCT ON (point_id) id, point_id, kind, stem, stem_ruby, options, explain, source_example_id
 				FROM grammar_question
 				WHERE status = 'ok'
+				  AND tag = ''
 				  AND point_id IN (SELECT id FROM grammar_point WHERE book = $1 AND lesson_no = $2)
 				ORDER BY point_id, random()
 			) q
@@ -98,6 +124,7 @@ func (h *Handler) Quiz(w http.ResponseWriter, r *http.Request) {
 				       source_example_id, random() AS rnd
 				FROM grammar_question q
 				WHERE status = 'ok'
+				  AND q.tag = ''
 				  AND point_id IN (SELECT id FROM grammar_point WHERE book = $1)
 				ORDER BY point_id, random()
 			) q
