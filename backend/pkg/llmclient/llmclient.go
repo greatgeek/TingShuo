@@ -73,6 +73,12 @@ func (c *Client) chat(ctx context.Context, prompt string, extra map[string]any) 
 	for k, v := range extra {
 		payload[k] = v
 	}
+	// 离线批量任务可用 LLM_REASONING_EFFORT=low 压低思考开销；交互式请求不设该变量。
+	if v := os.Getenv("LLM_REASONING_EFFORT"); v != "" {
+		if _, ok := extra["thinking"]; ok {
+			payload["reasoning"] = map[string]any{"effort": v}
+		}
+	}
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", 0, 0, err

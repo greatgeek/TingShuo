@@ -62,6 +62,9 @@ var quizSets = map[string]string{
 	"adj-na":      "Ⅱ类形容词 · 现在・将来",
 	"adj-past-i":  "Ⅰ类形容词 · 现在・过去",
 	"adj-past-na": "Ⅱ类形容词 · 现在・过去",
+	"verb-masu-i":   "Ⅰ类动词 · ます形",
+	"verb-masu-ii":  "Ⅱ类动词 · ます形",
+	"verb-masu-iii": "Ⅲ类动词 · ます形",
 }
 
 // Quiz GET /grammar/quiz?book=&lesson=|n=

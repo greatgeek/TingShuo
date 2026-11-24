@@ -131,6 +131,7 @@ type dirWordItem struct {
 	Pos       *string         `json:"pos"`
 	Meaning   *string         `json:"meaning"`
 	Sort      int             `json:"sort_order"`
+	Phrases   json.RawMessage `json:"phrases"` // 常用词组（word_phrase 缓存，未生成则为空数组）
 	Sentences []dirWordSent   `json:"sentences"`
 }
 
@@ -160,6 +161,7 @@ func (h *Handler) loadDirWords(r *http.Request, dirID string) ([]dirWordItem, *h
 			}
 		}
 		it.Sentences = []dirWordSent{}
+		it.Phrases = json.RawMessage("[]")
 		index[it.LinkID] = len(items)
 		items = append(items, it)
 	}
@@ -185,6 +187,37 @@ func (h *Handler) loadDirWords(r *http.Request, dirID string) ([]dirWordItem, *h
 			items[i].Sentences = append(items[i].Sentences, dirWordSent{
 				Text: text, Ruby: json.RawMessage(ruby), Translation: trans, Src: src,
 			})
+		}
+	}
+	// 常用词组缓存按 word_id 批量取（共享生词本同样适用）
+	if len(items) > 0 {
+		ids := make([]string, 0, len(items))
+		seen := map[string]bool{}
+		for _, it := range items {
+			if !seen[it.WordID] {
+				seen[it.WordID] = true
+				ids = append(ids, it.WordID)
+			}
+		}
+		prows, err := h.pool.Query(r.Context(),
+			`SELECT word_id, payload FROM word_phrase WHERE word_id = ANY($1)`, ids)
+		if err != nil {
+			return nil, httpx.Internal(err.Error())
+		}
+		defer prows.Close()
+		phrases := map[string]json.RawMessage{}
+		for prows.Next() {
+			var wid string
+			var payload []byte
+			if err := prows.Scan(&wid, &payload); err != nil {
+				return nil, httpx.Internal(err.Error())
+			}
+			phrases[wid] = json.RawMessage(payload)
+		}
+		for i := range items {
+			if raw, ok := phrases[items[i].WordID]; ok {
+				items[i].Phrases = raw
+			}
 		}
 	}
 	return items, nil

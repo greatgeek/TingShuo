@@ -3640,6 +3640,7 @@ function renderNbWords() {
   items.forEach((w, i) => {
     const div = document.createElement('div');
     div.className = 'sent wordrow' + (w.word_id === NB_SEL_WORD ? ' sel' : '');
+    div.dataset.wid = w.word_id;
     div.innerHTML = `
       <span class="spk">${i + 1}</span>
       <div class="wrap"><div class="txt">${w.ruby_tokens && w.ruby_tokens.length ? rubyHTML(w.ruby_tokens, 'plain') : rubyWordHTML(w.surface, w.reading)}</div>
@@ -3947,10 +3948,77 @@ function nbExportAll() {
   toast('已导出 txt + csv 两个文件');
 }
 
+// 常用词组：展开词卡时显示在例句上方，点条目听发音（纯文本交给 TTS，避免词典误读）
+function nbPhraseBlock(w) {
+  const items = w.phrases || [];
+  if (!items.length) return null;
+  const box = document.createElement('div');
+  box.className = 'nb-phrases';
+  const title = document.createElement('div');
+  title.className = 'nb-sec-title';
+  title.textContent = '常用词组';
+  box.appendChild(title);
+  items.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'nb-phrase';
+    row.tabIndex = 0;
+    row.setAttribute('role', 'button');
+    row.title = '点读词组';
+    row.innerHTML = `<div class="wrap"><div class="txt">${rubyHTML(p.ruby_tokens) || esc(p.text)}</div><div class="zh">${esc(p.translation || '')}</div></div>`;
+    const spk = document.createElement('span');
+    spk.className = 'ph-play';
+    spk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M17.5 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
+    row.appendChild(spk);
+    const play = (e) => { e.stopPropagation(); nbSelectWord(w, row.closest('.wordrow')); sayAudio(p.text, spk, false); };
+    row.onclick = play;
+    row.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(e); }
+    };
+    box.appendChild(row);
+  });
+  box.onclick = (e) => e.stopPropagation();
+  return box;
+}
+
+// 未预生成的新词：展开时按需生成，成功后原位替换「生成中」提示。
+// topup=true 时用于已有但不足 5 条的词，静默补齐，失败保持原样。
+const NB_PHRASE_WANT = 5;
+function nbLoadPhrases(w, topup) {
+  if (w._phrasing) return;
+  if (topup ? w._toppedUp : w._phrased) return;
+  w._phrasing = true;
+  if (topup) w._toppedUp = true; else w._phrased = true;
+  const clearHint = () => {
+    const row = document.querySelector(`#nb-words .wordrow[data-wid="${w.word_id}"]`);
+    const hint = row && row.querySelector('.nb-phrases-loading');
+    if (hint) hint.remove();
+  };
+  api('/words/' + w.word_id + '/phrases').then(d => {
+    w._phrasing = false;
+    const have = (w.phrases || []).length;
+    if (!d.items || d.items.length <= have) { clearHint(); return; }
+    w.phrases = d.items;
+    const row = document.querySelector(`#nb-words .wordrow[data-wid="${w.word_id}"]`);
+    const old = row && row.querySelector('.nb-sents');
+    if (old) old.replaceWith(nbBuildSents(w));
+  }).catch(() => { w._phrasing = false; clearHint(); });
+}
+
 function nbBuildSents(w) {
   const wrap = document.createElement('div');
   wrap.className = 'nb-sents';
-  if (!w.sentences.length) wrap.innerHTML = '<p class="hint" style="margin-left:26px">暂无例句</p>';
+  const ph = nbPhraseBlock(w);
+  if (ph) {
+    wrap.appendChild(ph);
+    if (!NB_SHARE && w.phrases.length < NB_PHRASE_WANT) nbLoadPhrases(w, true);
+  } else if (!NB_SHARE) {
+    const hint = document.createElement('p');
+    hint.className = 'hint nb-phrases-loading';
+    hint.textContent = '常用词组生成中…';
+    wrap.appendChild(hint);
+    nbLoadPhrases(w);
+  }
+  if (!w.sentences.length) wrap.insertAdjacentHTML('beforeend', '<p class="hint" style="margin-left:26px">暂无例句</p>');
   w.sentences.forEach((s, si) => {
     const row = document.createElement('div');
     row.className = 'nb-sent';
@@ -5306,6 +5374,14 @@ const GRA_DRILLS = {
     sets: [
       { set: 'adj-past-i', label: 'Ⅰ类形容词', count: 100 },
       { set: 'adj-past-na', label: 'Ⅱ类形容词', count: 100 },
+    ],
+  },
+  'gp-cjs-L14-02': {
+    note: '敬体形式与ます形词干',
+    sets: [
+      { set: 'verb-masu-i', label: 'Ⅰ类动词', count: 100 },
+      { set: 'verb-masu-ii', label: 'Ⅱ类动词', count: 100 },
+      { set: 'verb-masu-iii', label: 'Ⅲ类动词', count: 100 },
     ],
   },
 };

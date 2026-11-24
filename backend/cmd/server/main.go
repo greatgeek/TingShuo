@@ -35,6 +35,7 @@ import (
 	"github.com/greatgeek/TingShuo/backend/internal/word"
 	"github.com/greatgeek/TingShuo/backend/internal/wordassoc"
 	"github.com/greatgeek/TingShuo/backend/internal/wordclip"
+	"github.com/greatgeek/TingShuo/backend/internal/wordphrase"
 	"github.com/greatgeek/TingShuo/backend/internal/wordstudy"
 	"github.com/greatgeek/TingShuo/backend/pkg/db"
 	"github.com/greatgeek/TingShuo/backend/pkg/doubaopod"
@@ -105,6 +106,7 @@ func run() error {
 	clipH := wordclip.NewHandler(pool)
 	clipH.SetMediaRoot(podcast.MediaRoot())
 	assocH := wordassoc.NewHandler(pool)
+	phraseH := wordphrase.NewHandler(pool)
 	wordclip.NewWorker(pool).Start(ctx)
 
 	r := chi.NewRouter()
@@ -164,6 +166,7 @@ func run() error {
 			sec.Delete("/ai/chat", aiH.ChatClear)
 			sec.Get("/words/{id}/usage", wordH.Usage)
 			sec.Get("/words/{id}/association", assocH.Get)
+			sec.Get("/words/{id}/phrases", phraseH.Get)
 			sec.Get("/words/{id}/hook", assocH.Hook)
 			sec.Get("/words/{id}/clips", clipH.Clips)
 			sec.Post("/words/{id}/clips", clipH.Enqueue)
