@@ -4041,30 +4041,42 @@ function nbBuildSents(w) {
   return wrap;
 }
 
+// 展开前会折叠其它词卡：被折叠的在点击行上方时页面缩短、该行会被顶上去，用滚动补偿把行钉在原位
+function nbKeepRowStable(div, mutate) {
+  const before = div.getBoundingClientRect().top;
+  mutate();
+  const drift = div.getBoundingClientRect().top - before;
+  if (Math.abs(drift) >= 1) window.scrollBy(0, drift);
+}
+
 function nbToggleWord(w, div) {
   const ex = div.querySelector('.nb-sents');
   if (ex) { ex.remove(); return; }
-  document.querySelectorAll('.nb-clips').forEach(x => x.remove());
-  nbClipsClear();
-  clipStopAll();
-  document.querySelectorAll('.nb-sents').forEach(x => x.remove());
-  div.appendChild(nbBuildSents(w));
+  nbKeepRowStable(div, () => {
+    document.querySelectorAll('.nb-clips').forEach(x => x.remove());
+    nbClipsClear();
+    clipStopAll();
+    document.querySelectorAll('.nb-sents').forEach(x => x.remove());
+    div.appendChild(nbBuildSents(w));
+  });
 }
 
 // ---- 生词本 / 影视原声：横滑剧照条，点图听原声 ----
 function nbToggleClips(w, div) {
   const panel = div.querySelector('.nb-clips');
   if (panel) { panel.remove(); clipStopAll(); nbClipsClear(); setNbMode('play'); return; }
-  if (PL && !PL.paused) nbPlayPause(); // 只暂停全播：播放条保留，用户在条上按「继续」接着播
-  setNbMode('clips');
-  document.querySelectorAll('.nb-sents').forEach(x => x.remove());
-  document.querySelectorAll('.nb-clips').forEach(x => x.remove());
-  nbClipsClear();
-  clipStopAll();
-  const box = document.createElement('div');
-  box.className = 'nb-clips';
-  div.appendChild(box);
-  nbLoadClips(w, box);
+  nbKeepRowStable(div, () => {
+    if (PL && !PL.paused) nbPlayPause(); // 只暂停全播：播放条保留，用户在条上按「继续」接着播
+    setNbMode('clips');
+    document.querySelectorAll('.nb-sents').forEach(x => x.remove());
+    document.querySelectorAll('.nb-clips').forEach(x => x.remove());
+    nbClipsClear();
+    clipStopAll();
+    const box = document.createElement('div');
+    box.className = 'nb-clips';
+    div.appendChild(box);
+    nbLoadClips(w, box);
+  });
 }
 
 // ---- 生词本 / 联想：💡 悬浮卡片（近义词 / 反义词 / 联想词），点词加入当前目录 ----
