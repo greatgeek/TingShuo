@@ -3256,17 +3256,25 @@ function renderNbTabs() {
 }
 
 // 顶部操作区吸顶：下滑收起让出屏幕，向上滑动自动浮出（不用滚回顶部点全播等按钮）
+// 触发参考 Headroom.js 与移动端浏览器工具栏：留方向死区 + 累计位移，轻微抖动不让栏体闪现
+const NB_HEAD_TOP = 80;   // 顶部安全区：距顶 80px 内始终展示
+const NB_HEAD_SHOW = 24;  // 累计上滑 24px 才浮出
+const NB_HEAD_HIDE = 12;  // 累计下滑 12px 才收起
 let nbHeadLastY = 0;
+let nbHeadAcc = 0;
+let nbHeadDir = 0;
 function nbHeadMeasure() {
   const hdr = document.querySelector('header');
   if (hdr) document.documentElement.style.setProperty('--hdr-h', hdr.offsetHeight + 'px');
 }
 function nbHeadReset() {
   nbHeadLastY = Math.max(0, window.scrollY);
+  nbHeadAcc = 0;
+  nbHeadDir = 0;
   const head = $('nb-headpin');
   if (!head) return;
   head.classList.remove('hide');
-  head.classList.toggle('floating', nbHeadLastY > 80);
+  head.classList.toggle('floating', nbHeadLastY > NB_HEAD_TOP);
 }
 function nbHeadOnScroll() {
   if (CUR_SCREEN !== 'notebook') return;
@@ -3274,11 +3282,27 @@ function nbHeadOnScroll() {
   if (!head) return;
   const y = Math.max(0, window.scrollY);
   const dy = y - nbHeadLastY;
-  if (Math.abs(dy) < 2) return;
+  if (!dy) return;
   nbHeadLastY = y;
-  if (y > 80 && dy > 0) head.classList.add('hide');
-  else head.classList.remove('hide');
-  head.classList.toggle('floating', y > 80 && !head.classList.contains('hide'));
+  const dir = dy > 0 ? 1 : -1; // 1=下滑（收起），-1=上滑（浮出）
+  if (dir !== nbHeadDir) { nbHeadDir = dir; nbHeadAcc = 0; }
+  nbHeadAcc += Math.abs(dy);
+  if (y <= NB_HEAD_TOP) {
+    nbHeadAcc = 0;
+    head.classList.remove('hide', 'floating');
+    return;
+  }
+  if (!head.classList.contains('hide')) {
+    if (dir > 0 && nbHeadAcc >= NB_HEAD_HIDE) {
+      head.classList.add('hide');
+      head.classList.remove('floating');
+      nbHeadAcc = 0;
+    }
+  } else if (dir < 0 && nbHeadAcc >= NB_HEAD_SHOW) {
+    head.classList.remove('hide');
+    head.classList.add('floating');
+    nbHeadAcc = 0;
+  }
 }
 addEventListener('scroll', nbHeadOnScroll, { passive: true });
 addEventListener('resize', nbHeadMeasure, { passive: true });
@@ -4046,18 +4070,19 @@ function nbKeepRowStable(div, mutate) {
   const before = div.getBoundingClientRect().top;
   mutate();
   const drift = div.getBoundingClientRect().top - before;
-  if (Math.abs(drift) >= 1) {
-    window.scrollBy(0, drift);
-    // 补偿滚动不是用户上滑：同步基准，避免顶部吸顶操作区被误唤出
-    nbHeadLastY = Math.max(0, window.scrollY);
-    const head = $('nb-headpin');
-    if (head && nbHeadLastY <= 80) {
-      // 已回到顶部就自然归位，避免吸顶区留下空白；瞬时切换，不播放滑出动画
-      head.style.transition = 'none';
-      head.classList.remove('hide', 'floating');
-      void head.offsetHeight;
-      head.style.transition = '';
-    }
+  if (Math.abs(drift) >= 1) window.scrollBy(0, drift);
+  // 展开/折叠改变页高，浏览器滚动锚定和补偿滚动都不是用户上滑：
+  // 同步基准并清空方向累计，避免顶部吸顶操作区被误唤出
+  nbHeadLastY = Math.max(0, window.scrollY);
+  nbHeadAcc = 0;
+  nbHeadDir = 0;
+  const head = $('nb-headpin');
+  if (head && nbHeadLastY <= NB_HEAD_TOP) {
+    // 已回到顶部就自然归位，避免吸顶区留下空白；瞬时切换，不播放滑出动画
+    head.style.transition = 'none';
+    head.classList.remove('hide', 'floating');
+    void head.offsetHeight;
+    head.style.transition = '';
   }
 }
 
