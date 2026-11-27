@@ -4046,7 +4046,19 @@ function nbKeepRowStable(div, mutate) {
   const before = div.getBoundingClientRect().top;
   mutate();
   const drift = div.getBoundingClientRect().top - before;
-  if (Math.abs(drift) >= 1) window.scrollBy(0, drift);
+  if (Math.abs(drift) >= 1) {
+    window.scrollBy(0, drift);
+    // 补偿滚动不是用户上滑：同步基准，避免顶部吸顶操作区被误唤出
+    nbHeadLastY = Math.max(0, window.scrollY);
+    const head = $('nb-headpin');
+    if (head && nbHeadLastY <= 80) {
+      // 已回到顶部就自然归位，避免吸顶区留下空白；瞬时切换，不播放滑出动画
+      head.style.transition = 'none';
+      head.classList.remove('hide', 'floating');
+      void head.offsetHeight;
+      head.style.transition = '';
+    }
+  }
 }
 
 function nbToggleWord(w, div) {
