@@ -4818,10 +4818,17 @@ async function aiSend() {
   if (!q || !AI_CTX || $('ai-send').disabled) return;
   $('ai-q').value = '';
   aiBubble('user', esc(q));
-  const bub = aiBubble('ai',
+  aiRun(q, aiBubble('ai', ''));
+}
+
+// aiRun：在指定气泡内跑一次提问请求（思考/回复流式渲染）。
+// 失败时显示原因 + 「重试」按钮：重试复用该气泡重发同一问题，不重复追加提问气泡。
+async function aiRun(q, bub) {
+  bub.innerHTML =
     '<div class="ai-thinking">思考中<span class="dots"></span></div>' +
     '<pre class="ai-thinklive" hidden></pre>' +
-    '<div class="ai-reply"></div>');
+    '<div class="ai-reply"></div>';
+  bub.scrollIntoView({ block: 'end' });
   const thk = bub.querySelector('.ai-thinking');
   const live = bub.querySelector('.ai-thinklive');
   const rep = bub.querySelector('.ai-reply');
@@ -4889,6 +4896,12 @@ async function aiSend() {
     thk.style.display = 'none';
     live.remove();
     rep.innerHTML = '<span class="ai-err">请求失败：' + esc(e.message) + '</span>';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ai-retry';
+    btn.textContent = '重试';
+    btn.onclick = () => aiRun(q, bub);
+    rep.appendChild(btn);
   } finally {
     $('ai-send').disabled = false;
   }
