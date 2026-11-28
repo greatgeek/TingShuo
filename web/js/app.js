@@ -144,7 +144,11 @@ addEventListener('popstate', e => {
 
 function updateBackBtn() {
   const b = $('nav-back');
-  if (b) b.style.display = (CUR_SCREEN === 'home' || CUR_SCREEN === 'login') ? 'none' : 'inline-flex';
+  if (!b) return;
+  const on = !(CUR_SCREEN === 'home' || CUR_SCREEN === 'login');
+  b.classList.toggle('on', on);
+  b.setAttribute('aria-hidden', on ? 'false' : 'true');
+  b.tabIndex = on ? 0 : -1;
 }
 function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.display = 'block'; }
 function hideErr(id) { $(id).style.display = 'none'; }
