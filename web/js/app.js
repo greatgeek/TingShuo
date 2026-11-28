@@ -3970,7 +3970,8 @@ function nbExportAll() {
   toast('已导出 txt + csv 两个文件');
 }
 
-// 常用词组：展开词卡时显示在例句上方，点条目听发音（纯文本交给 TTS，避免词典误读）
+// 常用词组：展开词卡时显示在例句上方，点条目听发音。
+// 注音必须带给 TTS：Azure 把「大分」读成 おおいた（地名读法），要靠 ruby 纠回 だいぶ。
 function nbPhraseBlock(w) {
   const items = w.phrases || [];
   if (!items.length) return null;
@@ -3991,7 +3992,7 @@ function nbPhraseBlock(w) {
     spk.className = 'ph-play';
     spk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M17.5 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
     row.appendChild(spk);
-    const play = (e) => { e.stopPropagation(); nbSelectWord(w, row.closest('.wordrow')); sayAudio(p.text, spk, false); };
+    const play = (e) => { e.stopPropagation(); nbSelectWord(w, row.closest('.wordrow')); sayAudio(p.text, spk, false, phraseSpeechRuby(w, p)); };
     row.onclick = play;
     row.onkeydown = (e) => {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(e); }
@@ -4000,6 +4001,35 @@ function nbPhraseBlock(w) {
   });
   box.onclick = (e) => e.stopPropagation();
   return box;
+}
+
+// 词组点读的注音：词典会把词条并进更长的词块（大分→大分時間），读音校验失败后整块
+// 丢掉读音，TTS 又会按地名/熟字读错；这种块把词条本身切出来，强制用词库读音。
+function phraseSpeechRuby(w, p) {
+  const toks = Array.isArray(p.ruby_tokens) ? p.ruby_tokens : [];
+  const surf = (w.surface || '').trim();
+  const reading = w.reading || '';
+  if (!toks.length) return p.reading ? [[p.text, p.reading]] : null;
+  const out = [];
+  let changed = false;
+  for (const t of toks) {
+    const s = (t && t[0]) || '';
+    const r = t && t[1];
+    if (!r && reading && surf && /[\u4e00-\u9fff]/.test(s)) {
+      if (s === surf) {
+        out.push([s, reading]);
+        changed = true;
+        continue;
+      }
+      if (s.startsWith(surf) && s.length > surf.length) {
+        out.push([surf, reading], [s.slice(surf.length), null]);
+        changed = true;
+        continue;
+      }
+    }
+    out.push([s, r || null]);
+  }
+  return changed ? out : toks;
 }
 
 // 未预生成的新词：展开时按需生成，成功后原位替换「生成中」提示。
