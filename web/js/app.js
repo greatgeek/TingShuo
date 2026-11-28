@@ -480,8 +480,9 @@ function usageRow(x) {
 
 // ============ 生词原声例句（剧照 + 原声）============
 // Nadeshiko 的「视频」实际是静帧+音频，这里按剧照呈现：点图播原声。
-// 后端按词缓存最多 18 条；这里（生词库/背词）每次展示 2 条，点「获取更多」先展开缓存，
-// 缓存用尽且后端还可补抓时再请求 ?more=1。
+// 后端按词缓存最多 18 条；生词库/背词的竖排卡片一次铺全在手全部，
+// 生词本横条先铺 6 条、滑到条尾自动铺下一批；「获取更多」/滑到底补抓
+// 只在后端还可补抓时请求 ?more=1。
 const CLIP_MEM = new Map();
 const CLIP_META = new Map();
 const NB_CLIP_MEM = new Map();
@@ -530,7 +531,7 @@ async function loadWordClips(w, box, opts = {}) {
     box.addEventListener('click', e => e.stopPropagation());
   }
   const cached = CLIP_MEM.get(w.id);
-  if (cached && cached.length) { wclipRender(box, cached, w, opts, { shown: 2, meta: CLIP_META.get(w.id) || {} }); return; }
+  if (cached && cached.length) { wclipRender(box, cached, w, opts, { meta: CLIP_META.get(w.id) || {} }); return; }
 
   const title = opts.title || '原声台词';
   box.innerHTML = `<div class="wclip-head"><span class="usage-head">${title}</span></div><p class="hint">加载原声…</p>`;
@@ -547,7 +548,7 @@ async function loadWordClips(w, box, opts = {}) {
         const meta = clipMeta(r);
         CLIP_MEM.set(w.id, items);
         CLIP_META.set(w.id, meta);
-        wclipRender(box, items, w, opts, { shown: 2, meta });
+        wclipRender(box, items, w, opts, { meta });
         return;
       }
       if (r.pending && tries < 20) {
@@ -570,12 +571,12 @@ function wclipRender(box, clips, w, opts, state) {
   const title = opts.title || '原声台词';
   const total = clips.length;
   const meta = (state && state.meta) || {};
-  const n = Math.max(1, Math.min((state && state.shown) || 2, total));
-  const shown = clips.slice(0, n);
+  // 竖排卡片一次铺全（列表随页面滚动），不再分批；「获取更多」专管后端补抓
+  const shown = clips;
 
   let html = `<div class="wclip-head">
       <span class="usage-head">${title}</span>
-      <button class="wclip-swap" data-act="more">＋ 获取更多</button>
+      ${meta.can_expand ? '<button class="wclip-swap" data-act="more">＋ 获取更多</button>' : ''}
     </div>`;
   shown.forEach(c => {
     const src = [c.media_name || '原声',
@@ -644,8 +645,7 @@ function wclipRender(box, clips, w, opts, state) {
   if (moreBtn) {
     moreBtn.onclick = (e) => {
       e.stopPropagation();
-      if (n < total) wclipRender(box, clips, w, opts, { shown: n + 2, meta });
-      else wclipExpand(box, clips, w, opts, n, meta);
+      wclipExpand(box, clips, w, opts, meta);
     };
   }
 }
@@ -654,8 +654,8 @@ function clipMeta(r) {
   return { expanded: !!r.expanded, can_expand: !!r.can_expand, max: r.max || 18 };
 }
 
-// wclipExpand 生词库/背词面板的后端补抓：缓存已全部展示时向 ?more=1 追加新片段。
-async function wclipExpand(box, clips, w, opts, shown, meta) {
+// wclipExpand 生词库/背词面板的后端补抓：?more=1 追加新片段，补完一次铺全。
+async function wclipExpand(box, clips, w, opts, meta) {
   const btn = box.querySelector('.wclip-swap');
   if (btn) { btn.disabled = true; btn.textContent = '正在获取更多…'; }
   const renderWith = (r) => {
@@ -663,9 +663,7 @@ async function wclipExpand(box, clips, w, opts, shown, meta) {
     const m = clipMeta(r);
     CLIP_MEM.set(w.id, items);
     CLIP_META.set(w.id, m);
-    const n = items.length > clips.length
-      ? Math.min(shown + 2, items.length) : Math.min(shown, items.length);
-    wclipRender(box, items, w, opts, { shown: n, meta: m });
+    wclipRender(box, items, w, opts, { meta: m });
     return items.length;
   };
   try {
@@ -691,7 +689,7 @@ async function wclipExpand(box, clips, w, opts, shown, meta) {
             return;
           }
           // 超时不写缓存：保留原数据和「获取更多」，后台完成后再点一次即可拿到
-          wclipRender(box, clips, w, opts, { shown, meta });
+          wclipRender(box, clips, w, opts, { meta });
           toast('仍在生成，稍后再试');
           return;
         }
@@ -701,14 +699,14 @@ async function wclipExpand(box, clips, w, opts, shown, meta) {
       } catch (err) {
         if (box.isConnected) {
           toast('获取更多失败：' + err.message);
-          wclipRender(box, clips, w, opts, { shown, meta });
+          wclipRender(box, clips, w, opts, { meta });
         }
       }
     };
     setTimeout(poll, 1500);
   } catch (e) {
     toast('获取更多失败：' + e.message);
-    if (box.isConnected) wclipRender(box, clips, w, opts, { shown, meta });
+    if (box.isConnected) wclipRender(box, clips, w, opts, { meta });
   }
 }
 
@@ -4385,31 +4383,30 @@ async function nbLoadClips(w, box) {
   tick();
 }
 
+// nbClipsRender 生词本横条：先铺 6 条，滑到条尾自动铺下一批（往 DOM 追加、不整块重绘，
+// 不打断滚动位置和正在播的原声）；铺完且后端还能补抓时，滑到底自动触发补抓。
 function nbClipsRender(box, clips, w, shown, meta) {
   clipStopAll();
   meta = meta || {};
   const total = clips.length;
-  const n = Math.max(1, Math.min(shown || 6, total));
+  let n = Math.max(1, Math.min(shown || 6, total));
   const view = clips.slice(0, n);
-  const countText = n < total ? `${n} / ${total} 条` : `共 ${total} 条 · 点剧照听原声`;
-  const moreBtn = '<button class="wclip-swap nb-clips-more" data-act="more">＋ 获取更多</button>';
   let html = `<div class="nb-clips-head"><span class="usage-head">影视原声</span>
-    <span class="nb-clips-count">${countText}</span></div>
-    <div class="wclip-strip">`;
-  view.forEach((c, i) => {
-    html += `<button class="wclip-thumb${i === 0 ? ' sel' : ''}" data-i="${i}" title="播放第 ${i + 1} 条原声">
-      ${c.image_url ? `<img src="${esc(c.image_url)}" alt="" decoding="async" loading="lazy">` : '<span class="wclip-thumb-ph"></span>'}
-      <span class="wclip-play">▶</span>
-    </button>`;
-  });
-  html += `</div><div class="wclip-detail"></div>
+    <span class="nb-clips-count"></span></div>
+    <div class="wclip-strip"></div><div class="wclip-detail"></div>
     <audio class="wclip-audio" preload="none"></audio>`;
   box.innerHTML = html;
 
+  const countEl = box.querySelector('.nb-clips-count');
+  const strip = box.querySelector('.wclip-strip');
   const audio = box.querySelector('audio');
   const detail = box.querySelector('.wclip-detail');
-  const thumbs = [...box.querySelectorAll('.wclip-thumb')];
+  const thumbs = [];
   let sel = 0;
+  let fetching = false;
+  const countText = () => n < total ? `${n} / ${total} 条` : `共 ${total} 条 · 点剧照听原声`;
+  const moreBtnHTML = () => (n < total || meta.can_expand)
+    ? '<button class="wclip-swap nb-clips-more" data-act="more">＋ 获取更多</button>' : '';
   const fillDetail = (i) => {
     const c = view[i];
     const src = [c.media_name || '原声',
@@ -4421,13 +4418,17 @@ function nbClipsRender(box, clips, w, shown, meta) {
       <button class="ai-ask wclip-ask" title="就这句问 AI">问AI</button>
     </div>
       ${zh ? `<div class="wclip-zh">${lang}${esc(zh)}</div>` : ''}
-      <div class="wclip-foot"><span class="wclip-src">${esc(src)}</span>${moreBtn}</div>`;
+      <div class="wclip-foot"><span class="wclip-src">${esc(src)}</span>${moreBtnHTML()}</div>`;
     detail.querySelector('.wclip-ask').onclick = (e) => {
       e.stopPropagation();
       openAiAsk({ text: c.text_ja, translation: c.text_zh || c.text_en || '' }, w);
     };
   };
-  fillDetail(0);
+  const syncMoreBtn = () => {
+    const btn = detail.querySelector('.nb-clips-more');
+    if (!btn && (n < total || meta.can_expand)) fillDetail(sel);
+    else if (btn && n >= total && !meta.can_expand) btn.remove();
+  };
   const setOn = (on) => {
     thumbs.forEach((t, i) => {
       const icon = t.querySelector('.wclip-play');
@@ -4451,8 +4452,50 @@ function nbClipsRender(box, clips, w, shown, meta) {
     audio.src = c.audio_url;
     audio.play().catch(() => toast('音频播放失败'));
   };
-  thumbs.forEach((t, i) => { t.onclick = (e) => { e.stopPropagation(); playAt(i); }; });
-  const strip = box.querySelector('.wclip-strip');
+  const makeThumb = (c, i) => {
+    const t = document.createElement('button');
+    t.className = 'wclip-thumb' + (i === 0 ? ' sel' : '');
+    t.title = `播放第 ${i + 1} 条原声`;
+    t.innerHTML = `${c.image_url ? `<img src="${esc(c.image_url)}" alt="" decoding="async" loading="lazy">` : '<span class="wclip-thumb-ph"></span>'}
+      <span class="wclip-play">▶</span>`;
+    t.onclick = (e) => { e.stopPropagation(); playAt(i); };
+    return t;
+  };
+  // expandLocal 从在手片段里铺下一批：只追加剧照和改计数，不重绘面板
+  const expandLocal = () => {
+    if (n >= total) return false;
+    const from = n;
+    n = Math.min(n + 6, total);
+    for (let i = from; i < n; i++) {
+      view.push(clips[i]);
+      const t = makeThumb(clips[i], i);
+      thumbs.push(t);
+      strip.appendChild(t);
+    }
+    countEl.textContent = countText();
+    syncMoreBtn();
+    return true;
+  };
+  // fillIfFits 宽屏横条可能不可滚、滑到底永不触发：铺得下就直接铺完
+  const fillIfFits = () => {
+    while (n < total && strip.scrollWidth <= strip.clientWidth + 4) expandLocal();
+  };
+  const atEnd = () => strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 48;
+  const autoExpand = () => {
+    if (!atEnd()) return;
+    if (n < total) { expandLocal(); fillIfFits(); return; }
+    if (meta.can_expand && !fetching) {
+      fetching = true;
+      nbExpandClips(w, box, clips, meta, n);
+    }
+  };
+
+  view.forEach((c, i) => { const t = makeThumb(c, i); thumbs.push(t); strip.appendChild(t); });
+  countEl.textContent = countText();
+  fillDetail(0);
+  fillIfFits();
+  strip.addEventListener('scroll', autoExpand, { passive: true });
+
   const revealThumb = (i) => {
     const t = thumbs[i];
     if (!strip || !t) return;
@@ -4477,11 +4520,11 @@ function nbClipsRender(box, clips, w, shown, meta) {
   detail.addEventListener('click', (e) => {
     if (!e.target.closest('.nb-clips-more')) return;
     e.stopPropagation();
-    if (n < total) {
-      nbClipsRender(box, clips, w, Math.min(n + 6, total), meta);
-      return;
+    if (n < total) { expandLocal(); fillIfFits(); return; }
+    if (meta.can_expand && !fetching) {
+      fetching = true;
+      nbExpandClips(w, box, clips, meta, n);
     }
-    nbExpandClips(w, box, clips, meta, n);
   });
 }
 
