@@ -3988,6 +3988,19 @@ function nbPhraseBlock(w) {
     row.setAttribute('role', 'button');
     row.title = '点读词组';
     row.innerHTML = `<div class="wrap"><div class="txt">${rubyHTML(p.ruby_tokens) || esc(p.text)}</div><div class="zh">${esc(p.translation || '')}</div></div>`;
+    const ask = document.createElement('button');
+    ask.className = 'ai-ask';
+    ask.textContent = '问AI';
+    ask.title = '就这个词组问 AI';
+    ask.onclick = (e) => {
+      e.stopPropagation();
+      openAiAsk(p, w, {
+        histKey: 'p:' + p.text,
+        hint: '可以问这个词组的任何问题：用法、搭配、语感、近义表达辨析…',
+        placeholder: '关于这个词组想问什么？',
+      });
+    };
+    row.appendChild(ask);
     const spk = document.createElement('span');
     spk.className = 'ph-play';
     spk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z"/><path d="M15 9a4 4 0 0 1 0 6"/><path d="M17.5 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
@@ -4667,14 +4680,14 @@ async function sayAudio(text, btn, retry, ruby) {
 // ============ 问AI（句子/语法点上下文对话，MiniMax M3 最高思考）============
 let AI_CTX = null;  // 句子：{text, ruby_tokens, translation, word}；语法点：{kind:'grammar', point_id}
 
-async function openAiAsk(s, w) {
+async function openAiAsk(s, w, opts = {}) {
   AI_CTX = {
     text: s.text, ruby_tokens: s.ruby_tokens || [], translation: s.translation || '',
     word: { surface: w.surface, reading: w.reading || '', meaning: w.meaning || '' },
   };
-  aiOpen(AI_CTX.text, {
-    hint: '可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…',
-    placeholder: '关于这句想问什么？',
+  aiOpen(opts.histKey || AI_CTX.text, {
+    hint: opts.hint || '可以问这句的任何问题：语法、助词、活用、使用场景、近义词辨析…',
+    placeholder: opts.placeholder || '关于这句想问什么？',
     ctxHTML: `
       <div class="txt" style="font-size:15px">${rubyHTML(AI_CTX.ruby_tokens) || esc(AI_CTX.text)}</div>
       <div class="zh">${esc(AI_CTX.translation)}</div>
