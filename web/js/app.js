@@ -2648,7 +2648,10 @@ function wsBackQuizHTML(w, ok, chosen) {
       ${q.audio ? `<button class="ws-mini" data-act="ws-sent" title="听整句">${SVG_HEADPHONES}</button>` : ''}
     </div>
     <div class="ws-meaning">${esc(w.meaning || '')} <span class="lib-meta">${esc(w.pos || '')}${w.is_key ? ' · ★重点' : ''}</span></div>
-    ${q.tokens ? `<div class="ws-cloze ws-cloze-full">${wsTokensFullHTML(q, w)}</div>` : ''}
+    ${q.tokens ? `<div class="ws-sent-row">
+      <div class="ws-cloze ws-cloze-full">${wsTokensFullHTML(q, w)}</div>
+      <button class="ai-ask ws-ask" title="就这句问 AI">问AI</button>
+    </div>` : ''}
     ${q.trans ? `<div class="ws-trans">句子翻译：${esc(q.trans)}</div>` : ''}
     ${q.audio && q.audio.kind === 'url' ? '<div class="ws-src-tag">原声例句</div>' : ''}
     <div id="ws-hook"></div>
@@ -2658,6 +2661,20 @@ function wsBackQuizHTML(w, ok, chosen) {
     ${mark}
     <div class="ws-oral-row"><button class="btn ghost" data-act="ws-oral">${SVG_MIC} 用它说一句</button></div>
     <div class="rv-actions"><button class="btn accent" data-act="ws-next">下一词</button></div>`;
+}
+
+// wsQuizSentence 揭晓面整句还原成问AI上下文：空白 token 填回正解并带目标词读音，
+// 供「就这句问 AI」复用例句对话链路（历史按句子文本归并）。
+function wsQuizSentence(w) {
+  const q = w.quiz || {};
+  const fill = q.blank_text || w.surface;
+  const ruby = (q.tokens || []).map(t =>
+    t.blank ? [fill, w.reading || null] : [t.text, t.reading || null]);
+  return {
+    text: ruby.map(p => p[0]).join(''),
+    ruby_tokens: ruby,
+    translation: q.trans || '',
+  };
 }
 
 function renderWordStudyItem() {
@@ -2770,6 +2787,8 @@ function wsShowReview(w, ok, chosen) {
   const back = $('ws-back');
   back.style.display = 'block';
   back.innerHTML = wsBackQuizHTML(w, ok, chosen);
+  const ask = back.querySelector('.ws-ask');
+  if (ask) ask.onclick = (e) => { e.stopPropagation(); openAiAsk(wsQuizSentence(w), w); };
   wsHookInit(w);
   loadWordClips(w, $('ws-clips'), { title: '原声助记' });
 }
